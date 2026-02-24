@@ -1,0 +1,14 @@
+{
+  "name": "doppel-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Doppel SDK monorepo: core client and agent runtime",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "clean": "pnpm -r run clean"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.14.2"
+}

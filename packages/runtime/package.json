@@ -1,0 +1,33 @@
+{
+  "name": "@doppel-sdk/runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "start": "node dist/cli.js",
+    "run": "pnpm run build && pnpm run start"
+  },
+  "bin": {
+    "doppel-sdk-run": "./dist/cli.js"
+  },
+  "dependencies": {
+    "@doppel-sdk/core": "workspace:*",
+    "dotenv": "^16.4.5",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "~5.7.2"
+  }
+}

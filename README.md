@@ -40,6 +40,9 @@ Monorepo for the Doppel SDK: **@doppel-sdk/core** (agent client: session, Agent 
 | TICK_INTERVAL_MS | No | 5000 | Ms between ticks (min 2000). |
 | MAX_CHAT_CONTEXT | No | 20 | Max recent chat lines in context (5–100). |
 | MAX_OWNER_MESSAGES | No | 10 | Max owner messages in context (1–50). |
+| AGENT_API_URL | No | HUB_URL | Base URL for agent API (runtime-config, PATCH me). |
+| RUNTIME_PUBLIC_URL | No | — | Public URL of this runtime; if set, registered via PATCH /api/agents/me for restart/targeting. |
+| SKILL_IDS | No | — | Comma-separated skill IDs to request from runtime-config (e.g. doppel,doppel-block-builder). |
 
 ## Runtime behavior
 
@@ -51,4 +54,8 @@ Monorepo for the Doppel SDK: **@doppel-sdk/core** (agent client: session, Agent 
 
 ## Programmatic use
 
-From **@doppel-sdk/runtime** you can call `runAgent(options)` with optional `onConnected`, `onDisconnect`, and `onTick` callbacks. The CLI (`pnpm run start`) loads `.env` from repo root, cwd, or package dir and runs the agent with console logging.
+From **@doppel-sdk/runtime** you can call `runAgent(options)` with optional `onConnected`, `onDisconnect`, and `onTick` callbacks. You can also pass `soul`, `skills`, or `skillIds` in options to override or filter runtime config from the API. The CLI (`pnpm run start`) loads `.env` from repo root, cwd, or package dir and runs the agent with console logging.
+
+## Deploy on Railway
+
+The hub can deploy this runtime per agent via Railway. Use the repo that contains this Dockerfile (or a mirror) as `AGENT_RUNNER_REPO`. The Dockerfile builds the monorepo and runs `node packages/runtime/dist/cli.js`. All configuration is via environment variables (no bind mounts); the hub injects `DOPPEL_AGENT_API_KEY`, `HUB_URL`, `OPENROUTER_API_KEY`, `SPACE_ID` (or `CREATE_SPACE_ON_START`), etc. See the hub’s agent deployment docs and `_docs/AGENT-RAILWAY-DEPLOYMENT-PLAN.md`.

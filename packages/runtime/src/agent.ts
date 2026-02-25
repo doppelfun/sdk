@@ -14,7 +14,8 @@ import {
   setLastError,
   type RuntimeState,
 } from "./state.js";
-import { SYSTEM_PROMPT, buildUserMessage } from "./prompts.js";
+import { buildSystemContent, buildUserMessage } from "./prompts.js";
+import type { RuntimeConfigPrompt } from "./prompts.js";
 import { chatCompletion, type Usage } from "./openrouter.js";
 import { CHAT_TOOLS, executeTool } from "./tools.js";
 
@@ -25,7 +26,33 @@ export type AgentRunOptions = {
   onDisconnect?: (err?: Error) => void;
   /** Called each tick with a short log line (optional). */
   onTick?: (summary: string) => void;
+  /** Override soul (skips API fetch for soul when set). */
+  soul?: string | null;
+  /** Override skills (skips API fetch for skills when set). */
+  skills?: string | null;
+  /** Skill IDs to request from runtime-config API (overrides config skillIds when set). */
+  skillIds?: string[];
 };
+
+type RuntimeConfigResponse = {
+  soul?: string | null;
+  skills?: string;
+  runtimeServerUrl?: string | null;
+};
+
+async function fetchRuntimeConfig(
+  agentApiUrl: string,
+  apiKey: string,
+  skillIds: string[]
+): Promise<RuntimeConfigResponse> {
+  const base = agentApiUrl.replace(/\/$/, "");
+  const params = skillIds.length > 0 ? `?skillIds=${skillIds.map(encodeURIComponent).join(",")}` : "";
+  const res = await fetch(`${base}/api/agents/me/runtime-config${params}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) return {};
+  return (await res.json()) as RuntimeConfigResponse;
+}
 
 /** Payload shape for WebSocket "chat" messages from the engine. */
 type ChatPayload = {
@@ -112,6 +139,7 @@ async function runTick(
   client: DoppelClient,
   state: RuntimeState,
   config: RuntimeConfig,
+  systemContent: string,
   options: AgentRunOptions
 ): Promise<void> {
   if (state.lastError?.code === "region_boundary" && state.lastError.regionId) {
@@ -129,7 +157,7 @@ async function runTick(
   const result = await chatCompletion(config.openRouterApiKey, {
     model: config.chatLlmModel,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemContent },
       { role: "user", content: userContent },
     ],
     tools,
@@ -197,6 +225,28 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     options.onTick?.(`profile check failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // --- Runtime config (soul + skills): options override or fetch from API ---
+  let runtimeConfigPrompt: RuntimeConfigPrompt;
+  if (options.soul !== undefined || options.skills !== undefined) {
+    runtimeConfigPrompt = {
+      soul: options.soul ?? null,
+      skills: options.skills ?? "",
+    };
+  } else {
+    const skillIds = options.skillIds ?? config.skillIds;
+    try {
+      const fetched = await fetchRuntimeConfig(config.agentApiUrl, config.apiKey, skillIds);
+      runtimeConfigPrompt = {
+        soul: fetched.soul ?? null,
+        skills: fetched.skills ?? "",
+      };
+    } catch (e) {
+      console.warn("[agent] Failed to fetch runtime-config, using base prompt only:", e);
+      runtimeConfigPrompt = { soul: null, skills: "" };
+    }
+  }
+  const systemContent = buildSystemContent(runtimeConfigPrompt);
+
   // --- Bootstrap: JWT + engine URL (join or create-then-join) ---
   let jwt: string;
   let engineUrl: string;
@@ -224,7 +274,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   const state = createInitialState(regionId);
 
   // --- WebSocket message handlers (chat, error, joined, authenticated) ---
-  client.onMessage("authenticated", (payload: unknown) => {
+  client.onMessage("authenticated", async (payload: unknown) => {
     const p = payload as { regionId?: string; sessionId?: string };
     if (typeof p.regionId === "string") {
       state.regionId = p.regionId;
@@ -232,6 +282,26 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     }
     if (typeof p.sessionId === "string") state.mySessionId = p.sessionId;
     options.onConnected?.(state.regionId);
+
+    // Register runtime server URL if configured
+    if (config.runtimePublicUrl) {
+      try {
+        const base = config.agentApiUrl.replace(/\/$/, "");
+        const res = await fetch(`${base}/api/agents/me`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${config.apiKey}`,
+          },
+          body: JSON.stringify({ runtimeServerUrl: config.runtimePublicUrl }),
+        });
+        if (!res.ok) {
+          console.warn("[agent] Failed to register runtimeServerUrl:", res.status);
+        }
+      } catch (e) {
+        console.warn("[agent] Failed to register runtimeServerUrl:", e);
+      }
+    }
   });
 
   client.onMessage("chat", (payload: unknown) => {
@@ -288,7 +358,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     if (tickTimer) return;
     tickTimer = setInterval(async () => {
       try {
-        await runTick(client, state, config, options);
+        await runTick(client, state, config, systemContent, options);
       } catch (e) {
         options.onTick?.(`tick error: ${e instanceof Error ? e.message : String(e)}`);
       }

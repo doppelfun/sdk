@@ -5,6 +5,8 @@
 export type RuntimeConfig = {
   apiKey: string;
   hubUrl: string;
+  /** Base URL for agent API (runtime-config, PATCH me). Defaults to hubUrl. */
+  agentApiUrl: string;
   engineUrl: string;
   spaceId: string | null;
   createSpaceOnStart: boolean;
@@ -22,6 +24,10 @@ export type RuntimeConfig = {
   tokensPerCredit: number;
   /** Multiplier applied to build operations (default 1.5). */
   buildCreditMultiplier: number;
+  /** Optional: public URL of this runtime (for PATCH /api/agents/me runtimeServerUrl). */
+  runtimePublicUrl: string | null;
+  /** Optional: skill IDs to request from runtime-config (e.g. ["doppel", "doppel-block-builder"]). */
+  skillIds: string[];
 };
 
 const DEFAULT_HUB = "http://localhost:4000";
@@ -61,12 +67,19 @@ export function loadConfig(): RuntimeConfig {
   if (!openRouterApiKey) throw new Error("OPENROUTER_API_KEY is required");
 
   const hubUrl = trimUrl(process.env.HUB_URL?.trim() || DEFAULT_HUB);
+  const agentApiUrl = trimUrl(process.env.AGENT_API_URL?.trim() || hubUrl);
   const engineUrl = trimUrl(process.env.ENGINE_URL?.trim() || DEFAULT_ENGINE);
   const spaceId = process.env.SPACE_ID?.trim() || null;
   const createSpaceOnStart =
     process.env.CREATE_SPACE_ON_START === "true" || process.env.CREATE_SPACE_ON_START === "1";
   const createSpaceName = process.env.CREATE_SPACE_NAME?.trim() || "Agent space";
   const ownerUserId = process.env.OWNER_USER_ID?.trim() || null;
+  const runtimePublicUrl = process.env.RUNTIME_PUBLIC_URL?.trim() || process.env.AGENT_SERVER_URL?.trim() || null;
+  const skillIdsRaw = process.env.SKILL_IDS?.trim();
+  const skillIds =
+    skillIdsRaw != null && skillIdsRaw !== ""
+      ? skillIdsRaw.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
 
   const tickIntervalMs = Math.max(2000, parseIntEnv("TICK_INTERVAL_MS", DEFAULT_TICK_MS));
   const maxChatContext = parseIntEnv("MAX_CHAT_CONTEXT", DEFAULT_MAX_CHAT, 5, 100);
@@ -83,6 +96,7 @@ export function loadConfig(): RuntimeConfig {
   return {
     apiKey,
     hubUrl,
+    agentApiUrl,
     engineUrl,
     spaceId,
     createSpaceOnStart,
@@ -97,5 +111,7 @@ export function loadConfig(): RuntimeConfig {
     hosted: false, // set at runtime from hub profile
     tokensPerCredit,
     buildCreditMultiplier,
+    runtimePublicUrl: runtimePublicUrl ? trimUrl(runtimePublicUrl) : null,
+    skillIds,
   };
 }

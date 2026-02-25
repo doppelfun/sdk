@@ -16,6 +16,25 @@ Do not call get_occupants or get_chat_history every tick. Only call them when yo
 If you receive a region_boundary error, use join_region with the given regionId to switch regions.
 For building: use build_full for a new or full scene; use build_incremental to add things (e.g. "add a bench at 2,0,4") without replacing existing content.`;
 
+export type RuntimeConfigPrompt = {
+  soul: string | null;
+  skills: string;
+};
+
+/**
+ * Build full system message: base SYSTEM_PROMPT + soul + skills.
+ */
+export function buildSystemContent(runtimeConfig: RuntimeConfigPrompt): string {
+  let content = SYSTEM_PROMPT;
+  if (runtimeConfig.soul && runtimeConfig.soul.trim()) {
+    content += "\n\n" + runtimeConfig.soul.trim();
+  }
+  if (runtimeConfig.skills && runtimeConfig.skills.trim()) {
+    content += "\n\n---\n\nSkills:\n\n" + runtimeConfig.skills.trim();
+  }
+  return content;
+}
+
 /** Hint shown when we already have occupants in context. */
 const HINT_HAVE_OCCUPANTS = " (Do not call get_occupants again; you have the list.)";
 /** Hint shown when we already have chat in context. */

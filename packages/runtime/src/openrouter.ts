@@ -25,6 +25,13 @@ export type ToolDefinition = {
   };
 };
 
+/** Token usage returned by OpenRouter. */
+export type Usage = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+};
+
 /** One tool call in the assistant message. */
 export type ToolCall = {
   id: string;
@@ -50,7 +57,7 @@ export type ChatCompletionOptions = {
 };
 
 export type ChatCompletionResult =
-  | { ok: true; message: ChatCompletionMessage }
+  | { ok: true; message: ChatCompletionMessage; usage: Usage | null }
   | { ok: false; error: string; status?: number };
 
 /**
@@ -83,9 +90,9 @@ export async function chatCompletion(
   if (!res.ok) {
     return { ok: false, error: text || `HTTP ${res.status}`, status: res.status };
   }
-  let data: { choices?: Array<{ message?: ChatCompletionMessage }> };
+  let data: { choices?: Array<{ message?: ChatCompletionMessage }>; usage?: Usage };
   try {
-    data = JSON.parse(text) as { choices?: Array<{ message?: ChatCompletionMessage }> };
+    data = JSON.parse(text) as { choices?: Array<{ message?: ChatCompletionMessage }>; usage?: Usage };
   } catch {
     return { ok: false, error: "Invalid JSON from OpenRouter" };
   }
@@ -93,7 +100,8 @@ export async function chatCompletion(
   if (!message) {
     return { ok: false, error: "OpenRouter response missing choices[0].message" };
   }
-  return { ok: true, message };
+  const usage = data.usage && typeof data.usage.total_tokens === "number" ? data.usage : null;
+  return { ok: true, message, usage };
 }
 
 /**
@@ -104,7 +112,7 @@ export async function simpleCompletion(
   model: string,
   systemPrompt: string,
   userContent: string
-): Promise<{ ok: true; content: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; content: string; usage: Usage | null } | { ok: false; error: string }> {
   const result = await chatCompletion(apiKey, {
     model,
     messages: [
@@ -116,5 +124,5 @@ export async function simpleCompletion(
   });
   if (!result.ok) return result;
   const content = result.message.content ?? "";
-  return { ok: true, content };
+  return { ok: true, content, usage: result.usage };
 }

@@ -3,7 +3,7 @@
  * Uses simpleCompletion (no tools); extracts raw MML from response (strips markdown fences if present).
  */
 
-import { simpleCompletion } from "./openrouter.js";
+import { simpleCompletion, type Usage } from "./openrouter.js";
 
 const BUILD_FULL_SYSTEM = `You are an MML (scene markup) generator for a 3D world. You output valid MML only: XML-style tags like <m-group>, <m-cube>, <m-model>, <m-grass>, etc.
 - Use catalogId from the provided catalog for <m-model> when available.
@@ -13,8 +13,8 @@ const BUILD_INCREMENTAL_SYSTEM = `You are an MML (scene markup) generator for a 
 - The user will provide the existing MML and an instruction (e.g. "add a bench at 2,0,4" or "add a fountain here").
 - Output only the new tags to add: e.g. one or more <m-cube>, <m-model>, or a small <m-group>. No explanation, no markdown, no wrapping in a full document. Use catalogId from the catalog for models when relevant.`;
 
-export type BuildFullResult = { ok: true; mml: string } | { ok: false; error: string };
-export type BuildIncrementalResult = { ok: true; mmlFragment: string } | { ok: false; error: string };
+export type BuildFullResult = { ok: true; mml: string; usage: Usage | null } | { ok: false; error: string };
+export type BuildIncrementalResult = { ok: true; mmlFragment: string; usage: Usage | null } | { ok: false; error: string };
 
 /**
  * Generate full MML for a new or replacement scene. Uses catalog for model catalogIds.
@@ -29,7 +29,7 @@ export async function buildFull(
   const result = await simpleCompletion(apiKey, model, BUILD_FULL_SYSTEM, userContent);
   if (!result.ok) return result;
   const mml = extractMml(result.content);
-  return { ok: true, mml };
+  return { ok: true, mml, usage: result.usage };
 }
 
 /**
@@ -48,7 +48,7 @@ export async function buildIncremental(
   const result = await simpleCompletion(apiKey, model, BUILD_INCREMENTAL_SYSTEM, userContent);
   if (!result.ok) return result;
   const mmlFragment = extractMml(result.content);
-  return { ok: true, mmlFragment };
+  return { ok: true, mmlFragment, usage: result.usage };
 }
 
 /** Strip markdown code fence (```) if present and trim. Returns raw MML. */

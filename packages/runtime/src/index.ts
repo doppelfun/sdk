@@ -6,7 +6,7 @@
 
 export const RUNTIME_VERSION = "0.1.0";
 
-export { runAgent, type AgentRunOptions } from "./agent.js";
+export { runAgent, type AgentRunOptions, type ToolCallResult } from "./agent.js";
 export { loadConfig, type RuntimeConfig } from "./config.js";
 export { joinSpace, createSpace } from "./hub.js";
 export { createInitialState, type RuntimeState } from "./state.js";

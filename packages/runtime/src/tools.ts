@@ -6,7 +6,9 @@
 import type { DoppelClient } from "@doppel-sdk/core";
 import type { ToolDefinition, Usage } from "./openrouter.js";
 import type { RuntimeState } from "./state.js";
+import { syncMainDocumentFromRegion } from "./state.js";
 import type { RuntimeConfig } from "./config.js";
+import { getRegionBounds } from "./region.js";
 import { buildFull, buildIncremental } from "./buildLlm.js";
 import { checkBalance, spendCredits } from "./hub.js";
 
@@ -75,19 +77,30 @@ function reportBuildUsage(config: RuntimeConfig, usage: Usage | null, descriptio
   });
 }
 
+/** Parse "x,y,z" or "x,z" position hint from build_incremental into { x, y, z }. Returns null if invalid. */
+function parsePositionHint(hint: string): { x: number; y: number; z: number } | null {
+  const parts = hint.split(",").map((s) => s.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const x = Number(parts[0]);
+  const z = Number(parts[parts.length - 1]);
+  const y = parts.length >= 3 ? Number(parts[1]) : 0;
+  if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(y)) return null;
+  return { x, y, z };
+}
+
 // --- Tool definitions (OpenAI/OpenRouter function-calling schema) ---
 
 /** Tool definitions for the Chat LLM. Must match executeTool switch cases. */
 export const CHAT_TOOLS: ToolDefinition[] = [
   toolDef(
     "move",
-    "Move the agent a small amount. Use moveX and moveZ between -0.4 and 0.4 (e.g. 0.2). Never use 1 or -1.",
+    "Move toward a target (another user or build location). Use only when you have a target; use moveX/moveZ 0 when within ~2 m or when no target. Values between -0.4 and 0.4.",
     {
       type: "object",
       properties: {
-        moveX: { type: "number", description: "Horizontal movement, small: -0.4 to 0.4" },
-        moveZ: { type: "number", description: "Forward/back, small: -0.4 to 0.4" },
-        sprint: { type: "boolean", description: "Sprint" },
+        moveX: { type: "number", description: "Horizontal movement toward target, -0.4 to 0.4; 0 to stop" },
+        moveZ: { type: "number", description: "Forward/back toward target, -0.4 to 0.4; 0 to stop" },
+        sprint: { type: "boolean", description: "Sprint when moving toward target" },
         jump: { type: "boolean", description: "Jump" },
       },
       required: ["moveX", "moveZ"],
@@ -193,6 +206,10 @@ export async function executeTool(
         client.sendJoin(regionId);
         state.regionId = regionId;
         state.lastError = null;
+        state.myPosition = null;
+        state.lastBuildTarget = null;
+        state.lastToolRun = null;
+        syncMainDocumentFromRegion(state);
       }
       return { ok: true, summary: `join ${regionId}` };
     }
@@ -200,6 +217,10 @@ export async function executeTool(
     case "get_occupants": {
       const occupants = await client.getOccupants();
       state.occupants = occupants;
+      const self = state.mySessionId
+        ? occupants.find((o) => o.clientId === state.mySessionId && o.position)
+        : null;
+      state.myPosition = self?.position ?? null;
       return { ok: true, summary: `${occupants.length} occupants` };
     }
     case "get_chat_history": {
@@ -222,24 +243,26 @@ export async function executeTool(
       // Pre-check balance (hosted agents only; estimate ~8 base credits × build multiplier)
       const balErr = await preCheckBalance(config, 8 * config.buildCreditMultiplier);
       if (balErr) return { ok: false, error: balErr };
-      const documentId = typeof args.documentId === "string" ? args.documentId : null;
       const catalog = await getCatalogFromEngine(config.engineUrl);
+      const regionBounds = getRegionBounds(state.regionId);
       const result = await buildFull(
         config.openRouterApiKey,
         config.buildLlmModel,
         instruction,
-        catalogToJson(catalog)
+        catalogToJson(catalog),
+        regionBounds
       );
       if (!result.ok) return result;
       reportBuildUsage(config, result.usage, `build_full: ${instruction.slice(0, 80)}`);
-      state.mainDocumentMml = result.mml;
-      if (documentId) {
-        await client.updateDocument(documentId, result.mml);
-        state.mainDocumentId = documentId;
+      const regionDoc = state.documentsByRegion[state.regionId];
+      if (regionDoc) {
+        await client.updateDocument(regionDoc.documentId, result.mml);
+        state.documentsByRegion[state.regionId] = { documentId: regionDoc.documentId, mml: result.mml };
       } else {
         const { documentId: newId } = await client.createDocument(result.mml);
-        state.mainDocumentId = newId;
+        state.documentsByRegion[state.regionId] = { documentId: newId, mml: result.mml };
       }
+      syncMainDocumentFromRegion(state);
       return { ok: true, summary: "built full scene" };
     }
     case "build_incremental": {
@@ -251,33 +274,39 @@ export async function executeTool(
       // Pre-check balance (hosted agents only; estimate ~4 base credits × build multiplier)
       const balErr = await preCheckBalance(config, 4 * config.buildCreditMultiplier);
       if (balErr) return { ok: false, error: balErr };
-      let documentId = typeof args.documentId === "string" ? args.documentId : state.mainDocumentId;
-      const position = typeof args.position === "string" ? args.position : undefined;
+      const positionHint = typeof args.position === "string" ? args.position.trim() : undefined;
+      if (positionHint) {
+        const parsed = parsePositionHint(positionHint);
+        if (parsed) state.lastBuildTarget = { x: parsed.x, z: parsed.z };
+      }
       const catalog = await getCatalogFromEngine(config.engineUrl);
-      const existingMml = state.mainDocumentMml || "";
+      const regionDoc = state.documentsByRegion[state.regionId];
+      const existingMml = regionDoc?.mml ?? "";
+      const regionBounds = getRegionBounds(state.regionId);
       const result = await buildIncremental(
         config.openRouterApiKey,
         config.buildLlmModel,
         instruction,
         existingMml,
         catalogToJson(catalog),
-        position
+        regionBounds,
+        positionHint
       );
       if (!result.ok) return result;
       reportBuildUsage(config, result.usage, `build_incremental: ${instruction.slice(0, 80)}`);
-      state.mainDocumentMml = existingMml ? `${existingMml}\n${result.mmlFragment}` : result.mmlFragment;
-      if (!documentId) {
-        const { documentId: newId } = await client.createDocument(result.mmlFragment);
-        documentId = newId;
-        state.mainDocumentId = newId;
+      const newMml = existingMml ? `${existingMml}\n${result.mmlFragment}` : result.mmlFragment;
+      if (regionDoc) {
+        await client.appendDocument(regionDoc.documentId, result.mmlFragment);
+        state.documentsByRegion[state.regionId] = { documentId: regionDoc.documentId, mml: newMml };
       } else {
-        await client.appendDocument(documentId, result.mmlFragment);
+        const { documentId: newId } = await client.createDocument(result.mmlFragment);
+        state.documentsByRegion[state.regionId] = { documentId: newId, mml: result.mmlFragment };
       }
+      syncMainDocumentFromRegion(state);
       return { ok: true, summary: "appended to scene" };
     }
     case "list_documents": {
       const ids = await client.listDocuments();
-      if (ids.length > 0 && !state.mainDocumentId) state.mainDocumentId = ids[0];
       return { ok: true, summary: `${ids.length} documents` };
     }
     default:

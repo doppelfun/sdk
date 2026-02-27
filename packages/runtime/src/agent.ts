@@ -12,6 +12,7 @@ import {
   pushChat,
   pushOwnerMessage,
   setLastError,
+  syncMainDocumentFromRegion,
   type RuntimeState,
 } from "./state.js";
 import { buildSystemContent, buildUserMessage } from "./prompts.js";
@@ -19,13 +20,17 @@ import type { RuntimeConfigPrompt } from "./prompts.js";
 import { chatCompletion, type Usage } from "./openrouter.js";
 import { CHAT_TOOLS, executeTool } from "./tools.js";
 
+export type ToolCallResult = { ok: true; summary?: string } | { ok: false; error: string };
+
 export type AgentRunOptions = {
-  /** Called when the agent connects (after authenticated). */
-  onConnected?: (regionId: string) => void;
+  /** Called when the agent connects (after authenticated). Receives regionId and engineUrl so you can log where to view the agent. */
+  onConnected?: (regionId: string, engineUrl: string) => void;
   /** Called when the agent disconnects or errors. */
   onDisconnect?: (err?: Error) => void;
   /** Called each tick with a short log line (optional). */
   onTick?: (summary: string) => void;
+  /** Called after each tool execution with name, args JSON, and result. Use to log full tool call responses. */
+  onToolCallResult?: (name: string, args: string, result: ToolCallResult) => void;
   /** Override soul (skips API fetch for soul when set). */
   soul?: string | null;
   /** Override skills (skips API fetch for skills when set). */
@@ -193,13 +198,16 @@ async function runTick(
       sentChatThisTick = true;
     }
     executedThisTick.add(name);
+    const args = typeof tc.function.arguments === "string" ? tc.function.arguments : "";
     const execResult = await executeTool(
       client,
       state,
       config,
-      { name, arguments: tc.function.arguments }
+      { name, arguments: args }
     );
+    options.onToolCallResult?.(name, args, execResult);
     options.onTick?.(`${name}: ${execResult.ok ? execResult.summary ?? "ok" : execResult.error}`);
+    state.lastToolRun = name;
   }
   if (sentChatThisTick) state.lastTickSentChat = true;
 }
@@ -240,12 +248,22 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
         soul: fetched.soul ?? null,
         skills: fetched.skills ?? "",
       };
+      if (skillIds.length > 0) {
+        const gotSkills = Boolean(runtimeConfigPrompt.skills?.trim());
+        console.log(
+          "[agent] Runtime-config: skillIds=",
+          skillIds,
+          "->",
+          gotSkills ? `${runtimeConfigPrompt.skills!.length} chars` : "no skills returned"
+        );
+      }
     } catch (e) {
       console.warn("[agent] Failed to fetch runtime-config, using base prompt only:", e);
       runtimeConfigPrompt = { soul: null, skills: "" };
     }
   }
   const systemContent = buildSystemContent(runtimeConfigPrompt);
+  console.log("[agent] System prompt (on start):\n" + systemContent);
 
   // --- Bootstrap: JWT + engine URL (join or create-then-join) ---
   let jwt: string;
@@ -279,9 +297,10 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     if (typeof p.regionId === "string") {
       state.regionId = p.regionId;
       regionId = p.regionId;
+      syncMainDocumentFromRegion(state);
     }
     if (typeof p.sessionId === "string") state.mySessionId = p.sessionId;
-    options.onConnected?.(state.regionId);
+    options.onConnected?.(state.regionId, engineUrl);
 
     // Register runtime server URL if configured
     if (config.runtimePublicUrl) {
@@ -346,25 +365,29 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     if (typeof p.regionId === "string") {
       state.regionId = p.regionId;
       state.lastError = null;
+      syncMainDocumentFromRegion(state);
     }
   });
 
   await client.connect();
 
-  // --- Tick timer (no reconnect loop; caller can restart on disconnect) ---
-  let tickTimer: ReturnType<typeof setInterval> | null = null;
+  // --- Tick loop: one tick at a time, schedule next only after current tick (and all tool runs) complete ---
+  let tickScheduled: ReturnType<typeof setTimeout> | null = null;
+  let tickInProgress = false;
 
-  const scheduleTick = (): void => {
-    if (tickTimer) return;
-    tickTimer = setInterval(async () => {
-      try {
-        await runTick(client, state, config, systemContent, options);
-      } catch (e) {
+  const runTickThenScheduleNext = (): void => {
+    if (tickInProgress) return;
+    tickInProgress = true;
+    runTick(client, state, config, systemContent, options)
+      .catch((e) => {
         options.onTick?.(`tick error: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    }, config.tickIntervalMs);
+      })
+      .finally(() => {
+        tickInProgress = false;
+        tickScheduled = setTimeout(runTickThenScheduleNext, config.tickIntervalMs);
+      });
   };
 
-  scheduleTick();
+  tickScheduled = setTimeout(runTickThenScheduleNext, config.tickIntervalMs);
   // Note: SDK does not expose the WebSocket; on disconnect the next tick will fail and onDisconnect can be used by caller to restart (e.g. pm2).
 }

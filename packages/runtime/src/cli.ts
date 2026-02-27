@@ -18,14 +18,18 @@ config({ path: resolve(process.cwd(), ".env") });
 config({ path: resolve(__dirname, "..", ".env") });
 
 runAgent({
-  onConnected: (regionId) => {
-    console.log("[agent] Connected, region:", regionId);
+  onConnected: (regionId, engineUrl) => {
+    console.log("[agent] Connected — engine:", engineUrl, "region:", regionId);
+    console.log("[agent] Open the space at this engine URL and join region", regionId, "to see the agent.");
   },
   onDisconnect: (err) => {
     console.error("[agent] Disconnected:", err?.message ?? "unknown");
   },
   onTick: (summary) => {
     console.log("[tick]", summary);
+  },
+  onToolCallResult: (name, args, result) => {
+    console.log("[tool]", name, "args:", args, "->", result.ok ? result.summary ?? "ok" : result.error);
   },
 }).catch((err) => {
   console.error(err);

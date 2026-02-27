@@ -16,6 +16,12 @@ export type RuntimeConfig = {
   tickIntervalMs: number;
   maxChatContext: number;
   maxOwnerMessages: number;
+  /** Whether this agent is platform-hosted (set at runtime from hub, not env). */
+  hosted: boolean;
+  /** How many tokens equal 1 credit (default 1000). */
+  tokensPerCredit: number;
+  /** Multiplier applied to build operations (default 1.5). */
+  buildCreditMultiplier: number;
 };
 
 const DEFAULT_HUB = "http://localhost:4000";
@@ -66,6 +72,14 @@ export function loadConfig(): RuntimeConfig {
   const maxChatContext = parseIntEnv("MAX_CHAT_CONTEXT", DEFAULT_MAX_CHAT, 5, 100);
   const maxOwnerMessages = parseIntEnv("MAX_OWNER_MESSAGES", DEFAULT_MAX_OWNER, 1, 50);
 
+  const tokensPerCredit = parseIntEnv("TOKENS_PER_CREDIT", 1000, 1);
+
+  const rawMultiplier = process.env.BUILD_CREDIT_MULTIPLIER;
+  const parsedMultiplier = rawMultiplier != null ? parseFloat(rawMultiplier) : NaN;
+  const buildCreditMultiplier = Number.isFinite(parsedMultiplier) && parsedMultiplier > 0
+    ? parsedMultiplier
+    : 1.5;
+
   return {
     apiKey,
     hubUrl,
@@ -80,5 +94,8 @@ export function loadConfig(): RuntimeConfig {
     tickIntervalMs,
     maxChatContext,
     maxOwnerMessages,
+    hosted: false, // set at runtime from hub profile
+    tokensPerCredit,
+    buildCreditMultiplier,
   };
 }

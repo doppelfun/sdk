@@ -34,6 +34,8 @@ export type RuntimeState = {
   lastTickSentChat: boolean;
   /** Last chat message we sent; used to show in prompt and avoid repeating. Cleared when new message addressing us arrives. */
   lastAgentChatMessage: string | null;
+  /** UserId of whoever last @mentioned the agent or spoke as owner; used for owner-gating builds. */
+  lastTriggerUserId: string | null;
 };
 
 /** Create initial state for a given region. */
@@ -49,6 +51,7 @@ export function createInitialState(regionId: string): RuntimeState {
     mainDocumentMml: "",
     lastTickSentChat: false,
     lastAgentChatMessage: null,
+    lastTriggerUserId: null,
   };
 }
 

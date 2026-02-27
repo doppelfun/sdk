@@ -5,7 +5,7 @@
 import WebSocket from "ws";
 import { createClient } from "@doppel-sdk/core";
 import type { DoppelClient } from "@doppel-sdk/core";
-import { joinSpace, createSpace } from "./hub.js";
+import { joinSpace, createSpace, getAgentProfile, spendCredits } from "./hub.js";
 import { loadConfig, type RuntimeConfig } from "./config.js";
 import {
   createInitialState,
@@ -15,7 +15,7 @@ import {
   type RuntimeState,
 } from "./state.js";
 import { SYSTEM_PROMPT, buildUserMessage } from "./prompts.js";
-import { chatCompletion } from "./openrouter.js";
+import { chatCompletion, type Usage } from "./openrouter.js";
 import { CHAT_TOOLS, executeTool } from "./tools.js";
 
 export type AgentRunOptions = {
@@ -78,6 +78,30 @@ async function getJwtAndEngineUrl(config: RuntimeConfig): Promise<{
   };
 }
 
+// --- Credit helpers (hosted agents only) ---
+
+/** Convert token usage to credit amount. */
+function tokensToCredits(usage: Usage, tokensPerCredit: number): number {
+  return usage.total_tokens / tokensPerCredit;
+}
+
+/** Report usage to hub (fire-and-forget). Only called when config.hosted is true. */
+function reportUsage(
+  config: RuntimeConfig,
+  usage: Usage | null,
+  description: string,
+  onTick?: (summary: string) => void
+): void {
+  if (!usage || usage.total_tokens === 0) return;
+  const credits = tokensToCredits(usage, config.tokensPerCredit);
+  if (credits <= 0) return;
+  spendCredits(config.hubUrl, config.apiKey, credits, description).then((res) => {
+    if (!res.ok) onTick?.(`credit spend failed: ${res.error}`);
+  }).catch((e) => {
+    onTick?.(`credit spend error: ${e instanceof Error ? e.message : String(e)}`);
+  });
+}
+
 // --- Tick: prompt + LLM + tool execution ---
 
 /**
@@ -118,6 +142,11 @@ async function runTick(
     return;
   }
 
+  // Report chat tick usage for hosted agents (fire-and-forget)
+  if (config.hosted) {
+    reportUsage(config, result.usage, "Chat tick", options.onTick);
+  }
+
   const msg = result.message;
   const toolCalls = msg.tool_calls ?? [];
   if (toolCalls.length === 0) {
@@ -153,6 +182,20 @@ async function runTick(
  */
 export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   const config = loadConfig();
+
+  // --- Bootstrap: check hosted flag from hub ---
+  try {
+    const profileRes = await getAgentProfile(config.hubUrl, config.apiKey);
+    if (profileRes.ok) {
+      config.hosted = profileRes.profile.hosted;
+      if (config.hosted) {
+        options.onTick?.("hosted agent — credit deduction enabled");
+      }
+    }
+  } catch (e) {
+    // Non-fatal: default to not-hosted (no credit deduction)
+    options.onTick?.(`profile check failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   // --- Bootstrap: JWT + engine URL (join or create-then-join) ---
   let jwt: string;
@@ -208,6 +251,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     if (addressingYou || fromOwner) {
       state.lastAgentChatMessage = null;
       state.lastTickSentChat = false;
+      if (userId) state.lastTriggerUserId = userId;
     }
     pushChat(
       state,

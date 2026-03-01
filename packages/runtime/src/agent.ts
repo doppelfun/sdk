@@ -5,7 +5,7 @@
 import WebSocket from "ws";
 import { createClient } from "@doppel-sdk/core";
 import type { DoppelClient } from "@doppel-sdk/core";
-import { joinSpace, createSpace, getAgentProfile, spendCredits } from "./hub.js";
+import { joinSpace, createSpace, spendCredits } from "./hub.js";
 import { loadConfig, type RuntimeConfig } from "./config.js";
 import {
   createInitialState,
@@ -35,28 +35,51 @@ export type AgentRunOptions = {
   soul?: string | null;
   /** Override skills (skips API fetch for skills when set). */
   skills?: string | null;
-  /** Skill IDs to request from runtime-config API (overrides config skillIds when set). */
+  /** Skill IDs to request from the standard skills API (overrides config skillIds when set). */
   skillIds?: string[];
 };
 
-type RuntimeConfigResponse = {
+/** Response from GET /api/agents/me: profile + soul in one request. */
+type AgentBootstrapResponse = {
+  hosted?: boolean;
   soul?: string | null;
-  skills?: string;
-  runtimeServerUrl?: string | null;
 };
 
-async function fetchRuntimeConfig(
+/** Fetch agent profile and soul from GET /api/agents/me (single bootstrap call). */
+async function fetchAgentBootstrap(
   agentApiUrl: string,
-  apiKey: string,
-  skillIds: string[]
-): Promise<RuntimeConfigResponse> {
+  apiKey: string
+): Promise<AgentBootstrapResponse> {
   const base = agentApiUrl.replace(/\/$/, "");
-  const params = skillIds.length > 0 ? `?skillIds=${skillIds.map(encodeURIComponent).join(",")}` : "";
-  const res = await fetch(`${base}/api/agents/me/runtime-config${params}`, {
+  const res = await fetch(`${base}/api/agents/me`, {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
   if (!res.ok) return {};
-  return (await res.json()) as RuntimeConfigResponse;
+  return (await res.json()) as AgentBootstrapResponse;
+}
+
+/** Skill entry from GET /api/skills (ids=...). */
+type SkillEntry = { name?: string; content?: string };
+
+/** Fetch skills by ids from GET /api/skills?ids=... and return concatenated content. */
+async function fetchSkills(
+  agentApiUrl: string,
+  apiKey: string,
+  skillIds: string[]
+): Promise<string> {
+  if (skillIds.length === 0) return "";
+  const base = agentApiUrl.replace(/\/$/, "");
+  const params = `?ids=${skillIds.map(encodeURIComponent).join(",")}`;
+  const res = await fetch(`${base}/api/skills${params}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) return "";
+  const data = (await res.json()) as { skills?: SkillEntry[] };
+  const skills = Array.isArray(data.skills) ? data.skills : [];
+  return skills
+    .map((s) => (typeof s.content === "string" ? s.content : "").trim())
+    .filter(Boolean)
+    .join("\n\n---\n\n");
 }
 
 /** Payload shape for WebSocket "chat" messages from the engine. */
@@ -219,49 +242,41 @@ async function runTick(
 export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   const config = loadConfig();
 
-  // --- Bootstrap: check hosted flag from hub ---
+  // --- Bootstrap: agent + soul in one request, then skills from standard API ---
+  let soul: string | null = null;
+  let skills = "";
+
   try {
-    const profileRes = await getAgentProfile(config.hubUrl, config.apiKey);
-    if (profileRes.ok) {
-      config.hosted = profileRes.profile.hosted;
-      if (config.hosted) {
-        options.onTick?.("hosted agent — credit deduction enabled");
-      }
-    }
+    const bootstrap = await fetchAgentBootstrap(config.agentApiUrl, config.apiKey);
+    if (typeof bootstrap.hosted === "boolean") config.hosted = bootstrap.hosted;
+    if (config.hosted) options.onTick?.("hosted agent — credit deduction enabled");
+    if (bootstrap.soul !== undefined) soul = bootstrap.soul ?? null;
   } catch (e) {
-    // Non-fatal: default to not-hosted (no credit deduction)
-    options.onTick?.(`profile check failed: ${e instanceof Error ? e.message : String(e)}`);
+    options.onTick?.(`bootstrap (agent+soul) failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  // --- Runtime config (soul + skills): options override or fetch from API ---
-  let runtimeConfigPrompt: RuntimeConfigPrompt;
-  if (options.soul !== undefined || options.skills !== undefined) {
-    runtimeConfigPrompt = {
-      soul: options.soul ?? null,
-      skills: options.skills ?? "",
-    };
+  if (options.soul !== undefined) soul = options.soul ?? null;
+  if (options.skills !== undefined) {
+    skills = options.skills ?? "";
   } else {
     const skillIds = options.skillIds ?? config.skillIds;
-    try {
-      const fetched = await fetchRuntimeConfig(config.agentApiUrl, config.apiKey, skillIds);
-      runtimeConfigPrompt = {
-        soul: fetched.soul ?? null,
-        skills: fetched.skills ?? "",
-      };
-      if (skillIds.length > 0) {
-        const gotSkills = Boolean(runtimeConfigPrompt.skills?.trim());
+    if (skillIds.length > 0) {
+      try {
+        skills = await fetchSkills(config.agentApiUrl, config.apiKey, skillIds);
+        const gotSkills = Boolean(skills.trim());
         console.log(
-          "[agent] Runtime-config: skillIds=",
+          "[agent] Skills: skillIds=",
           skillIds,
           "->",
-          gotSkills ? `${runtimeConfigPrompt.skills!.length} chars` : "no skills returned"
+          gotSkills ? `${skills.length} chars` : "no skills returned"
         );
+      } catch (e) {
+        console.warn("[agent] Failed to fetch skills, using soul only:", e);
       }
-    } catch (e) {
-      console.warn("[agent] Failed to fetch runtime-config, using base prompt only:", e);
-      runtimeConfigPrompt = { soul: null, skills: "" };
     }
   }
+
+  const runtimeConfigPrompt: RuntimeConfigPrompt = { soul, skills };
   const systemContent = buildSystemContent(runtimeConfigPrompt);
   console.log("[agent] System prompt (on start):\n" + systemContent);
 

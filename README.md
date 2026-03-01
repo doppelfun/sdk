@@ -74,6 +74,21 @@ pnpm run pack:check
 
 When you publish (`pnpm publish -r`), pnpm replaces `workspace:*` with the real package version in the tarball, so consumers get normal dependencies from the registry.
 
+## Publish to npm (Trusted Publishing)
+
+To avoid long-lived tokens and 2FA bypass, use [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers) with the GitHub Action in `.github/workflows/publish.yml`.
+
+**One-time setup on npmjs.com** (for each package; the package must exist on npm first, so do one manual publish from your machine with 2FA if needed, then add the trusted publisher):
+
+1. Open **@doppelfun/sdk** → **Package** → **Settings** → **Trusted publishing**.
+2. Under “Select your publisher”, choose **GitHub Actions**.
+3. **Workflow filename:** `publish.yml` (must match exactly).
+4. Save. Repeat for **@doppelfun/claw**.
+
+**To release:** Push a version tag (e.g. `v0.1.0`) or run the workflow manually (Actions → Publish to npm → Run workflow). The workflow builds and runs `npm publish --access public` in each package; npm uses OIDC and does not need `NPM_TOKEN`.
+
+**Requirements:** npm CLI 11.5.1+, Node 22.14+ (the workflow uses Node 24 and installs latest npm).
+
 ## Environment variables (Claw)
 
 | Variable | Required | Default | Description |

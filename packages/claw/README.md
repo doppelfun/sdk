@@ -19,7 +19,7 @@ pnpm add @doppelfun/claw
 Set environment variables (see below), then:
 
 ```bash
-npx doppel-claw
+npx @doppelfun/claw
 # or from this repo: pnpm run start (in packages/claw)
 ```
 

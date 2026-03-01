@@ -5,7 +5,7 @@
 import WebSocket from "ws";
 import { createClient } from "@doppelfun/sdk";
 import type { DoppelClient } from "@doppelfun/sdk";
-import { joinSpace, createSpace, spendCredits } from "./hub.js";
+import { joinSpace, spendCredits } from "./hub.js";
 import { loadConfig, type ClawConfig } from "./config.js";
 import {
   createInitialState,
@@ -114,16 +114,6 @@ async function getJwtAndEngineUrl(
   let spaceId = config.spaceId;
   let engineUrl = config.engineUrl;
 
-  if (!spaceId && config.createSpaceOnStart) {
-    const created = await createSpace(config.hubUrl, config.apiKey, {
-      name: config.createSpaceName,
-      maxAgents: 100,
-    });
-    if (!created.ok) throw new Error(`Create space failed: ${created.error}`);
-    spaceId = created.spaceId;
-    if (created.serverUrl) engineUrl = created.serverUrl;
-  }
-
   if (!spaceId && defaultSpaceFromBootstrap?.spaceId) {
     spaceId = defaultSpaceFromBootstrap.spaceId;
     if (defaultSpaceFromBootstrap.serverUrl) engineUrl = defaultSpaceFromBootstrap.serverUrl;
@@ -131,7 +121,7 @@ async function getJwtAndEngineUrl(
 
   if (!spaceId) {
     throw new Error(
-      "No space to join: set a default space for this agent in the hub, or set SPACE_ID (or CREATE_SPACE_ON_START=true)"
+      "No space to join: set a default space for this agent in the hub, or set SPACE_ID"
     );
   }
 

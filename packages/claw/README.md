@@ -48,10 +48,9 @@ Configuration is read from environment variables (and optionally overridden by t
 |----------|----------|---------|-------------|
 | DOPPEL_AGENT_API_KEY | Yes | — | API key for the hub. |
 | OPENROUTER_API_KEY | Yes | — | OpenRouter API key for Chat and Build LLMs. |
-| SPACE_ID | No* | — | Space to join. *Required unless CREATE_SPACE_ON_START=true. |
+| SPACE_ID | No* | — | Space to join. *Required unless the agent has a default space set in the hub. |
 | HUB_URL | No | https://doppel.fun | Hub base URL. |
 | ENGINE_URL | No | https://your-plot-url.com | Engine base URL. |
-| CREATE_SPACE_NAME | No | Agent space | Name when creating a space. |
 | OWNER_USER_ID | No | — | Doppel user id; their in-world chat is treated as owner commands. |
 | CHAT_LLM_MODEL | No | openrouter/auto | OpenRouter model for the agent loop. |
 | BUILD_LLM_MODEL | No | openrouter/auto | OpenRouter model for MML generation. |
@@ -75,7 +74,7 @@ Configuration is read from environment variables (and optionally overridden by t
 - **`runAgent(options?)`** — Starts the agent. Options: `onConnected`, `onDisconnect`, `onTick`, `onToolCallResult`, `soul`, `skills`, `skillIds`.
 - **`loadConfig()`** — Loads `ClawConfig` from environment (call after loading dotenv).
 - **`createInitialState(regionId)`** — Creates initial `ClawState`.
-- **`joinSpace(hubUrl, apiKey, spaceId)`**, **`createSpace(hubUrl, apiKey, options)`** — Hub helpers.
+- **`joinSpace(hubUrl, apiKey, spaceId)`** — Hub helper to join a space and get JWT + engine URL.
 - **`CHAT_TOOLS`**, **`executeTool(client, state, config, tool)`** — Tool definitions and execution (for custom loops).
 
 ## Requirements

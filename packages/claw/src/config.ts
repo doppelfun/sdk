@@ -9,8 +9,6 @@ export type ClawConfig = {
   agentApiUrl: string;
   engineUrl: string;
   spaceId: string | null;
-  createSpaceOnStart: boolean;
-  createSpaceName: string;
   openRouterApiKey: string;
   chatLlmModel: string;
   buildLlmModel: string;
@@ -70,9 +68,6 @@ export function loadConfig(): ClawConfig {
   const agentApiUrl = trimUrl(process.env.AGENT_API_URL?.trim() || hubUrl);
   const engineUrl = trimUrl(process.env.ENGINE_URL?.trim() || DEFAULT_ENGINE);
   const spaceId = process.env.SPACE_ID?.trim() || null;
-  const createSpaceOnStart =
-    process.env.CREATE_SPACE_ON_START === "true" || process.env.CREATE_SPACE_ON_START === "1";
-  const createSpaceName = process.env.CREATE_SPACE_NAME?.trim() || "Agent space";
   const ownerUserId = process.env.OWNER_USER_ID?.trim() || null;
   const clawPublicUrl = process.env.CLAW_PUBLIC_URL?.trim() || process.env.AGENT_SERVER_URL?.trim() || null;
   const skillIdsRaw = process.env.SKILL_IDS?.trim();
@@ -99,8 +94,6 @@ export function loadConfig(): ClawConfig {
     agentApiUrl,
     engineUrl,
     spaceId,
-    createSpaceOnStart,
-    createSpaceName,
     openRouterApiKey,
     chatLlmModel: process.env.CHAT_LLM_MODEL?.trim() || "openrouter/auto",
     buildLlmModel: process.env.BUILD_LLM_MODEL?.trim() || "openrouter/auto",

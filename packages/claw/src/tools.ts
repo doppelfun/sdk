@@ -168,8 +168,9 @@ export async function executeTool(
   tool: ToolCallExecution
 ): Promise<ExecuteToolResult> {
   let args: Record<string, unknown>;
+  const rawArgs = typeof tool.arguments === "string" && tool.arguments.trim() ? tool.arguments : "{}";
   try {
-    args = JSON.parse(tool.arguments) as Record<string, unknown>;
+    args = JSON.parse(rawArgs) as Record<string, unknown>;
   } catch {
     return { ok: false, error: "Invalid tool arguments JSON" };
   }

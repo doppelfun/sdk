@@ -12,7 +12,7 @@ This plan covers: (1) pulling skill files and soul from the API into the agent r
   Single “personality” block for the LLM. Distinct from `description` (display/bio).  
   Format when set: `"You are a helpful world builder agent with these personality traits: {trait1}, {trait2}."`
 
-- **`agent.clawServerUrl`** (text, nullable)  
+- **`agent.serverUrl`** (text, nullable)  
   Base URL of the server/process running this agent’s runtime (e.g. `https://agent-runner-abc.doppel.fun`). Used to target that server for restart, health checks, or future control APIs. Distinct from `space.serverUrl` (engine for a space).
 
 - Add DB migration(s) for both columns.
@@ -30,10 +30,10 @@ This plan covers: (1) pulling skill files and soul from the API into the agent r
 ### 1.3 Claw config API
 
 - **New endpoint:** `GET /api/agents/me/claw-config` (Bearer API key).
-- **Response:** `{ soul: string | null, skills: string, clawServerUrl: string | null }`
+- **Response:** `{ soul: string | null, skills: string, serverUrl: string | null }`
   - `soul`: from `agent.soul`.
   - `skills`: single concatenated string of skill file content (see 1.4), optionally filtered (see below).
-  - `clawServerUrl`: from `agent.clawServerUrl` (so claw or dashboard can read it).
+  - `serverUrl`: from `agent.serverUrl` (so claw or dashboard can read it).
 - Auth: reuse existing agent API-key auth (e.g. `getAgentFromRequest`).
 
 **Skills filter (query params):** Allow the client to request which skills are included in `skills`.
@@ -41,7 +41,7 @@ This plan covers: (1) pulling skill files and soul from the API into the agent r
 - **Behavior:** API resolves the set of skills (from global source and/or agent-scoped), then filters to the requested IDs if query params are present. Concatenate only the filtered set and return in `skills`. Invalid or unknown IDs are ignored (or return 400 if you prefer strict validation).
 - **Claw use:** The SDK can pass e.g. `SKILL_IDS` env (comma-separated) or `runAgent({ skillIds: ['doppel'] })` so the fetch includes only those skills, reducing prompt size when not all skills are needed.
 
-**Alternative:** Extend `GET /api/agents/me` with `soul`, `skills`, and `clawServerUrl` instead of a new endpoint. Prefer a dedicated `claw-config` if you want to keep profile and claw config separate.
+**Alternative:** Extend `GET /api/agents/me` with `soul`, `skills`, and `serverUrl` instead of a new endpoint. Prefer a dedicated `claw-config` if you want to keep profile and claw config separate.
 
 ### 1.4 Skill files source (API side)
 
@@ -51,9 +51,9 @@ This plan covers: (1) pulling skill files and soul from the API into the agent r
 ### 1.5 Register/update claw server URL
 
 - **Write:** Allow the runtime (or deployer) to set/update the agent’s runtime server URL.
-  - **Option A:** `PATCH /api/agents/me` with body `{ clawServerUrl: string | null }` (agent auth). Validate URL format; update `agent.clawServerUrl`.
+  - **Option A:** `PATCH /api/agents/me` with body `{ serverUrl: string | null }` (agent auth). Validate URL format; update `agent.serverUrl`.
   - **Option B:** New `PUT /api/agents/me/claw-server` with body `{ url: string | null }`. Same auth and validation.
-- **Read:** Expose `clawServerUrl` in `GET /api/agents/me` and in `GET /api/agents/me/claw-config` so the platform (and claw) can use it for restart/targeting.
+- **Read:** Expose `serverUrl` in `GET /api/agents/me` and in `GET /api/agents/me/claw-config` so the platform (and claw) can use it for restart/targeting.
 
 ### 1.6 Edit soul (owner, agent page)
 
@@ -77,9 +77,9 @@ This plan covers: (1) pulling skill files and soul from the API into the agent r
 
 - In `runAgent()` (after `loadConfig()`, before or after resolving JWT/engine):
   - `GET {baseUrl}/api/agents/me/claw-config` with `Authorization: Bearer {apiKey}`. Optionally append query params to filter skills (e.g. `?skillIds=doppel,doppel-block-builder` or `?skills=doppel&skills=doppel-block-builder` per API contract).
-  - Parse `{ soul, skills, clawServerUrl }`.
+  - Parse `{ soul, skills, serverUrl }`.
   - On 4xx/5xx or network error: either fail startup or proceed with empty soul/skills and log a warning.
-- Pass the result through (e.g. `clawConfig: { soul, skills, clawServerUrl }`) into the tick or prompt builder.
+- Pass the result through (e.g. `clawConfig: { soul, skills, serverUrl }`) into the tick or prompt builder.
 - **Skill filter:** Support optional config (e.g. env `SKILL_IDS` comma-separated or `runAgent({ skillIds: string[] })`) and pass through as query params so only requested skills are returned and injected into the prompt.
 
 ### 2.3 Build system message
@@ -93,7 +93,7 @@ This plan covers: (1) pulling skill files and soul from the API into the agent r
 
 ### 2.4 Register claw server URL at startup
 
-- If the claw knows its own public base URL (e.g. env `CLAW_PUBLIC_URL` or `AGENT_SERVER_URL`), after startup call the write endpoint once to set `agent.clawServerUrl` (e.g. `PATCH /api/agents/me` or `PUT /api/agents/me/claw-server`).
+- If the claw knows its own public base URL (e.g. env `CLAW_PUBLIC_URL` or `AGENT_SERVER_URL`), after startup call the write endpoint once to set `agent.serverUrl` (e.g. `PATCH /api/agents/me` or `PUT /api/agents/me/claw-server`).
 - If not set (e.g. local dev), skip the update or leave existing DB value unchanged.
 
 ### 2.5 Config / env
@@ -108,9 +108,9 @@ This plan covers: (1) pulling skill files and soul from the API into the agent r
 
 ## 3. Using claw server URL (restart, etc.)
 
-- **Restart:** Backend or admin reads `agent.clawServerUrl`, then calls e.g. `POST {clawServerUrl}/restart` (or your chosen contract) with appropriate auth.
-- **Health:** Same base URL for e.g. `GET {clawServerUrl}/health` if the claw exposes it.
-- Index on `clawServerUrl` only if you need to query “all agents on this server”; otherwise optional.
+- **Restart:** Backend or admin reads `agent.serverUrl`, then calls e.g. `POST {serverUrl}/restart` (or your chosen contract) with appropriate auth.
+- **Health:** Same base URL for e.g. `GET {serverUrl}/health` if the claw exposes it.
+- Index on `serverUrl` only if you need to query “all agents on this server”; otherwise optional.
 
 ---
 
@@ -118,10 +118,10 @@ This plan covers: (1) pulling skill files and soul from the API into the agent r
 
 | Area | Change |
 |------|--------|
-| **DB (doppel-app)** | Add `agent.soul` (text, nullable), `agent.clawServerUrl` (text, nullable); migrations. |
+| **DB (doppel-app)** | Add `agent.soul` (text, nullable), `agent.serverUrl` (text, nullable); migrations. |
 | **Create-space** | When creating agent, set `soul` from personality traits (sentence format). |
-| **API (doppel-app)** | `GET /api/agents/me/claw-config` → `{ soul, skills, clawServerUrl }`; optional query filter for skills (e.g. `skillIds`); implement `skills` as global concatenation for v1. |
-| **API (doppel-app)** | `PATCH /api/agents/me` or `PUT /api/agents/me/claw-server` to set/clear `clawServerUrl`; expose in GET /api/agents/me. |
+| **API (doppel-app)** | `GET /api/agents/me/claw-config` → `{ soul, skills, serverUrl }`; optional query filter for skills (e.g. `skillIds`); implement `skills` as global concatenation for v1. |
+| **API (doppel-app)** | `PATCH /api/agents/me` or `PUT /api/agents/me/claw-server` to set/clear `serverUrl`; expose in GET /api/agents/me. |
 | **API (doppel-app)** | `PATCH /api/accounts/me/agents/[id]` with `{ soul }` for owner to edit soul; return `soul` when fetching owned agent. |
 | **Agent page (doppel-app)** | If user owns agent, show Soul section with editable textarea + Save; call PATCH to update. |
 | **Claw (doppel-sdk)** | Fetch claw config at startup; build `systemContent = SYSTEM_PROMPT + soul + skills`; pass to Chat LLM each tick. |

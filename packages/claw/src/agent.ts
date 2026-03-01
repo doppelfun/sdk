@@ -39,10 +39,11 @@ export type AgentRunOptions = {
   skillIds?: string[];
 };
 
-/** Response from GET /api/agents/me: profile + soul in one request. */
+/** Response from GET /api/agents/me: profile, soul, and default space. */
 type AgentBootstrapResponse = {
   hosted?: boolean;
   soul?: string | null;
+  defaultSpace?: { spaceId: string; serverUrl: string | null } | null;
 };
 
 /** Fetch agent profile and soul from GET /api/agents/me (single bootstrap call). */
@@ -99,8 +100,12 @@ type ErrorPayload = { code?: string; error?: string; regionId?: string };
 
 /**
  * Resolve engine URL and JWT: join existing space or create then join.
+ * defaultSpaceFromBootstrap: from GET /api/agents/me (defaultSpace), used when SPACE_ID env is not set.
  */
-async function getJwtAndEngineUrl(config: ClawConfig): Promise<{
+async function getJwtAndEngineUrl(
+  config: ClawConfig,
+  defaultSpaceFromBootstrap?: { spaceId: string; serverUrl: string | null } | null
+): Promise<{
   jwt: string;
   engineUrl: string;
   spaceId: string;
@@ -119,7 +124,16 @@ async function getJwtAndEngineUrl(config: ClawConfig): Promise<{
     if (created.serverUrl) engineUrl = created.serverUrl;
   }
 
-  if (!spaceId) throw new Error("SPACE_ID is required (or set CREATE_SPACE_ON_START=true)");
+  if (!spaceId && defaultSpaceFromBootstrap?.spaceId) {
+    spaceId = defaultSpaceFromBootstrap.spaceId;
+    if (defaultSpaceFromBootstrap.serverUrl) engineUrl = defaultSpaceFromBootstrap.serverUrl;
+  }
+
+  if (!spaceId) {
+    throw new Error(
+      "No space to join: set a default space for this agent in the hub, or set SPACE_ID (or CREATE_SPACE_ON_START=true)"
+    );
+  }
 
   const join = await joinSpace(config.hubUrl, config.apiKey, spaceId);
   if (!join.ok) throw new Error(`Join space failed: ${join.error}`);
@@ -129,7 +143,7 @@ async function getJwtAndEngineUrl(config: ClawConfig): Promise<{
     jwt: join.jwt,
     engineUrl,
     spaceId,
-    regionId: "0_0",
+    regionId: join.regionId ?? "0_0",
   };
 }
 
@@ -242,12 +256,13 @@ async function runTick(
 export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   const config = loadConfig();
 
-  // --- Bootstrap: agent + soul in one request, then skills from standard API ---
+  // --- Bootstrap: agent + soul + defaultSpace in one request, then skills from standard API ---
   let soul: string | null = null;
   let skills = "";
+  let bootstrap: AgentBootstrapResponse = {};
 
   try {
-    const bootstrap = await fetchAgentBootstrap(config.agentApiUrl, config.apiKey);
+    bootstrap = await fetchAgentBootstrap(config.agentApiUrl, config.apiKey);
     if (typeof bootstrap.hosted === "boolean") config.hosted = bootstrap.hosted;
     if (config.hosted) options.onTick?.("hosted agent — credit deduction enabled");
     if (bootstrap.soul !== undefined) soul = bootstrap.soul ?? null;
@@ -286,7 +301,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   let spaceId: string;
   let regionId: string;
   try {
-    const resolved = await getJwtAndEngineUrl(config);
+    const resolved = await getJwtAndEngineUrl(config, bootstrap?.defaultSpace ?? null);
     jwt = resolved.jwt;
     engineUrl = resolved.engineUrl;
     spaceId = resolved.spaceId;
@@ -327,13 +342,13 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
             "Content-Type": "application/json",
             Authorization: `Bearer ${config.apiKey}`,
           },
-          body: JSON.stringify({ clawServerUrl: config.clawPublicUrl }),
+          body: JSON.stringify({ serverUrl: config.clawPublicUrl }),
         });
         if (!res.ok) {
-          console.warn("[agent] Failed to register clawServerUrl:", res.status);
+          console.warn("[agent] Failed to register serverUrl:", res.status);
         }
       } catch (e) {
-        console.warn("[agent] Failed to register clawServerUrl:", e);
+        console.warn("[agent] Failed to register serverUrl:", e);
       }
     }
   });

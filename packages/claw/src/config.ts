@@ -24,7 +24,7 @@ export type ClawConfig = {
   tokensPerCredit: number;
   /** Multiplier applied to build operations (default 1.5). */
   buildCreditMultiplier: number;
-  /** Optional: public URL of this claw (for PATCH /api/agents/me clawServerUrl). */
+  /** Optional: public URL of this claw (for PATCH /api/agents/me serverUrl). */
   clawPublicUrl: string | null;
   /** Optional: skill IDs to request from claw-config (e.g. ["doppel", "doppel-block-builder"]). */
   skillIds: string[];

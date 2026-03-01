@@ -4,7 +4,7 @@
  */
 
 export type JoinSpaceResult =
-  | { ok: true; jwt: string; serverUrl: string; spaceId: string }
+  | { ok: true; jwt: string; serverUrl: string; spaceId: string; regionId?: string }
   | { ok: false; error: string; status?: number };
 
 export type CreateSpaceResult =
@@ -81,19 +81,22 @@ export async function joinSpace(
   const base = normalizeHubUrl(hubUrl);
   const res = await hubPost(`${base}/api/spaces/${encodeURIComponent(spaceId)}/join`, apiKey);
   if (!res.ok) return res;
-  let data: { jwt?: string; serverUrl?: string; spaceId?: string };
+  let data: { jwt?: string; serverUrl?: string; spaceId?: string; regionId?: string };
   try {
-    data = JSON.parse(res.text) as { jwt?: string; serverUrl?: string; spaceId?: string };
+    data = JSON.parse(res.text) as { jwt?: string; serverUrl?: string; spaceId?: string; regionId?: string };
   } catch {
     return { ok: false, error: "Invalid JSON from hub" };
   }
   const jwt = data.jwt;
   if (!jwt || typeof jwt !== "string") return { ok: false, error: "Hub response missing jwt" };
+  const regionId =
+    typeof data.regionId === "string" && data.regionId.trim() ? data.regionId.trim() : "0_0";
   return {
     ok: true,
     jwt,
     serverUrl: typeof data.serverUrl === "string" ? data.serverUrl : base,
     spaceId: typeof data.spaceId === "string" ? data.spaceId : spaceId,
+    regionId,
   };
 }
 

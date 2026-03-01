@@ -3,11 +3,11 @@
  * Each tool is a function the Chat LLM can call; executeTool runs it and updates state.
  */
 
-import type { DoppelClient } from "@doppel-sdk/core";
+import type { DoppelClient } from "@doppelfun/sdk";
 import type { ToolDefinition, Usage } from "./openrouter.js";
-import type { RuntimeState } from "./state.js";
+import type { ClawState } from "./state.js";
 import { syncMainDocumentFromRegion } from "./state.js";
-import type { RuntimeConfig } from "./config.js";
+import type { ClawConfig } from "./config.js";
 import { getRegionBounds } from "./region.js";
 import { buildFull, buildIncremental } from "./buildLlm.js";
 import { checkBalance, spendCredits } from "./hub.js";
@@ -50,7 +50,7 @@ function tokensToCredits(usage: Usage, tokensPerCredit: number): number {
 }
 
 /** Owner gate: if hosted + ownerUserId is set, only owner can trigger builds. */
-function checkOwnerGate(config: RuntimeConfig, state: RuntimeState): string | null {
+function checkOwnerGate(config: ClawConfig, state: ClawState): string | null {
   if (!config.hosted) return null;
   if (!config.ownerUserId) return null;
   if (state.lastTriggerUserId === config.ownerUserId) return null;
@@ -58,7 +58,7 @@ function checkOwnerGate(config: RuntimeConfig, state: RuntimeState): string | nu
 }
 
 /** Pre-check balance for hosted agents. Returns error string or null. */
-async function preCheckBalance(config: RuntimeConfig, minCredits: number): Promise<string | null> {
+async function preCheckBalance(config: ClawConfig, minCredits: number): Promise<string | null> {
   if (!config.hosted) return null;
   const res = await checkBalance(config.hubUrl, config.apiKey);
   if (!res.ok) return `Balance check failed: ${res.error}`;
@@ -68,7 +68,7 @@ async function preCheckBalance(config: RuntimeConfig, minCredits: number): Promi
 }
 
 /** Report build usage to hub. Fire-and-forget; logs failures but never crashes. */
-function reportBuildUsage(config: RuntimeConfig, usage: Usage | null, description: string): void {
+function reportBuildUsage(config: ClawConfig, usage: Usage | null, description: string): void {
   if (!config.hosted || !usage || usage.total_tokens === 0) return;
   const credits = tokensToCredits(usage, config.tokensPerCredit) * config.buildCreditMultiplier;
   if (credits <= 0) return;
@@ -163,8 +163,8 @@ export type ExecuteToolResult = { ok: true; summary?: string } | { ok: false; er
  */
 export async function executeTool(
   client: DoppelClient,
-  state: RuntimeState,
-  config: RuntimeConfig,
+  state: ClawState,
+  config: ClawConfig,
   tool: ToolCallExecution
 ): Promise<ExecuteToolResult> {
   let args: Record<string, unknown>;

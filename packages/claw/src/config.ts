@@ -1,11 +1,11 @@
 /**
- * Runtime config from ENV. Call loadConfig() after dotenv so env vars are set.
+ * Claw config from ENV. Call loadConfig() after dotenv so env vars are set.
  */
 
-export type RuntimeConfig = {
+export type ClawConfig = {
   apiKey: string;
   hubUrl: string;
-  /** Base URL for agent API (runtime-config, PATCH me). Defaults to hubUrl. */
+  /** Base URL for agent API (claw-config, PATCH me). Defaults to hubUrl. */
   agentApiUrl: string;
   engineUrl: string;
   spaceId: string | null;
@@ -24,9 +24,9 @@ export type RuntimeConfig = {
   tokensPerCredit: number;
   /** Multiplier applied to build operations (default 1.5). */
   buildCreditMultiplier: number;
-  /** Optional: public URL of this runtime (for PATCH /api/agents/me runtimeServerUrl). */
-  runtimePublicUrl: string | null;
-  /** Optional: skill IDs to request from runtime-config (e.g. ["doppel", "doppel-block-builder"]). */
+  /** Optional: public URL of this claw (for PATCH /api/agents/me clawServerUrl). */
+  clawPublicUrl: string | null;
+  /** Optional: skill IDs to request from claw-config (e.g. ["doppel", "doppel-block-builder"]). */
   skillIds: string[];
 };
 
@@ -59,7 +59,7 @@ function trimUrl(s: string): string {
 /**
  * Load config from process.env. Throws if required vars (DOPPEL_AGENT_API_KEY, OPENROUTER_API_KEY) are missing.
  */
-export function loadConfig(): RuntimeConfig {
+export function loadConfig(): ClawConfig {
   const apiKey = process.env.DOPPEL_AGENT_API_KEY?.trim();
   if (!apiKey) throw new Error("DOPPEL_AGENT_API_KEY is required");
 
@@ -74,7 +74,7 @@ export function loadConfig(): RuntimeConfig {
     process.env.CREATE_SPACE_ON_START === "true" || process.env.CREATE_SPACE_ON_START === "1";
   const createSpaceName = process.env.CREATE_SPACE_NAME?.trim() || "Agent space";
   const ownerUserId = process.env.OWNER_USER_ID?.trim() || null;
-  const runtimePublicUrl = process.env.RUNTIME_PUBLIC_URL?.trim() || process.env.AGENT_SERVER_URL?.trim() || null;
+  const clawPublicUrl = process.env.CLAW_PUBLIC_URL?.trim() || process.env.AGENT_SERVER_URL?.trim() || null;
   const skillIdsRaw = process.env.SKILL_IDS?.trim();
   const skillIds =
     skillIdsRaw != null && skillIdsRaw !== ""
@@ -111,7 +111,7 @@ export function loadConfig(): RuntimeConfig {
     hosted: false, // set at runtime from hub profile
     tokensPerCredit,
     buildCreditMultiplier,
-    runtimePublicUrl: runtimePublicUrl ? trimUrl(runtimePublicUrl) : null,
+    clawPublicUrl: clawPublicUrl ? trimUrl(clawPublicUrl) : null,
     skillIds,
   };
 }

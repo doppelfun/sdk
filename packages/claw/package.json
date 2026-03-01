@@ -1,5 +1,5 @@
 {
-  "name": "@doppel-sdk/runtime",
+  "name": "@doppelfun/claw",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -18,10 +18,10 @@
     "run": "pnpm run build && pnpm run start"
   },
   "bin": {
-    "doppel-sdk-run": "./dist/cli.js"
+    "doppel-claw": "./dist/cli.js"
   },
   "dependencies": {
-    "@doppel-sdk/core": "workspace:*",
+    "@doppelfun/sdk": "workspace:*",
     "dotenv": "^16.4.5",
     "ws": "^8.18.0"
   },

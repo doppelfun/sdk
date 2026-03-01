@@ -3,8 +3,8 @@
  * Keeps prompt text and formatting logic in one place.
  */
 
-import type { RuntimeConfig } from "./config.js";
-import type { RuntimeState } from "./state.js";
+import type { ClawConfig } from "./config.js";
+import type { ClawState } from "./state.js";
 
 /** System prompt for the Chat LLM. Describes role, chat semantics, and tool usage. */
 export const SYSTEM_PROMPT = `You are an agent in a 3D Doppel space. You can move, chat, emote, join regions, list occupants, read chat history, and build (create or append MML scene content).
@@ -18,7 +18,7 @@ For building: use build_full for a new or full scene; use build_incremental to a
 
 Movement: Only move when you have a target—(1) another user to approach, or (2) a build location you are going to (Build target). Do not wander or move randomly. Move toward the target with small steps (moveX, moveZ). When you are within about 2 m of the target, stop: use moveX: 0, moveZ: 0 (or do not call move). When you have no target, do not call move.`;
 
-export type RuntimeConfigPrompt = {
+export type ClawConfigPrompt = {
   soul: string | null;
   skills: string;
 };
@@ -26,13 +26,13 @@ export type RuntimeConfigPrompt = {
 /**
  * Build full system message: base SYSTEM_PROMPT + soul + skills.
  */
-export function buildSystemContent(runtimeConfig: RuntimeConfigPrompt): string {
+export function buildSystemContent(clawConfig: ClawConfigPrompt): string {
   let content = SYSTEM_PROMPT;
-  if (runtimeConfig.soul && runtimeConfig.soul.trim()) {
-    content += "\n\n" + runtimeConfig.soul.trim();
+  if (clawConfig.soul && clawConfig.soul.trim()) {
+    content += "\n\n" + clawConfig.soul.trim();
   }
-  if (runtimeConfig.skills && runtimeConfig.skills.trim()) {
-    content += "\n\n---\n\nSkills:\n\n" + runtimeConfig.skills.trim();
+  if (clawConfig.skills && clawConfig.skills.trim()) {
+    content += "\n\n---\n\nSkills:\n\n" + clawConfig.skills.trim();
   }
   return content;
 }
@@ -59,7 +59,7 @@ const HINT_NO_CONTEXT =
  * Build the user message for one tick: current region, occupants, errors, chat, owner messages.
  * Used by the Chat LLM each tick to decide which tools to call.
  */
-export function buildUserMessage(state: RuntimeState, config: RuntimeConfig): string {
+export function buildUserMessage(state: ClawState, config: ClawConfig): string {
   const parts: string[] = [];
 
   parts.push(`Current region: ${state.regionId}.`);

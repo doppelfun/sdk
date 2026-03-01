@@ -1,10 +1,10 @@
 /**
- * In-memory runtime state for the agent loop.
+ * In-memory claw state for the agent loop.
  * Holds region, occupants, chat, errors, owner messages, and build state.
  * One document per region in documentsByRegion; mainDocumentId/mainDocumentMml mirror the current region's doc.
  */
 
-import type { Occupant } from "@doppel-sdk/core";
+import type { Occupant } from "@doppelfun/sdk";
 
 /** One @mention in a chat message (sessionId + username). */
 export type ChatMention = { sessionId: string; username: string };
@@ -30,7 +30,7 @@ export type Position3 = { x: number; y: number; z: number };
 /** Build target to walk toward (x,z only). */
 export type BuildTarget = { x: number; z: number };
 
-export type RuntimeState = {
+export type ClawState = {
   regionId: string;
   mySessionId: string | null;
   occupants: Occupant[];
@@ -57,7 +57,7 @@ export type RuntimeState = {
 };
 
 /** Create initial state for a given region. */
-export function createInitialState(regionId: string): RuntimeState {
+export function createInitialState(regionId: string): ClawState {
   return {
     regionId,
     mySessionId: null,
@@ -78,27 +78,27 @@ export function createInitialState(regionId: string): RuntimeState {
 }
 
 /** Sync mainDocumentId and mainDocumentMml from the current region's document. Call after join_region or when updating a region's doc. */
-export function syncMainDocumentFromRegion(state: RuntimeState): void {
+export function syncMainDocumentFromRegion(state: ClawState): void {
   const doc = state.documentsByRegion[state.regionId];
   state.mainDocumentId = doc?.documentId ?? null;
   state.mainDocumentMml = doc?.mml ?? "";
 }
 
 /** Append chat entry; keep at most max. */
-export function pushChat(state: RuntimeState, entry: ChatEntry, max: number): void {
+export function pushChat(state: ClawState, entry: ChatEntry, max: number): void {
   state.chat.push(entry);
   if (state.chat.length > max) state.chat.shift();
 }
 
 /** Append owner message; keep at most max. */
-export function pushOwnerMessage(state: RuntimeState, text: string, max: number): void {
+export function pushOwnerMessage(state: ClawState, text: string, max: number): void {
   state.ownerMessages.push({ text, at: Date.now() });
   if (state.ownerMessages.length > max) state.ownerMessages.shift();
 }
 
 /** Set last error (e.g. region_boundary). Optional regionId for join_region hint. */
 export function setLastError(
-  state: RuntimeState,
+  state: ClawState,
   code: string,
   message: string,
   regionId?: string

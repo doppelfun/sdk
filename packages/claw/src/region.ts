@@ -1,5 +1,5 @@
 /**
- * Region bounds for the runtime. Matches engine convention: regionId "cx_cz", REGION_SIZE per side.
+ * Region bounds for the claw. Matches engine convention: regionId "cx_cz", REGION_SIZE per side.
  * Used so build LLM places entities above y=0 and within the current region's grid.
  */
 

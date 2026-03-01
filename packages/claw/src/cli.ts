@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * CLI entrypoint for the Doppel runtime agent.
+ * CLI entrypoint for the Doppel claw agent.
  * Loads .env (repo root, cwd, then package dir), then runs the agent until exit.
  * Usage: pnpm run start | node dist/cli.js
  */
@@ -12,7 +12,7 @@ import { runAgent } from "./agent.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Load .env in order: repo root (doppel-sdk/.env when run from packages/runtime), cwd, package dir
+// Load .env in order: repo root (doppel-sdk/.env when run from packages/claw), cwd, package dir
 config({ path: resolve(__dirname, "..", "..", "..", ".env") });
 config({ path: resolve(process.cwd(), ".env") });
 config({ path: resolve(__dirname, "..", ".env") });

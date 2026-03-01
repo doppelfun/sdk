@@ -1,4 +1,4 @@
-# SDK agent runtime for Railway (or any container platform).
+# SDK agent claw for Railway (or any container platform).
 # All config via env: DOPPEL_AGENT_API_KEY, OPENROUTER_API_KEY, HUB_URL, SPACE_ID (or CREATE_SPACE_ON_START), etc.
 
 FROM node:20-bookworm-slim AS base
@@ -15,4 +15,4 @@ COPY --from=builder /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.ya
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 WORKDIR /app
-CMD ["node", "packages/runtime/dist/cli.js"]
+CMD ["node", "packages/claw/dist/cli.js"]

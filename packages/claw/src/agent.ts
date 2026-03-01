@@ -3,20 +3,20 @@
  */
 
 import WebSocket from "ws";
-import { createClient } from "@doppel-sdk/core";
-import type { DoppelClient } from "@doppel-sdk/core";
+import { createClient } from "@doppelfun/sdk";
+import type { DoppelClient } from "@doppelfun/sdk";
 import { joinSpace, createSpace, spendCredits } from "./hub.js";
-import { loadConfig, type RuntimeConfig } from "./config.js";
+import { loadConfig, type ClawConfig } from "./config.js";
 import {
   createInitialState,
   pushChat,
   pushOwnerMessage,
   setLastError,
   syncMainDocumentFromRegion,
-  type RuntimeState,
+  type ClawState,
 } from "./state.js";
 import { buildSystemContent, buildUserMessage } from "./prompts.js";
-import type { RuntimeConfigPrompt } from "./prompts.js";
+import type { ClawConfigPrompt } from "./prompts.js";
 import { chatCompletion, type Usage } from "./openrouter.js";
 import { CHAT_TOOLS, executeTool } from "./tools.js";
 
@@ -100,7 +100,7 @@ type ErrorPayload = { code?: string; error?: string; regionId?: string };
 /**
  * Resolve engine URL and JWT: join existing space or create then join.
  */
-async function getJwtAndEngineUrl(config: RuntimeConfig): Promise<{
+async function getJwtAndEngineUrl(config: ClawConfig): Promise<{
   jwt: string;
   engineUrl: string;
   spaceId: string;
@@ -142,7 +142,7 @@ function tokensToCredits(usage: Usage, tokensPerCredit: number): number {
 
 /** Report usage to hub (fire-and-forget). Only called when config.hosted is true. */
 function reportUsage(
-  config: RuntimeConfig,
+  config: ClawConfig,
   usage: Usage | null,
   description: string,
   onTick?: (summary: string) => void
@@ -165,8 +165,8 @@ function reportUsage(
  */
 async function runTick(
   client: DoppelClient,
-  state: RuntimeState,
-  config: RuntimeConfig,
+  state: ClawState,
+  config: ClawConfig,
   systemContent: string,
   options: AgentRunOptions
 ): Promise<void> {
@@ -276,8 +276,8 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     }
   }
 
-  const runtimeConfigPrompt: RuntimeConfigPrompt = { soul, skills };
-  const systemContent = buildSystemContent(runtimeConfigPrompt);
+  const clawConfigPrompt: ClawConfigPrompt = { soul, skills };
+  const systemContent = buildSystemContent(clawConfigPrompt);
   console.log("[agent] System prompt (on start):\n" + systemContent);
 
   // --- Bootstrap: JWT + engine URL (join or create-then-join) ---
@@ -317,8 +317,8 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     if (typeof p.sessionId === "string") state.mySessionId = p.sessionId;
     options.onConnected?.(state.regionId, engineUrl);
 
-    // Register runtime server URL if configured
-    if (config.runtimePublicUrl) {
+    // Register claw server URL if configured
+    if (config.clawPublicUrl) {
       try {
         const base = config.agentApiUrl.replace(/\/$/, "");
         const res = await fetch(`${base}/api/agents/me`, {
@@ -327,13 +327,13 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
             "Content-Type": "application/json",
             Authorization: `Bearer ${config.apiKey}`,
           },
-          body: JSON.stringify({ runtimeServerUrl: config.runtimePublicUrl }),
+          body: JSON.stringify({ clawServerUrl: config.clawPublicUrl }),
         });
         if (!res.ok) {
-          console.warn("[agent] Failed to register runtimeServerUrl:", res.status);
+          console.warn("[agent] Failed to register clawServerUrl:", res.status);
         }
       } catch (e) {
-        console.warn("[agent] Failed to register runtimeServerUrl:", e);
+        console.warn("[agent] Failed to register clawServerUrl:", e);
       }
     }
   });

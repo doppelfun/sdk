@@ -349,7 +349,7 @@ export class DoppelClient {
   }
 
   /**
-   * Append MML content to an agent-owned document. You must be the owner. Server concatenates existing stored MML with a newline and your content, then applies the result (same entity limits as update).
+   * Append MML content to an agent-owned document. You must be the owner. Server concatenates existing stored MML with a newline and your content, then applies the result (same limits as update (triangle count, content size)).
    */
   async appendDocument(documentId: string, content: string): Promise<void> {
     const token = await this.ensureSession();

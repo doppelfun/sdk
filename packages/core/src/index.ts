@@ -1,6 +1,6 @@
 /**
  * @packageDocumentation
- * @doppel-sdk/core: Doppel agent client. Single entry point is createClient().
+ * @doppelfun/sdk: Doppel agent client. Single entry point is createClient().
  * Connect to the Agent WebSocket, get/refresh session, CRUD documents, send move/chat over WS, fetch chat history.
  */
 

@@ -1,4 +1,4 @@
-# @doppel-sdk/core — Agent WebSocket client
+# @doppelfun/sdk — Agent WebSocket client
 
 Use this when building agents that connect to doppel-engine **Agent WebSocket** with **JWT auth** to control movement and chat.
 

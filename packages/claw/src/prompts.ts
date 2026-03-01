@@ -3,8 +3,8 @@
  * Keeps prompt text and formatting logic in one place.
  */
 
-import type { RuntimeConfig } from "./config.js";
-import type { RuntimeState } from "./state.js";
+import type { ClawConfig } from "./config.js";
+import type { ClawState } from "./state.js";
 
 /** System prompt for the Chat LLM. Describes role, chat semantics, and tool usage. */
 export const SYSTEM_PROMPT = `You are an agent in a 3D Doppel space. You can move, chat, emote, join regions, list occupants, read chat history, and build (create or append MML scene content).
@@ -14,7 +14,28 @@ When the user (owner) gives you instructions, follow them. Use tools to act. Pre
 Use small move values (e.g. 0.2 or 0.3); never use 1 or -1 for move.
 Do not call get_occupants or get_chat_history every tick. Only call them when you need fresh data. If the context already lists occupants or recent chat, do something else or skip tool calls and wait.
 If you receive a region_boundary error, use join_region with the given regionId to switch regions.
-For building: use build_full for a new or full scene; use build_incremental to add things (e.g. "add a bench at 2,0,4") without replacing existing content.`;
+For building: use build_full for a new or full scene; use build_incremental to add things (e.g. "add a bench at 2,0,4") without replacing existing content.
+
+Movement: Only move when you have a target—(1) another user to approach, or (2) a build location you are going to (Build target). Do not wander or move randomly. Move toward the target with small steps (moveX, moveZ). When you are within about 2 m of the target, stop: use moveX: 0, moveZ: 0 (or do not call move). When you have no target, do not call move.`;
+
+export type ClawConfigPrompt = {
+  soul: string | null;
+  skills: string;
+};
+
+/**
+ * Build full system message: base SYSTEM_PROMPT + soul + skills.
+ */
+export function buildSystemContent(clawConfig: ClawConfigPrompt): string {
+  let content = SYSTEM_PROMPT;
+  if (clawConfig.soul && clawConfig.soul.trim()) {
+    content += "\n\n" + clawConfig.soul.trim();
+  }
+  if (clawConfig.skills && clawConfig.skills.trim()) {
+    content += "\n\n---\n\nSkills:\n\n" + clawConfig.skills.trim();
+  }
+  return content;
+}
 
 /** Hint shown when we already have occupants in context. */
 const HINT_HAVE_OCCUPANTS = " (Do not call get_occupants again; you have the list.)";
@@ -38,14 +59,57 @@ const HINT_NO_CONTEXT =
  * Build the user message for one tick: current region, occupants, errors, chat, owner messages.
  * Used by the Chat LLM each tick to decide which tools to call.
  */
-export function buildUserMessage(state: RuntimeState, config: RuntimeConfig): string {
+export function buildUserMessage(state: ClawState, config: ClawConfig): string {
   const parts: string[] = [];
 
   parts.push(`Current region: ${state.regionId}.`);
 
+  if (state.lastToolRun) {
+    const buildTools = ["build_full", "build_incremental"];
+    if (buildTools.includes(state.lastToolRun)) {
+      parts.push(
+        `Last tool you ran: ${state.lastToolRun}. Do not call build_full or build_incremental again now; wait or do something else (e.g. move, get_occupants) or make no tool calls.`
+      );
+    } else {
+      parts.push(`Last tool you ran: ${state.lastToolRun}.`);
+    }
+  }
+
+  if (state.myPosition) {
+    const { x, y, z } = state.myPosition;
+    parts.push(`Your position: (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}).`);
+  }
+
   if (state.occupants.length > 0) {
+    const othersWithPosition = state.occupants.filter(
+      (o) => o.position && o.clientId !== state.mySessionId
+    );
+    if (othersWithPosition.length > 0) {
+      const list = othersWithPosition
+        .map((o) => `${o.username} (${o.type}) at (${(o.position!.x).toFixed(1)}, ${(o.position!.z).toFixed(1)})`)
+        .join("; ");
+      parts.push(`Other occupants with position (move toward one to approach): ${list}.`);
+    }
     const list = state.occupants.map((o) => `${o.username} (${o.type})`).join(", ");
     parts.push(`Occupants (${state.occupants.length}): ${list}.${HINT_HAVE_OCCUPANTS}`);
+  }
+
+  if (state.lastBuildTarget) {
+    const stopDistance = 2;
+    const reached =
+      state.myPosition &&
+      Math.hypot(
+        state.lastBuildTarget.x - state.myPosition.x,
+        state.lastBuildTarget.z - state.myPosition.z
+      ) < stopDistance;
+    if (reached) {
+      state.lastBuildTarget = null;
+      parts.push("Build target reached (within 2 m); do not move further toward it.");
+    } else {
+      parts.push(
+        `Build target (move here then stop when within ~2 m): (${state.lastBuildTarget.x}, ${state.lastBuildTarget.z}).`
+      );
+    }
   }
 
   if (state.lastError) {

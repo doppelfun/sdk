@@ -3,29 +3,84 @@
  */
 
 import WebSocket from "ws";
-import { createClient } from "@doppel-sdk/core";
-import type { DoppelClient } from "@doppel-sdk/core";
-import { joinSpace, createSpace, getAgentProfile, spendCredits } from "./hub.js";
-import { loadConfig, type RuntimeConfig } from "./config.js";
+import { createClient } from "@doppelfun/sdk";
+import type { DoppelClient } from "@doppelfun/sdk";
+import { joinSpace, createSpace, spendCredits } from "./hub.js";
+import { loadConfig, type ClawConfig } from "./config.js";
 import {
   createInitialState,
   pushChat,
   pushOwnerMessage,
   setLastError,
-  type RuntimeState,
+  syncMainDocumentFromRegion,
+  type ClawState,
 } from "./state.js";
-import { SYSTEM_PROMPT, buildUserMessage } from "./prompts.js";
+import { buildSystemContent, buildUserMessage } from "./prompts.js";
+import type { ClawConfigPrompt } from "./prompts.js";
 import { chatCompletion, type Usage } from "./openrouter.js";
 import { CHAT_TOOLS, executeTool } from "./tools.js";
 
+export type ToolCallResult = { ok: true; summary?: string } | { ok: false; error: string };
+
 export type AgentRunOptions = {
-  /** Called when the agent connects (after authenticated). */
-  onConnected?: (regionId: string) => void;
+  /** Called when the agent connects (after authenticated). Receives regionId and engineUrl so you can log where to view the agent. */
+  onConnected?: (regionId: string, engineUrl: string) => void;
   /** Called when the agent disconnects or errors. */
   onDisconnect?: (err?: Error) => void;
   /** Called each tick with a short log line (optional). */
   onTick?: (summary: string) => void;
+  /** Called after each tool execution with name, args JSON, and result. Use to log full tool call responses. */
+  onToolCallResult?: (name: string, args: string, result: ToolCallResult) => void;
+  /** Override soul (skips API fetch for soul when set). */
+  soul?: string | null;
+  /** Override skills (skips API fetch for skills when set). */
+  skills?: string | null;
+  /** Skill IDs to request from the standard skills API (overrides config skillIds when set). */
+  skillIds?: string[];
 };
+
+/** Response from GET /api/agents/me: profile + soul in one request. */
+type AgentBootstrapResponse = {
+  hosted?: boolean;
+  soul?: string | null;
+};
+
+/** Fetch agent profile and soul from GET /api/agents/me (single bootstrap call). */
+async function fetchAgentBootstrap(
+  agentApiUrl: string,
+  apiKey: string
+): Promise<AgentBootstrapResponse> {
+  const base = agentApiUrl.replace(/\/$/, "");
+  const res = await fetch(`${base}/api/agents/me`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) return {};
+  return (await res.json()) as AgentBootstrapResponse;
+}
+
+/** Skill entry from GET /api/skills (ids=...). */
+type SkillEntry = { name?: string; content?: string };
+
+/** Fetch skills by ids from GET /api/skills?ids=... and return concatenated content. */
+async function fetchSkills(
+  agentApiUrl: string,
+  apiKey: string,
+  skillIds: string[]
+): Promise<string> {
+  if (skillIds.length === 0) return "";
+  const base = agentApiUrl.replace(/\/$/, "");
+  const params = `?ids=${skillIds.map(encodeURIComponent).join(",")}`;
+  const res = await fetch(`${base}/api/skills${params}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) return "";
+  const data = (await res.json()) as { skills?: SkillEntry[] };
+  const skills = Array.isArray(data.skills) ? data.skills : [];
+  return skills
+    .map((s) => (typeof s.content === "string" ? s.content : "").trim())
+    .filter(Boolean)
+    .join("\n\n---\n\n");
+}
 
 /** Payload shape for WebSocket "chat" messages from the engine. */
 type ChatPayload = {
@@ -45,7 +100,7 @@ type ErrorPayload = { code?: string; error?: string; regionId?: string };
 /**
  * Resolve engine URL and JWT: join existing space or create then join.
  */
-async function getJwtAndEngineUrl(config: RuntimeConfig): Promise<{
+async function getJwtAndEngineUrl(config: ClawConfig): Promise<{
   jwt: string;
   engineUrl: string;
   spaceId: string;
@@ -87,7 +142,7 @@ function tokensToCredits(usage: Usage, tokensPerCredit: number): number {
 
 /** Report usage to hub (fire-and-forget). Only called when config.hosted is true. */
 function reportUsage(
-  config: RuntimeConfig,
+  config: ClawConfig,
   usage: Usage | null,
   description: string,
   onTick?: (summary: string) => void
@@ -110,8 +165,9 @@ function reportUsage(
  */
 async function runTick(
   client: DoppelClient,
-  state: RuntimeState,
-  config: RuntimeConfig,
+  state: ClawState,
+  config: ClawConfig,
+  systemContent: string,
   options: AgentRunOptions
 ): Promise<void> {
   if (state.lastError?.code === "region_boundary" && state.lastError.regionId) {
@@ -129,7 +185,7 @@ async function runTick(
   const result = await chatCompletion(config.openRouterApiKey, {
     model: config.chatLlmModel,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemContent },
       { role: "user", content: userContent },
     ],
     tools,
@@ -165,13 +221,16 @@ async function runTick(
       sentChatThisTick = true;
     }
     executedThisTick.add(name);
+    const args = typeof tc.function.arguments === "string" ? tc.function.arguments : "";
     const execResult = await executeTool(
       client,
       state,
       config,
-      { name, arguments: tc.function.arguments }
+      { name, arguments: args }
     );
+    options.onToolCallResult?.(name, args, execResult);
     options.onTick?.(`${name}: ${execResult.ok ? execResult.summary ?? "ok" : execResult.error}`);
+    state.lastToolRun = name;
   }
   if (sentChatThisTick) state.lastTickSentChat = true;
 }
@@ -183,19 +242,43 @@ async function runTick(
 export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   const config = loadConfig();
 
-  // --- Bootstrap: check hosted flag from hub ---
+  // --- Bootstrap: agent + soul in one request, then skills from standard API ---
+  let soul: string | null = null;
+  let skills = "";
+
   try {
-    const profileRes = await getAgentProfile(config.hubUrl, config.apiKey);
-    if (profileRes.ok) {
-      config.hosted = profileRes.profile.hosted;
-      if (config.hosted) {
-        options.onTick?.("hosted agent — credit deduction enabled");
+    const bootstrap = await fetchAgentBootstrap(config.agentApiUrl, config.apiKey);
+    if (typeof bootstrap.hosted === "boolean") config.hosted = bootstrap.hosted;
+    if (config.hosted) options.onTick?.("hosted agent — credit deduction enabled");
+    if (bootstrap.soul !== undefined) soul = bootstrap.soul ?? null;
+  } catch (e) {
+    options.onTick?.(`bootstrap (agent+soul) failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (options.soul !== undefined) soul = options.soul ?? null;
+  if (options.skills !== undefined) {
+    skills = options.skills ?? "";
+  } else {
+    const skillIds = options.skillIds ?? config.skillIds;
+    if (skillIds.length > 0) {
+      try {
+        skills = await fetchSkills(config.agentApiUrl, config.apiKey, skillIds);
+        const gotSkills = Boolean(skills.trim());
+        console.log(
+          "[agent] Skills: skillIds=",
+          skillIds,
+          "->",
+          gotSkills ? `${skills.length} chars` : "no skills returned"
+        );
+      } catch (e) {
+        console.warn("[agent] Failed to fetch skills, using soul only:", e);
       }
     }
-  } catch (e) {
-    // Non-fatal: default to not-hosted (no credit deduction)
-    options.onTick?.(`profile check failed: ${e instanceof Error ? e.message : String(e)}`);
   }
+
+  const clawConfigPrompt: ClawConfigPrompt = { soul, skills };
+  const systemContent = buildSystemContent(clawConfigPrompt);
+  console.log("[agent] System prompt (on start):\n" + systemContent);
 
   // --- Bootstrap: JWT + engine URL (join or create-then-join) ---
   let jwt: string;
@@ -224,14 +307,35 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   const state = createInitialState(regionId);
 
   // --- WebSocket message handlers (chat, error, joined, authenticated) ---
-  client.onMessage("authenticated", (payload: unknown) => {
+  client.onMessage("authenticated", async (payload: unknown) => {
     const p = payload as { regionId?: string; sessionId?: string };
     if (typeof p.regionId === "string") {
       state.regionId = p.regionId;
       regionId = p.regionId;
+      syncMainDocumentFromRegion(state);
     }
     if (typeof p.sessionId === "string") state.mySessionId = p.sessionId;
-    options.onConnected?.(state.regionId);
+    options.onConnected?.(state.regionId, engineUrl);
+
+    // Register claw server URL if configured
+    if (config.clawPublicUrl) {
+      try {
+        const base = config.agentApiUrl.replace(/\/$/, "");
+        const res = await fetch(`${base}/api/agents/me`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${config.apiKey}`,
+          },
+          body: JSON.stringify({ clawServerUrl: config.clawPublicUrl }),
+        });
+        if (!res.ok) {
+          console.warn("[agent] Failed to register clawServerUrl:", res.status);
+        }
+      } catch (e) {
+        console.warn("[agent] Failed to register clawServerUrl:", e);
+      }
+    }
   });
 
   client.onMessage("chat", (payload: unknown) => {
@@ -276,25 +380,29 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     if (typeof p.regionId === "string") {
       state.regionId = p.regionId;
       state.lastError = null;
+      syncMainDocumentFromRegion(state);
     }
   });
 
   await client.connect();
 
-  // --- Tick timer (no reconnect loop; caller can restart on disconnect) ---
-  let tickTimer: ReturnType<typeof setInterval> | null = null;
+  // --- Tick loop: one tick at a time, schedule next only after current tick (and all tool runs) complete ---
+  let tickScheduled: ReturnType<typeof setTimeout> | null = null;
+  let tickInProgress = false;
 
-  const scheduleTick = (): void => {
-    if (tickTimer) return;
-    tickTimer = setInterval(async () => {
-      try {
-        await runTick(client, state, config, options);
-      } catch (e) {
+  const runTickThenScheduleNext = (): void => {
+    if (tickInProgress) return;
+    tickInProgress = true;
+    runTick(client, state, config, systemContent, options)
+      .catch((e) => {
         options.onTick?.(`tick error: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    }, config.tickIntervalMs);
+      })
+      .finally(() => {
+        tickInProgress = false;
+        tickScheduled = setTimeout(runTickThenScheduleNext, config.tickIntervalMs);
+      });
   };
 
-  scheduleTick();
+  tickScheduled = setTimeout(runTickThenScheduleNext, config.tickIntervalMs);
   // Note: SDK does not expose the WebSocket; on disconnect the next tick will fail and onDisconnect can be used by caller to restart (e.g. pm2).
 }

@@ -24,6 +24,10 @@ export type ClawConfig = {
   buildCreditMultiplier: number;
   /** Optional: skill IDs to request from claw-config (e.g. ["doppel", "doppel-block-builder"]). */
   skillIds: string[];
+  /** USD balance threshold below which to auto-purchase credits (default $1). */
+  creditTopUpThresholdUsd: number;
+  /** USD amount to purchase when auto-topping-up (default $5). */
+  creditTopUpAmountUsd: number;
 };
 
 const DEFAULT_HUB = "http://localhost:4000";
@@ -102,5 +106,7 @@ export function loadConfig(): ClawConfig {
     tokensPerCredit,
     buildCreditMultiplier,
     skillIds,
+    creditTopUpThresholdUsd: parseFloat(process.env.CREDIT_TOPUP_THRESHOLD_USD || "1"),
+    creditTopUpAmountUsd: parseFloat(process.env.CREDIT_TOPUP_AMOUNT_USD || "5"),
   };
 }

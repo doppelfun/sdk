@@ -19,6 +19,7 @@ import { buildSystemContent, buildUserMessage } from "./prompts.js";
 import type { ClawConfigPrompt } from "./prompts.js";
 import { chatCompletion, type Usage } from "./openrouter.js";
 import { CHAT_TOOLS, executeTool } from "./tools.js";
+import { startCreditMonitor } from "./credit-monitor.js";
 
 export type ToolCallResult = { ok: true; summary?: string } | { ok: false; error: string };
 
@@ -389,5 +390,11 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   };
 
   tickScheduled = setTimeout(runTickThenScheduleNext, config.tickIntervalMs);
+
+  // Start credit monitor (auto-tops-up OpenRouter credits via hub spender)
+  if (config.hubUrl && config.apiKey) {
+    startCreditMonitor(config, options.onTick);
+  }
+
   // Note: SDK does not expose the WebSocket; on disconnect the next tick will fail and onDisconnect can be used by caller to restart (e.g. pm2).
 }

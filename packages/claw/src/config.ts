@@ -22,10 +22,25 @@ export type ClawConfig = {
   tokensPerCredit: number;
   /** Multiplier applied to build operations (default 1.5). */
   buildCreditMultiplier: number;
+<<<<<<< Updated upstream:packages/claw/src/config.ts
   /** Optional: public URL of this claw (for PATCH /api/agents/me serverUrl). */
   clawPublicUrl: string | null;
   /** Optional: skill IDs to request from claw-config (e.g. ["doppel", "doppel-block-builder"]). */
   skillIds: string[];
+=======
+  /** Privy App ID (for crypto credit top-up). */
+  privyAppId: string | null;
+  /** Privy App Secret (for crypto credit top-up). */
+  privyAppSecret: string | null;
+  /** Privy wallet ID to send transactions from. */
+  privyWalletId: string | null;
+  /** P256 private key for signing Privy wallet transactions. */
+  privySessionPrivateKey: string | null;
+  /** USD balance threshold below which to auto-purchase credits (default $1). */
+  creditTopUpThresholdUsd: number;
+  /** USD amount to purchase when auto-topping-up (default $5). */
+  creditTopUpAmountUsd: number;
+>>>>>>> Stashed changes:packages/runtime/src/config.ts
 };
 
 const DEFAULT_HUB = "http://localhost:4000";
@@ -104,7 +119,16 @@ export function loadConfig(): ClawConfig {
     hosted: false, // set at runtime from hub profile
     tokensPerCredit,
     buildCreditMultiplier,
+<<<<<<< Updated upstream:packages/claw/src/config.ts
     clawPublicUrl: clawPublicUrl ? trimUrl(clawPublicUrl) : null,
     skillIds,
+=======
+    privyAppId: process.env.PRIVY_APP_ID?.trim() || null,
+    privyAppSecret: process.env.PRIVY_APP_SECRET?.trim() || null,
+    privyWalletId: process.env.PRIVY_WALLET_ID?.trim() || null,
+    privySessionPrivateKey: process.env.PRIVY_SESSION_PRIVATE_KEY?.trim() || null,
+    creditTopUpThresholdUsd: parseFloat(process.env.CREDIT_TOPUP_THRESHOLD_USD || "1"),
+    creditTopUpAmountUsd: parseFloat(process.env.CREDIT_TOPUP_AMOUNT_USD || "5"),
+>>>>>>> Stashed changes:packages/runtime/src/config.ts
   };
 }

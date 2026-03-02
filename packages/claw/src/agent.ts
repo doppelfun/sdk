@@ -19,6 +19,7 @@ import { buildSystemContent, buildUserMessage } from "./prompts.js";
 import type { ClawConfigPrompt } from "./prompts.js";
 import { chatCompletion, type Usage } from "./openrouter.js";
 import { CHAT_TOOLS, executeTool } from "./tools.js";
+import { startCreditMonitor } from "./credit-monitor.js";
 
 export type ToolCallResult = { ok: true; summary?: string } | { ok: false; error: string };
 
@@ -408,6 +409,16 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
       });
   };
 
+<<<<<<< Updated upstream:packages/claw/src/agent.ts
   tickScheduled = setTimeout(runTickThenScheduleNext, config.tickIntervalMs);
+=======
+  scheduleTick();
+
+  // Start credit monitor if Privy wallet is configured (auto-tops-up OpenRouter credits)
+  if (config.privyAppId && config.privyWalletId && config.privySessionPrivateKey) {
+    startCreditMonitor(config, options.onTick);
+  }
+
+>>>>>>> Stashed changes:packages/runtime/src/agent.ts
   // Note: SDK does not expose the WebSocket; on disconnect the next tick will fail and onDisconnect can be used by caller to restart (e.g. pm2).
 }

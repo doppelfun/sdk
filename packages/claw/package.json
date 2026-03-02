@@ -23,12 +23,9 @@
     "doppel-claw": "./dist/cli.js"
   },
   "dependencies": {
-<<<<<<< Updated upstream:packages/claw/package.json
     "@doppelfun/sdk": "workspace:*",
-=======
     "@doppel-sdk/core": "workspace:*",
     "@privy-io/node": "^0.10.0",
->>>>>>> Stashed changes:packages/runtime/package.json
     "dotenv": "^16.4.5",
     "viem": "^2.46.3",
     "ws": "^8.18.0"

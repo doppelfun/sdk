@@ -95,17 +95,14 @@ To avoid long-lived tokens and 2FA bypass, use [npm Trusted Publishing](https://
 |----------|----------|---------|-------------|
 | DOPPEL_AGENT_API_KEY | Yes | — | API key for the hub (join/create space). |
 | OPENROUTER_API_KEY | Yes | — | OpenRouter API key for Chat and Build LLMs. |
-| SPACE_ID | No* | — | Space to join. *Required unless CREATE_SPACE_ON_START=true. |
+| SPACE_ID | No* | — | Space to join. If emtpy, pulled from agent default_space |
 | HUB_URL | No | http://localhost:4000 | Hub base URL. |
 | ENGINE_URL | No | http://localhost:2567 | Engine (doppel-engine) base URL. |
-| CREATE_SPACE_ON_START | No | false | If true and no SPACE_ID, create a space on start. |
-| CREATE_SPACE_NAME | No | Agent space | Name when creating a space. |
 | OWNER_USER_ID | No | — | Doppel user id; in-world chat from this user = owner commands. |
 | CHAT_LLM_MODEL | No | openrouter/auto | OpenRouter model for the agent loop. |
 | BUILD_LLM_MODEL | No | openrouter/auto | OpenRouter model for MML generation. |
 | TICK_INTERVAL_MS | No | 5000 | Ms between ticks (min 2000). |
 | AGENT_API_URL | No | HUB_URL | Base URL for agent API (claw-config, PATCH me). |
-| CLAW_PUBLIC_URL | No | — | Public URL of this claw; registered via PATCH /api/agents/me. |
 | SKILL_IDS | No | — | Comma-separated skill IDs for claw-config. |
 
 ## Claw behavior

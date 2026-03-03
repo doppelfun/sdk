@@ -321,26 +321,6 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     }
     if (typeof p.sessionId === "string") state.mySessionId = p.sessionId;
     options.onConnected?.(state.regionId, engineUrl);
-
-    // Register claw server URL if configured
-    if (config.clawPublicUrl) {
-      try {
-        const base = config.agentApiUrl.replace(/\/$/, "");
-        const res = await fetch(`${base}/api/agents/me`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${config.apiKey}`,
-          },
-          body: JSON.stringify({ serverUrl: config.clawPublicUrl }),
-        });
-        if (!res.ok) {
-          console.warn("[agent] Failed to register serverUrl:", res.status);
-        }
-      } catch (e) {
-        console.warn("[agent] Failed to register serverUrl:", e);
-      }
-    }
   });
 
   client.onMessage("chat", (payload: unknown) => {

@@ -58,7 +58,6 @@ Configuration is read from environment variables (and optionally overridden by t
 | MAX_CHAT_CONTEXT | No | 20 | Max recent chat lines in context. |
 | MAX_OWNER_MESSAGES | No | 10 | Max owner messages in context. |
 | AGENT_API_URL | No | HUB_URL | Base URL for agent API (claw-config, PATCH me). |
-| CLAW_PUBLIC_URL | No | — | Public URL of this claw; if set, registered via PATCH /api/agents/me. |
 | SKILL_IDS | No | — | Comma-separated skill IDs for claw-config (e.g. doppel,doppel-block-builder). |
 
 ## Behavior

@@ -22,8 +22,6 @@ export type ClawConfig = {
   tokensPerCredit: number;
   /** Multiplier applied to build operations (default 1.5). */
   buildCreditMultiplier: number;
-  /** Optional: public URL of this claw (for PATCH /api/agents/me serverUrl). */
-  clawPublicUrl: string | null;
   /** Optional: skill IDs to request from claw-config (e.g. ["doppel", "doppel-block-builder"]). */
   skillIds: string[];
 };
@@ -69,7 +67,6 @@ export function loadConfig(): ClawConfig {
   const engineUrl = trimUrl(process.env.ENGINE_URL?.trim() || DEFAULT_ENGINE);
   const spaceId = process.env.SPACE_ID?.trim() || null;
   const ownerUserId = process.env.OWNER_USER_ID?.trim() || null;
-  const clawPublicUrl = process.env.CLAW_PUBLIC_URL?.trim() || process.env.AGENT_SERVER_URL?.trim() || null;
   const skillIdsRaw = process.env.SKILL_IDS?.trim();
   const skillIds =
     skillIdsRaw != null && skillIdsRaw !== ""
@@ -104,7 +101,6 @@ export function loadConfig(): ClawConfig {
     hosted: false, // set at runtime from hub profile
     tokensPerCredit,
     buildCreditMultiplier,
-    clawPublicUrl: clawPublicUrl ? trimUrl(clawPublicUrl) : null,
     skillIds,
   };
 }

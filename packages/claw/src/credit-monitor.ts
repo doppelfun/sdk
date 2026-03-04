@@ -1,10 +1,10 @@
 /**
  * Background credit monitor: periodically checks OpenRouter credit balance
- * and auto-tops-up via the hub's spender when balance drops below threshold.
+ * and logs it. Read-only — per-request charging is handled by the hub's
+ * report-usage endpoint instead of bulk auto-purchases.
  */
 
 import type { ClawConfig } from "./config.js";
-import { purchaseCredits } from "./openrouter-credits.js";
 
 const CHECK_INTERVAL_MS = 60_000;
 const OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits";
@@ -12,8 +12,7 @@ const OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits";
 type CreditsResponse = {
   data?: {
     total_credits?: number;
-    usage?: number;
-    balance?: number;
+    total_usage?: number;
   };
 };
 
@@ -24,37 +23,25 @@ async function checkBalance(apiKey: string): Promise<number | null> {
     });
     if (!res.ok) return null;
     const body = (await res.json()) as CreditsResponse;
-    return body.data?.balance ?? body.data?.total_credits ?? null;
+    const total = body.data?.total_credits;
+    if (total == null) return null;
+    return total - (body.data?.total_usage ?? 0);
   } catch {
     return null;
   }
 }
 
 /**
- * Start a background loop that monitors OpenRouter credit balance
- * and purchases more via the hub's spender when it drops below threshold.
+ * Start a background loop that monitors the shared OpenRouter credit balance.
+ * Logs the balance periodically so operators know when the pool runs low.
  */
 export function startCreditMonitor(
   config: ClawConfig,
   onLog?: (msg: string) => void
 ): void {
-  const {
-    hubUrl,
-    apiKey,
-    openRouterApiKey,
-    creditTopUpThresholdUsd,
-    creditTopUpAmountUsd,
-  } = config;
-
-  if (!hubUrl || !apiKey) {
-    return;
-  }
-
-  let purchasing = false;
+  const { openRouterApiKey } = config;
 
   const check = async () => {
-    if (purchasing) return;
-
     const balance = await checkBalance(openRouterApiKey);
     if (balance === null) {
       onLog?.("[credit-monitor] Failed to check OpenRouter balance");
@@ -62,29 +49,6 @@ export function startCreditMonitor(
     }
 
     onLog?.(`[credit-monitor] OpenRouter balance: $${balance.toFixed(2)}`);
-
-    if (balance < creditTopUpThresholdUsd) {
-      purchasing = true;
-      onLog?.(
-        `[credit-monitor] Balance below $${creditTopUpThresholdUsd}, purchasing $${creditTopUpAmountUsd} in credits...`
-      );
-
-      const result = await purchaseCredits({
-        hubUrl,
-        apiKey,
-        amountUsd: creditTopUpAmountUsd,
-      });
-
-      if (result.ok) {
-        onLog?.(
-          `[credit-monitor] Purchased $${creditTopUpAmountUsd} in credits (${result.creditsAdded} credits added)`
-        );
-      } else {
-        onLog?.(`[credit-monitor] Purchase failed: ${result.error}`);
-      }
-
-      purchasing = false;
-    }
   };
 
   // Initial check after short delay, then periodic

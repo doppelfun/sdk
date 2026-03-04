@@ -5,7 +5,7 @@
 import WebSocket from "ws";
 import { createClient } from "@doppelfun/sdk";
 import type { DoppelClient } from "@doppelfun/sdk";
-import { joinSpace, spendCredits } from "./hub.js";
+import { joinSpace } from "./hub.js";
 import { loadConfig, type ClawConfig } from "./config.js";
 import {
   createInitialState,
@@ -17,9 +17,10 @@ import {
 } from "./state.js";
 import { buildSystemContent, buildUserMessage } from "./prompts.js";
 import type { ClawConfigPrompt } from "./prompts.js";
-import { chatCompletion, type Usage } from "./openrouter.js";
+import { chatCompletion } from "./openrouter.js";
 import { CHAT_TOOLS, executeTool } from "./tools.js";
 import { startCreditMonitor } from "./credit-monitor.js";
+import { reportUsage } from "./openrouter-credits.js";
 
 export type ToolCallResult = { ok: true; summary?: string } | { ok: false; error: string };
 
@@ -138,30 +139,6 @@ async function getJwtAndEngineUrl(
   };
 }
 
-// --- Credit helpers (hosted agents only) ---
-
-/** Convert token usage to credit amount. */
-function tokensToCredits(usage: Usage, tokensPerCredit: number): number {
-  return usage.total_tokens / tokensPerCredit;
-}
-
-/** Report usage to hub (fire-and-forget). Only called when config.hosted is true. */
-function reportUsage(
-  config: ClawConfig,
-  usage: Usage | null,
-  description: string,
-  onTick?: (summary: string) => void
-): void {
-  if (!usage || usage.total_tokens === 0) return;
-  const credits = tokensToCredits(usage, config.tokensPerCredit);
-  if (credits <= 0) return;
-  spendCredits(config.hubUrl, config.apiKey, credits, description).then((res) => {
-    if (!res.ok) onTick?.(`credit spend failed: ${res.error}`);
-  }).catch((e) => {
-    onTick?.(`credit spend error: ${e instanceof Error ? e.message : String(e)}`);
-  });
-}
-
 // --- Tick: prompt + LLM + tool execution ---
 
 /**
@@ -203,9 +180,15 @@ async function runTick(
     return;
   }
 
-  // Report chat tick usage for hosted agents (fire-and-forget)
-  if (config.hosted) {
-    reportUsage(config, result.usage, "Chat tick", options.onTick);
+  // Report usage for per-request metering (fire-and-forget)
+  if (result.usage) {
+    reportUsage({
+      hubUrl: config.hubUrl,
+      apiKey: config.apiKey,
+      model: config.chatLlmModel,
+      promptTokens: result.usage.prompt_tokens,
+      completionTokens: result.usage.completion_tokens,
+    });
   }
 
   const msg = result.message;
@@ -255,7 +238,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   try {
     bootstrap = await fetchAgentBootstrap(config.agentApiUrl, config.apiKey);
     if (typeof bootstrap.hosted === "boolean") config.hosted = bootstrap.hosted;
-    if (config.hosted) options.onTick?.("hosted agent — credit deduction enabled");
+    if (config.hosted) options.onTick?.("hosted agent");
     if (bootstrap.soul !== undefined) soul = bootstrap.soul ?? null;
   } catch (e) {
     options.onTick?.(`bootstrap (agent+soul) failed: ${e instanceof Error ? e.message : String(e)}`);

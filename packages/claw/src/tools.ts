@@ -4,13 +4,12 @@
  */
 
 import type { DoppelClient } from "@doppelfun/sdk";
-import type { ToolDefinition, Usage } from "./openrouter.js";
+import type { ToolDefinition } from "./openrouter.js";
 import type { ClawState } from "./state.js";
 import { syncMainDocumentFromRegion } from "./state.js";
 import type { ClawConfig } from "./config.js";
 import { getRegionBounds } from "./region.js";
 import { buildFull, buildIncremental } from "./buildLlm.js";
-import { checkBalance, spendCredits } from "./hub.js";
 
 /** Schema for tool parameters: object with optional properties and required list. */
 type ToolParams = {
@@ -44,37 +43,12 @@ function catalogToJson(catalog: CatalogEntry[]): string {
   return JSON.stringify(catalog.slice(0, 100), null, 0);
 }
 
-/** Convert token usage to credit amount (mirrors agent.ts helper). */
-function tokensToCredits(usage: Usage, tokensPerCredit: number): number {
-  return usage.total_tokens / tokensPerCredit;
-}
-
 /** Owner gate: if hosted + ownerUserId is set, only owner can trigger builds. */
 function checkOwnerGate(config: ClawConfig, state: ClawState): string | null {
   if (!config.hosted) return null;
   if (!config.ownerUserId) return null;
   if (state.lastTriggerUserId === config.ownerUserId) return null;
   return "Only the owner can trigger builds";
-}
-
-/** Pre-check balance for hosted agents. Returns error string or null. */
-async function preCheckBalance(config: ClawConfig, minCredits: number): Promise<string | null> {
-  if (!config.hosted) return null;
-  const res = await checkBalance(config.hubUrl, config.apiKey);
-  if (!res.ok) return `Balance check failed: ${res.error}`;
-  if (!res.linked) return null; // Agent not linked to account — no credit system
-  if (res.balance < minCredits) return `Insufficient credits (have ${res.balance}, need ~${minCredits})`;
-  return null;
-}
-
-/** Report build usage to hub. Fire-and-forget; logs failures but never crashes. */
-function reportBuildUsage(config: ClawConfig, usage: Usage | null, description: string): void {
-  if (!config.hosted || !usage || usage.total_tokens === 0) return;
-  const credits = tokensToCredits(usage, config.tokensPerCredit) * config.buildCreditMultiplier;
-  if (credits <= 0) return;
-  spendCredits(config.hubUrl, config.apiKey, credits, description).catch(() => {
-    // logged as best-effort; tokens already consumed at OpenRouter
-  });
 }
 
 /** Parse "x,y,z" or "x,z" position hint from build_incremental into { x, y, z }. Returns null if invalid. */
@@ -241,9 +215,6 @@ export async function executeTool(
       // Owner gate (hosted agents only)
       const ownerErr = checkOwnerGate(config, state);
       if (ownerErr) return { ok: false, error: ownerErr };
-      // Pre-check balance (hosted agents only; estimate ~8 base credits × build multiplier)
-      const balErr = await preCheckBalance(config, 8 * config.buildCreditMultiplier);
-      if (balErr) return { ok: false, error: balErr };
       const catalog = await getCatalogFromEngine(config.engineUrl);
       const regionBounds = getRegionBounds(state.regionId);
       const result = await buildFull(
@@ -254,7 +225,6 @@ export async function executeTool(
         regionBounds
       );
       if (!result.ok) return result;
-      reportBuildUsage(config, result.usage, `build_full: ${instruction.slice(0, 80)}`);
       const regionDoc = state.documentsByRegion[state.regionId];
       if (regionDoc) {
         await client.updateDocument(regionDoc.documentId, result.mml);
@@ -272,9 +242,6 @@ export async function executeTool(
       // Owner gate (hosted agents only)
       const ownerErr = checkOwnerGate(config, state);
       if (ownerErr) return { ok: false, error: ownerErr };
-      // Pre-check balance (hosted agents only; estimate ~4 base credits × build multiplier)
-      const balErr = await preCheckBalance(config, 4 * config.buildCreditMultiplier);
-      if (balErr) return { ok: false, error: balErr };
       const positionHint = typeof args.position === "string" ? args.position.trim() : undefined;
       if (positionHint) {
         const parsed = parsePositionHint(positionHint);
@@ -294,7 +261,6 @@ export async function executeTool(
         positionHint
       );
       if (!result.ok) return result;
-      reportBuildUsage(config, result.usage, `build_incremental: ${instruction.slice(0, 80)}`);
       const newMml = existingMml ? `${existingMml}\n${result.mmlFragment}` : result.mmlFragment;
       if (regionDoc) {
         await client.appendDocument(regionDoc.documentId, result.mmlFragment);

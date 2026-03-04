@@ -43,3 +43,28 @@ export async function purchaseCredits(opts: {
     };
   }
 }
+
+/**
+ * Report LLM usage to the hub for per-request metering and charging.
+ * Fire-and-forget: errors are swallowed so metering never breaks the agent.
+ */
+export async function reportUsage(opts: {
+  hubUrl: string;
+  apiKey: string;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+}): Promise<void> {
+  await fetch(`${opts.hubUrl}/api/agents/me/report-usage`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${opts.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: opts.model,
+      promptTokens: opts.promptTokens,
+      completionTokens: opts.completionTokens,
+    }),
+  }).catch(() => {}); // swallow errors — metering shouldn't break the agent
+}

@@ -24,7 +24,9 @@
   },
   "dependencies": {
     "@doppelfun/sdk": "workspace:*",
+    "@doppel-sdk/core": "workspace:*",
     "dotenv": "^16.4.5",
+    "viem": "^2.46.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {

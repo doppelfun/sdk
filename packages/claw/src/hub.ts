@@ -18,14 +18,6 @@ export type AgentProfile = {
   accountId: string | null;
 };
 
-export type SpendCreditsResult =
-  | { ok: true; balance: number; cost: number }
-  | { ok: false; error: string; status?: number };
-
-export type CheckBalanceResult =
-  | { ok: true; balance: number; linked: boolean }
-  | { ok: false; error: string; status?: number };
-
 /** Normalize hub base URL (no trailing slash). */
 function normalizeHubUrl(hubUrl: string): string {
   return hubUrl.replace(/\/$/, "");
@@ -151,50 +143,3 @@ export async function getAgentProfile(
   return { ok: true, profile: data };
 }
 
-/**
- * Deduct credits from the agent's account. Fire-and-forget in chat ticks.
- */
-export async function spendCredits(
-  hubUrl: string,
-  apiKey: string,
-  amount: number,
-  description: string
-): Promise<SpendCreditsResult> {
-  const base = normalizeHubUrl(hubUrl);
-  const res = await hubPost(`${base}/api/agents/me/credits/spend`, apiKey, { amount, description });
-  if (!res.ok) return res;
-  let data: { balance?: number; cost?: number };
-  try {
-    data = JSON.parse(res.text) as { balance?: number; cost?: number };
-  } catch {
-    return { ok: false, error: "Invalid JSON from hub" };
-  }
-  return {
-    ok: true,
-    balance: typeof data.balance === "number" ? data.balance : 0,
-    cost: typeof data.cost === "number" ? data.cost : amount,
-  };
-}
-
-/**
- * Check the agent's credit balance. Used for pre-flight checks before expensive operations.
- */
-export async function checkBalance(
-  hubUrl: string,
-  apiKey: string
-): Promise<CheckBalanceResult> {
-  const base = normalizeHubUrl(hubUrl);
-  const res = await hubGet(`${base}/api/agents/me/credits/balance`, apiKey);
-  if (!res.ok) return res;
-  let data: { balance?: number; linked?: boolean };
-  try {
-    data = JSON.parse(res.text) as { balance?: number; linked?: boolean };
-  } catch {
-    return { ok: false, error: "Invalid JSON from hub" };
-  }
-  return {
-    ok: true,
-    balance: typeof data.balance === "number" ? data.balance : 0,
-    linked: typeof data.linked === "boolean" ? data.linked : false,
-  };
-}

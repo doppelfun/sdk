@@ -22,8 +22,14 @@ export type ClawConfig = {
   tokensPerCredit: number;
   /** Multiplier applied to build operations (default 1.5). */
   buildCreditMultiplier: number;
+  /** Optional: public URL of this claw (for PATCH /api/agents/me serverUrl). */
+  clawPublicUrl: string | null;
   /** Optional: skill IDs to request from claw-config (e.g. ["doppel", "doppel-block-builder"]). */
   skillIds: string[];
+  /** USD balance threshold below which to auto-purchase credits (default $1). */
+  creditTopUpThresholdUsd: number;
+  /** USD amount to purchase when auto-topping-up (default $5). */
+  creditTopUpAmountUsd: number;
 };
 
 const DEFAULT_HUB = "http://localhost:4000";
@@ -73,17 +79,13 @@ export function loadConfig(): ClawConfig {
       ? skillIdsRaw.split(",").map((s) => s.trim()).filter(Boolean)
       : [];
 
+  const clawPublicUrl = process.env.CLAW_PUBLIC_URL?.trim() || null;
+  const tokensPerCredit = parseIntEnv("TOKENS_PER_CREDIT", 1000, 1);
+  const buildCreditMultiplier = parseFloat(process.env.BUILD_CREDIT_MULTIPLIER || "1.5");
+
   const tickIntervalMs = Math.max(2000, parseIntEnv("TICK_INTERVAL_MS", DEFAULT_TICK_MS));
   const maxChatContext = parseIntEnv("MAX_CHAT_CONTEXT", DEFAULT_MAX_CHAT, 5, 100);
   const maxOwnerMessages = parseIntEnv("MAX_OWNER_MESSAGES", DEFAULT_MAX_OWNER, 1, 50);
-
-  const tokensPerCredit = parseIntEnv("TOKENS_PER_CREDIT", 1000, 1);
-
-  const rawMultiplier = process.env.BUILD_CREDIT_MULTIPLIER;
-  const parsedMultiplier = rawMultiplier != null ? parseFloat(rawMultiplier) : NaN;
-  const buildCreditMultiplier = Number.isFinite(parsedMultiplier) && parsedMultiplier > 0
-    ? parsedMultiplier
-    : 1.5;
 
   return {
     apiKey,
@@ -101,6 +103,9 @@ export function loadConfig(): ClawConfig {
     hosted: false, // set at runtime from hub profile
     tokensPerCredit,
     buildCreditMultiplier,
+    clawPublicUrl: clawPublicUrl ? trimUrl(clawPublicUrl) : null,
     skillIds,
+    creditTopUpThresholdUsd: parseFloat(process.env.CREDIT_TOPUP_THRESHOLD_USD || "1"),
+    creditTopUpAmountUsd: parseFloat(process.env.CREDIT_TOPUP_AMOUNT_USD || "5"),
   };
 }

@@ -79,6 +79,10 @@ export function loadConfig(): ClawConfig {
       ? skillIdsRaw.split(",").map((s) => s.trim()).filter(Boolean)
       : [];
 
+  const clawPublicUrl = process.env.CLAW_PUBLIC_URL?.trim() || null;
+  const tokensPerCredit = parseIntEnv("TOKENS_PER_CREDIT", 1000, 1);
+  const buildCreditMultiplier = parseFloat(process.env.BUILD_CREDIT_MULTIPLIER || "1.5");
+
   const tickIntervalMs = Math.max(2000, parseIntEnv("TICK_INTERVAL_MS", DEFAULT_TICK_MS));
   const maxChatContext = parseIntEnv("MAX_CHAT_CONTEXT", DEFAULT_MAX_CHAT, 5, 100);
   const maxOwnerMessages = parseIntEnv("MAX_OWNER_MESSAGES", DEFAULT_MAX_OWNER, 1, 50);

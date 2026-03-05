@@ -46,7 +46,8 @@ export async function purchaseCredits(opts: {
 
 /**
  * Report LLM usage to the hub for per-request metering and charging.
- * Fire-and-forget: errors are swallowed so metering never breaks the agent.
+ * Fire-and-forget from the caller's perspective — network errors are swallowed
+ * but hub warnings (e.g. insufficient credits) are logged.
  */
 export async function reportUsage(opts: {
   hubUrl: string;
@@ -55,16 +56,27 @@ export async function reportUsage(opts: {
   promptTokens: number;
   completionTokens: number;
 }): Promise<void> {
-  await fetch(`${opts.hubUrl}/api/agents/me/report-usage`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${opts.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: opts.model,
-      promptTokens: opts.promptTokens,
-      completionTokens: opts.completionTokens,
-    }),
-  }).catch(() => {}); // swallow errors — metering shouldn't break the agent
+  try {
+    const res = await fetch(`${opts.hubUrl}/api/agents/me/report-usage`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${opts.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: opts.model,
+        promptTokens: opts.promptTokens,
+        completionTokens: opts.completionTokens,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.warn(`[reportUsage] hub returned ${res.status}: ${body}`);
+    } else {
+      const data = (await res.json().catch(() => null)) as { warning?: string } | null;
+      if (data?.warning) console.warn(`[reportUsage] ${data.warning}`);
+    }
+  } catch {
+    /* swallow network errors — metering shouldn't break the agent */
+  }
 }

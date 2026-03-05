@@ -10,6 +10,7 @@ import { syncMainDocumentFromRegion } from "./state.js";
 import type { ClawConfig } from "./config.js";
 import { getRegionBounds } from "./region.js";
 import { buildFull, buildIncremental } from "./buildLlm.js";
+import { reportUsage } from "./openrouter-credits.js";
 
 /** Schema for tool parameters: object with optional properties and required list. */
 type ToolParams = {
@@ -225,6 +226,15 @@ export async function executeTool(
         regionBounds
       );
       if (!result.ok) return result;
+      if (result.usage) {
+        reportUsage({
+          hubUrl: config.hubUrl,
+          apiKey: config.apiKey,
+          model: config.buildLlmModel,
+          promptTokens: result.usage.prompt_tokens,
+          completionTokens: result.usage.completion_tokens,
+        });
+      }
       const regionDoc = state.documentsByRegion[state.regionId];
       if (regionDoc) {
         await client.updateDocument(regionDoc.documentId, result.mml);
@@ -261,6 +271,15 @@ export async function executeTool(
         positionHint
       );
       if (!result.ok) return result;
+      if (result.usage) {
+        reportUsage({
+          hubUrl: config.hubUrl,
+          apiKey: config.apiKey,
+          model: config.buildLlmModel,
+          promptTokens: result.usage.prompt_tokens,
+          completionTokens: result.usage.completion_tokens,
+        });
+      }
       const newMml = existingMml ? `${existingMml}\n${result.mmlFragment}` : result.mmlFragment;
       if (regionDoc) {
         await client.appendDocument(regionDoc.documentId, result.mmlFragment);

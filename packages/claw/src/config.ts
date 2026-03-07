@@ -8,7 +8,7 @@ export type ClawConfig = {
   /** Base URL for agent API (claw-config, PATCH me). Defaults to hubUrl. */
   agentApiUrl: string;
   engineUrl: string;
-  spaceId: string | null;
+  blockId: string | null;
   openRouterApiKey: string;
   chatLlmModel: string;
   buildLlmModel: string;
@@ -65,7 +65,7 @@ export function loadConfig(): ClawConfig {
   const hubUrl = trimUrl(process.env.HUB_URL?.trim() || DEFAULT_HUB);
   const agentApiUrl = trimUrl(process.env.AGENT_API_URL?.trim() || hubUrl);
   const engineUrl = trimUrl(process.env.ENGINE_URL?.trim() || DEFAULT_ENGINE);
-  const spaceId = process.env.SPACE_ID?.trim() || null;
+  const blockId = process.env.SPACE_ID?.trim() || null;
   const ownerUserId = process.env.OWNER_USER_ID?.trim() || null;
   const skillIdsRaw = process.env.SKILL_IDS?.trim();
   const skillIds =
@@ -90,7 +90,7 @@ export function loadConfig(): ClawConfig {
     hubUrl,
     agentApiUrl,
     engineUrl,
-    spaceId,
+    blockId,
     openRouterApiKey,
     chatLlmModel: process.env.CHAT_LLM_MODEL?.trim() || "openrouter/auto",
     buildLlmModel: process.env.BUILD_LLM_MODEL?.trim() || "openrouter/auto",

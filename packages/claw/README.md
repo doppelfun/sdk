@@ -73,7 +73,7 @@ Configuration is read from environment variables (and optionally overridden by t
 - **`runAgent(options?)`** — Starts the agent. Options: `onConnected`, `onDisconnect`, `onTick`, `onToolCallResult`, `soul`, `skills`, `skillIds`.
 - **`loadConfig()`** — Loads `ClawConfig` from environment (call after loading dotenv).
 - **`createInitialState(regionId)`** — Creates initial `ClawState`.
-- **`joinSpace(hubUrl, apiKey, spaceId)`** — Hub helper to join a space and get JWT + engine URL.
+- **`joinSpace(hubUrl, apiKey, blockId)`** — Hub helper to join a space and get JWT + engine URL.
 - **`CHAT_TOOLS`**, **`executeTool(client, state, config, tool)`** — Tool definitions and execution (for custom loops).
 
 ## Requirements

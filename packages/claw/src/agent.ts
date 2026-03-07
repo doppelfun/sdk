@@ -43,7 +43,7 @@ export type AgentRunOptions = {
 type AgentBootstrapResponse = {
   hosted?: boolean;
   soul?: string | null;
-  defaultSpace?: { spaceId: string; serverUrl: string | null } | null;
+  defaultSpace?: { blockId: string; serverUrl: string | null } | null;
 };
 
 /** Fetch agent profile and soul from GET /api/agents/me (single bootstrap call). */
@@ -104,35 +104,35 @@ type ErrorPayload = { code?: string; error?: string; regionId?: string };
  */
 async function getJwtAndEngineUrl(
   config: ClawConfig,
-  defaultSpaceFromBootstrap?: { spaceId: string; serverUrl: string | null } | null
+  defaultSpaceFromBootstrap?: { blockId: string; serverUrl: string | null } | null
 ): Promise<{
   jwt: string;
   engineUrl: string;
-  spaceId: string;
+  blockId: string;
   regionId: string;
 }> {
-  let spaceId = config.spaceId;
+  let blockId = config.blockId;
   let engineUrl = config.engineUrl;
 
-  if (!spaceId && defaultSpaceFromBootstrap?.spaceId) {
-    spaceId = defaultSpaceFromBootstrap.spaceId;
+  if (!blockId && defaultSpaceFromBootstrap?.blockId) {
+    blockId = defaultSpaceFromBootstrap.blockId;
     if (defaultSpaceFromBootstrap.serverUrl) engineUrl = defaultSpaceFromBootstrap.serverUrl;
   }
 
-  if (!spaceId) {
+  if (!blockId) {
     throw new Error(
       "No space to join: set a default space for this agent in the hub, or set SPACE_ID"
     );
   }
 
-  const join = await joinSpace(config.hubUrl, config.apiKey, spaceId);
+  const join = await joinSpace(config.hubUrl, config.apiKey, blockId);
   if (!join.ok) throw new Error(`Join space failed: ${join.error}`);
   if (join.serverUrl) engineUrl = join.serverUrl;
 
   return {
     jwt: join.jwt,
     engineUrl,
-    spaceId,
+    blockId,
     regionId: join.regionId ?? "0_0",
   };
 }
@@ -288,13 +288,13 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   // --- Bootstrap: JWT + engine URL (join or create-then-join) ---
   let jwt: string;
   let engineUrl: string;
-  let spaceId: string;
+  let blockId: string;
   let regionId: string;
   try {
     const resolved = await getJwtAndEngineUrl(config, bootstrap?.defaultSpace ?? null);
     jwt = resolved.jwt;
     engineUrl = resolved.engineUrl;
-    spaceId = resolved.spaceId;
+    blockId = resolved.blockId;
     regionId = resolved.regionId;
   } catch (e) {
     options.onDisconnect?.(e instanceof Error ? e : new Error(String(e)));

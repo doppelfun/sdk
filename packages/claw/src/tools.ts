@@ -28,13 +28,13 @@ function toolDef(
   return { type: "function", function: { name, description, parameters } };
 }
 
-/** Catalog entry from GET /api/agent/catalog (used by build tools). */
+/** Catalog entry from GET /api/catalog (used by build tools). */
 export type CatalogEntry = { id: string; name?: string; glbUrl?: string; category?: string };
 
 /** Fetch build catalog from engine; returns empty array on failure. */
 async function getCatalogFromEngine(engineUrl: string): Promise<CatalogEntry[]> {
   const base = engineUrl.replace(/\/$/, "");
-  const res = await fetch(`${base}/api/agent/catalog`);
+  const res = await fetch(`${base}/api/catalog`);
   if (!res.ok) return [];
   const data = (await res.json()) as { catalog?: CatalogEntry[] };
   return Array.isArray(data.catalog) ? data.catalog : [];
@@ -106,7 +106,7 @@ export const CHAT_TOOLS: ToolDefinition[] = [
       required: ["moveX", "moveZ"],
     }
   ),
-  toolDef("chat", "Send a chat message to the space (visible to all).", {
+  toolDef("chat", "Send a chat message to the City Block (visible to all).", {
     type: "object",
     properties: { text: { type: "string", description: "Message text (max 500 chars)" } },
     required: ["text"],

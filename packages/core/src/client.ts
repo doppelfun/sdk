@@ -17,7 +17,7 @@ const CHAT_LIMIT_MIN = 1;
 const CHAT_LIMIT_MAX = 500;
 const CHAT_LIMIT_DEFAULT = 100;
 
-/** Occupant type from GET /api/agent/occupants. */
+/** Occupant type from GET /api/occupants. */
 export type OccupantType = "observer" | "user" | "agent";
 
 export type Occupant = {
@@ -321,13 +321,13 @@ export class DoppelClient {
     const body: { action: "create"; content: string; documentId?: string } = { action: "create", content };
     if (documentId != null && documentId !== "") body.documentId = documentId;
     const data = await fetchJson<{ success: boolean; documentId: string }>(
-      `${this.base}/api/agent/mml`,
+      `${this.base}/api/document`,
       {
         method: "POST",
         headers: bearerHeaders(token, this.apiKey),
         body: JSON.stringify(body),
       },
-      "POST /api/agent/mml create"
+      "POST /api/document create"
     );
     return { documentId: data.documentId };
   }
@@ -338,13 +338,13 @@ export class DoppelClient {
   async updateDocument(documentId: string, content: string): Promise<void> {
     const token = await this.ensureSession();
     await fetchJson<{ success: boolean }>(
-      `${this.base}/api/agent/mml`,
+      `${this.base}/api/document`,
       {
         method: "POST",
         headers: bearerHeaders(token, this.apiKey),
         body: JSON.stringify({ action: "update", documentId, content }),
       },
-      "POST /api/agent/mml update"
+      "POST /api/document update"
     );
   }
 
@@ -354,13 +354,13 @@ export class DoppelClient {
   async appendDocument(documentId: string, content: string): Promise<void> {
     const token = await this.ensureSession();
     await fetchJson<{ success: boolean }>(
-      `${this.base}/api/agent/mml`,
+      `${this.base}/api/document`,
       {
         method: "POST",
         headers: bearerHeaders(token, this.apiKey),
         body: JSON.stringify({ action: "append", documentId, content }),
       },
-      "POST /api/agent/mml append"
+      "POST /api/document append"
     );
   }
 
@@ -370,38 +370,38 @@ export class DoppelClient {
   async deleteDocument(documentId: string): Promise<void> {
     const token = await this.ensureSession();
     await fetchJson<{ success: boolean }>(
-      `${this.base}/api/agent/mml`,
+      `${this.base}/api/document`,
       {
         method: "POST",
         headers: bearerHeaders(token, this.apiKey),
         body: JSON.stringify({ action: "delete", documentId }),
       },
-      "POST /api/agent/mml delete"
+      "POST /api/document delete"
     );
   }
 
   /**
-   * List document ids owned by this agent (GET /api/agent/mml).
+   * List document ids owned by this agent (GET /api/document).
    */
   async listDocuments(): Promise<string[]> {
     const token = await this.ensureSession();
     const data = await fetchJson<{ content: string; documentIds?: string[] }>(
-      `${this.base}/api/agent/mml`,
+      `${this.base}/api/document`,
       { headers: bearerHeaders(token, this.apiKey) },
-      "GET /api/agent/mml"
+      "GET /api/document"
     );
     return data.documentIds ?? [];
   }
 
   /**
-   * List connected occupants (GET /api/agent/occupants). Requires agent session. Each occupant has type: "observer" | "user" | "agent".
+   * List connected occupants (GET /api/occupants). Any session. Each occupant has type: "observer" | "user" | "agent".
    */
   async getOccupants(): Promise<Occupant[]> {
     const token = await this.ensureSession();
     const data = await fetchJson<{ occupants: Occupant[] }>(
-      `${this.base}/api/agent/occupants`,
+      `${this.base}/api/occupants`,
       { headers: bearerHeaders(token, this.apiKey) },
-      "GET /api/agent/occupants"
+      "GET /api/occupants"
     );
     return data.occupants ?? [];
   }

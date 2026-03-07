@@ -4,11 +4,11 @@
  */
 
 export type JoinSpaceResult =
-  | { ok: true; jwt: string; serverUrl: string; spaceId: string; regionId?: string }
+  | { ok: true; jwt: string; serverUrl: string; blockId: string; regionId?: string }
   | { ok: false; error: string; status?: number };
 
 export type CreateSpaceResult =
-  | { ok: true; spaceId: string; serverUrl: string | null; name: string }
+  | { ok: true; blockId: string; serverUrl: string | null; name: string }
   | { ok: false; error: string; status?: number };
 
 export type AgentProfile = {
@@ -76,14 +76,14 @@ async function hubPost(
 export async function joinSpace(
   hubUrl: string,
   apiKey: string,
-  spaceId: string
+  blockId: string
 ): Promise<JoinSpaceResult> {
   const base = normalizeHubUrl(hubUrl);
-  const res = await hubPost(`${base}/api/spaces/${encodeURIComponent(spaceId)}/join`, apiKey);
+  const res = await hubPost(`${base}/api/spaces/${encodeURIComponent(blockId)}/join`, apiKey);
   if (!res.ok) return res;
-  let data: { jwt?: string; serverUrl?: string; spaceId?: string; regionId?: string };
+  let data: { jwt?: string; serverUrl?: string; blockId?: string; regionId?: string };
   try {
-    data = JSON.parse(res.text) as { jwt?: string; serverUrl?: string; spaceId?: string; regionId?: string };
+    data = JSON.parse(res.text) as { jwt?: string; serverUrl?: string; blockId?: string; regionId?: string };
   } catch {
     return { ok: false, error: "Invalid JSON from hub" };
   }
@@ -95,7 +95,7 @@ export async function joinSpace(
     ok: true,
     jwt,
     serverUrl: typeof data.serverUrl === "string" ? data.serverUrl : base,
-    spaceId: typeof data.spaceId === "string" ? data.spaceId : spaceId,
+    blockId: typeof data.blockId === "string" ? data.blockId : blockId,
     regionId,
   };
 }
@@ -106,27 +106,27 @@ export async function joinSpace(
 export async function createSpace(
   hubUrl: string,
   apiKey: string,
-  options: { name: string; description?: string; maxAgents?: number }
+  options: { name: string; description?: string; maxConnections?: number }
 ): Promise<CreateSpaceResult> {
   const base = normalizeHubUrl(hubUrl);
   const body: Record<string, unknown> = {
     name: options.name,
     description: options.description ?? null,
-    maxAgents: options.maxAgents ?? 100,
+    maxConnections: options.maxConnections ?? 250,
   };
   const res = await hubPost(`${base}/api/spaces`, apiKey, body);
   if (!res.ok) return res;
-  let data: { id?: string; spaceId?: string; serverUrl?: string | null; name?: string };
+  let data: { id?: string; blockId?: string; serverUrl?: string | null; name?: string };
   try {
-    data = JSON.parse(res.text) as { id?: string; spaceId?: string; serverUrl?: string | null; name?: string };
+    data = JSON.parse(res.text) as { id?: string; blockId?: string; serverUrl?: string | null; name?: string };
   } catch {
     return { ok: false, error: "Invalid JSON from hub" };
   }
-  const spaceId = data.id ?? data.spaceId;
-  if (!spaceId || typeof spaceId !== "string") return { ok: false, error: "Hub response missing id/spaceId" };
+  const blockId = data.id ?? data.blockId;
+  if (!blockId || typeof blockId !== "string") return { ok: false, error: "Hub response missing id/blockId" };
   return {
     ok: true,
-    spaceId,
+    blockId,
     serverUrl: typeof data.serverUrl === "string" ? data.serverUrl : null,
     name: typeof data.name === "string" ? data.name : options.name,
   };

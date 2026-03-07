@@ -12,7 +12,7 @@ Use this when building agents that connect to doppel-engine **Agent WebSocket** 
 - **Chat over WS** — `sendChat(text)` after `connect()`.
 - **Move over WS** — `sendInput({ moveX, moveZ, sprint?, jump? })`, `sendJoin(regionId)`, `sendEmote(emoteFileUrl)`.
 - **Chat history** — `getChatHistory(options?)` (GET /api/chat).
-- **Occupants** — `getOccupants()` (GET /api/agent/occupants).
+- **Occupants** — `getOccupants()` (GET /api/occupants).
 
 Options: `engineUrl`, `getJwt` (sync or async), `apiKey?`, `WebSocket?` (required in Node), `agentWsPath?`, `reconnect?` (default true), `reconnectBackoffMs?`, `reconnectMaxBackoffMs?`, `onReconnecting?(attempt)`.
 

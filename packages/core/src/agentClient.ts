@@ -6,13 +6,13 @@ import { fetchJson, normalizeBaseUrl } from "./utils.js";
 
 export type AgentClientOptions = {
   serverUrl: string;
-  /** Optional x-api-key header for POST /session. */
+  /** Optional x-api-key header for POST /api/session. */
   apiKey?: string;
 };
 
 /**
  * Create an agent client for session.
- * - getSession(userId): POST /session with body { userId } → sessionToken (guest-style; for JWT use POST /session with Bearer JWT).
+ * - getSession(userId): POST /api/session with body { userId } → sessionToken (guest-style; for JWT use POST /api/session with Bearer JWT).
  */
 export function createAgentClient(options: AgentClientOptions): {
   getSession(userId: string): Promise<string>;
@@ -24,7 +24,7 @@ export function createAgentClient(options: AgentClientOptions): {
   return {
     async getSession(userId: string): Promise<string> {
       const data = await fetchJson<{ sessionToken: string }>(
-        `${base}/session`,
+        `${base}/api/session`,
         { method: "POST", headers, body: JSON.stringify({ userId }) },
         "session"
       );

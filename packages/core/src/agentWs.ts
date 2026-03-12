@@ -36,6 +36,8 @@ export type AgentWsInputMessage = {
 export type AgentWsChatMessage = {
   type: "chat";
   text: string;
+  /** When set, message is sent only to this session (DM). Omit for global/region chat. */
+  targetSessionId?: string;
 };
 
 export type AgentWsJoinMessage = {
@@ -43,9 +45,20 @@ export type AgentWsJoinMessage = {
   regionId: string;
 };
 
+/** Emote by catalog id (e.g. wave, heart, dance). Server validates with isValidEmoteId. */
 export type AgentWsEmoteMessage = {
   type: "emote";
-  emoteFileUrl: string;
+  emoteId: string;
+};
+
+/**
+ * Toggle "thinking" indicator for this session (LLM/agent working).
+ * Server broadcasts to the room so clients can show a thinking state on the avatar.
+ */
+export type AgentWsThinkingMessage = {
+  type: "thinking";
+  /** true = started thinking, false = finished */
+  thinking: boolean;
 };
 
 /** All outbound Agent WebSocket message types. Send as JSON after receiving `authenticated`. */
@@ -53,7 +66,8 @@ export type AgentWsClientMessage =
   | AgentWsInputMessage
   | AgentWsChatMessage
   | AgentWsJoinMessage
-  | AgentWsEmoteMessage;
+  | AgentWsEmoteMessage
+  | AgentWsThinkingMessage;
 
 // --- Inbound (server → client) ---
 
@@ -79,12 +93,34 @@ export type AgentWsHeartbeatMessage = {
   timestamp: number;
 };
 
+/** Inbound chat message (server → client). Includes channelId for filtering (global vs DM). */
+/** Server broadcast: sessionId is thinking (LLM/NPC working). */
+export type AgentWsThinkingServerMessage = {
+  type: "thinking";
+  sessionId: string;
+  thinking: boolean;
+};
+
+export type AgentWsChatServerMessage = {
+  type: "chat";
+  id?: string;
+  sessionId?: string;
+  username?: string;
+  text?: string;
+  timestamp?: number;
+  /** "global" or "dm:sessionA:sessionB" (sorted). Use to filter or bucket by channel. */
+  channelId?: string;
+  mentions?: Array<{ sessionId?: string; userId?: string; username?: string }>;
+};
+
 /** All inbound Agent WebSocket message types. Parse JSON from the socket. */
 export type AgentWsServerMessage =
   | AgentWsAuthenticatedMessage
   | AgentWsJoinedMessage
   | AgentWsErrorMessage
-  | AgentWsHeartbeatMessage;
+  | AgentWsHeartbeatMessage
+  | AgentWsThinkingServerMessage
+  | AgentWsChatServerMessage;
 
 export function isAgentWsAuthenticated(msg: AgentWsServerMessage): msg is AgentWsAuthenticatedMessage {
   return msg.type === "authenticated";
@@ -96,4 +132,8 @@ export function isAgentWsError(msg: AgentWsServerMessage): msg is AgentWsErrorMe
 
 export function isAgentWsHeartbeat(msg: AgentWsServerMessage): msg is AgentWsHeartbeatMessage {
   return msg.type === "heartbeat";
+}
+
+export function isAgentWsChat(msg: AgentWsServerMessage): msg is AgentWsChatServerMessage {
+  return msg.type === "chat";
 }

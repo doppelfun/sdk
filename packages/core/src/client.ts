@@ -8,6 +8,7 @@ import { getAgentWsUrl, AGENT_WS_DEFAULT_PATH } from "./agentWs.js";
 import type {
   AgentWsInputMessage,
   AgentWsChatMessage,
+  AgentWsThinkingMessage,
   AgentWsJoinMessage,
   AgentWsEmoteMessage,
 } from "./agentWs.js";
@@ -113,13 +114,13 @@ export class DoppelClient {
   }
 
   /**
-   * Get or refresh session token (POST /session with JWT). Cached until next call.
+   * Get or refresh session token (POST /api/session with JWT). Cached until next call.
    */
   async getSessionToken(): Promise<string> {
     const jwt = await Promise.resolve(this.getJwt());
     const headers = authHeaders(this.getJwt, this.apiKey);
     const data = await fetchJson<{ sessionToken: string }>(
-      `${this.base}/session`,
+      `${this.base}/api/session`,
       { method: "POST", headers, body: JSON.stringify({ token: jwt }) },
       "session"
     );
@@ -268,10 +269,10 @@ export class DoppelClient {
     this.ws.send(JSON.stringify(msg));
   }
 
-  /** Send a chat message over the connected WebSocket. No-op if not connected. */
-  sendChat(text: string): void {
+  /** Send a chat message over the connected WebSocket. No-op if not connected. Use targetSessionId for DM. */
+  sendChat(text: string, options?: { targetSessionId?: string }): void {
     if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
-    const msg: AgentWsChatMessage = { type: "chat", text };
+    const msg: AgentWsChatMessage = { type: "chat", text, ...(options?.targetSessionId && { targetSessionId: options.targetSessionId }) };
     this.ws.send(JSON.stringify(msg));
   }
 
@@ -282,10 +283,23 @@ export class DoppelClient {
     this.ws.send(JSON.stringify(msg));
   }
 
-  /** Send an emote (animation URL) over the connected WebSocket. No-op if not connected. */
-  sendEmote(emoteFileUrl: string): void {
+  /**
+   * Broadcast thinking state for this session (e.g. while LLM runs).
+   * Server fans out to the room so UIs can show an indicator on the avatar.
+   */
+  sendThinking(thinking: boolean): void {
     if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
-    const msg: AgentWsEmoteMessage = { type: "emote", emoteFileUrl };
+    const msg: AgentWsThinkingMessage = { type: "thinking", thinking };
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  /**
+   * Play an emote by catalog id (e.g. wave, heart, thumbs, clap, dance, shocked).
+   * No-op if not connected. Server accepts only known ids (see @doppel-engine/schema EMOTES).
+   */
+  sendEmote(emoteId: string): void {
+    if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
+    const msg: AgentWsEmoteMessage = { type: "emote", emoteId: emoteId.trim() };
     this.ws.send(JSON.stringify(msg));
   }
 
@@ -418,6 +432,12 @@ export class DoppelClient {
     const params = new URLSearchParams({ limit: String(limit) });
     if (options.before != null && Number.isFinite(options.before)) {
       params.set("before", String(options.before));
+    }
+    if (options.regionId != null && options.regionId !== "") {
+      params.set("blockSlotId", options.regionId);
+    }
+    if (options.channelId != null && options.channelId !== "") {
+      params.set("channelId", options.channelId);
     }
     const data = await fetchJson<{ messages: ChatHistoryMessage[]; hasMore?: boolean }>(
       `${this.base}/api/chat?${params}`,

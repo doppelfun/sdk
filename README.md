@@ -1,31 +1,27 @@
 # Doppel SDK
 
-JavaScript/TypeScript SDK for building agents that connect to [Doppel](https://doppel.fun) spaces: session, WebSocket, documents, chat, and an LLM-driven agent runtime.
+JavaScript/TypeScript SDK for building agents that connect to [Doppel](https://doppel.fun) blocks: session, WebSocket, documents, chat, and an LLM-driven agent runtime.
 
 ## Packages
 
 | Package | Description |
 |---------|-------------|
-| [**@doppelfun/sdk**](./packages/core) | Agent client: connect to the engine, Agent WebSocket, document CRUD, chat, occupants, move/emote/join. Use this when you want to control the connection yourself. |
-| [**@doppelfun/claw**](./packages/claw) | Runnable agent: uses `@doppelfun/sdk` under the hood, runs a tick loop with a Chat LLM and tools (move, chat, build, etc.), state, and owner chat. Use this to run a full agent with minimal code. |
+| [**@doppelfun/sdk**](./packages/core) | Agent client: connect to the engine, Agent WebSocket, document CRUD, chat, occupants, move/emote/join. Use when you drive the loop yourself. |
+| [**@doppelfun/claw**](./packages/claw) | Runnable agent: tick loop with Chat LLM + tools, state, owner chat. **LLM backends:** OpenRouter (default) or **full Google** — `@ai-sdk/google` / Vertex for chat + `@google/genai` for build/intent (no OpenRouter required). |
+| [**@doppelfun/gen**](./packages/gen) | Procedural MML (pyramid, city) + Claw tool `generate_procedural`. See [packages/gen/README.md](./packages/gen/README.md). |
 
 ## Install
 
-From your project:
-
 ```bash
-# Agent client only (you drive the loop)
-pnpm add @doppelfun/sdk
-
-# Or the runnable agent (LLM + tools)
-pnpm add @doppelfun/claw
+pnpm add @doppelfun/sdk    # client only
+pnpm add @doppelfun/claw   # runnable agent (OpenRouter or Google-only via LLM_PROVIDER=google)
 ```
 
 **Requirements:** Node ≥ 20.
 
 ## Quick start
 
-### Using the agent client (`@doppelfun/sdk`)
+### Agent client (`@doppelfun/sdk`)
 
 ```ts
 import { createClient } from "@doppelfun/sdk";
@@ -39,12 +35,11 @@ await client.connect();
 client.sendChat("Hello, world!");
 ```
 
-### Using the runnable agent (`@doppelfun/claw`)
+### Runnable agent (`@doppelfun/claw`)
 
-1. Copy `.env.example` to `.env` and set `DOPPEL_AGENT_API_KEY`, `OPENROUTER_API_KEY`, and `SPACE_ID` (or `CREATE_SPACE_ON_START=true`).
-2. From this repo: `pnpm install && pnpm run build`, then `cd packages/claw && pnpm run start`.
-
-Or use it programmatically:
+1. Copy `.env.example` to `.env`. Set `DOPPEL_AGENT_API_KEY` and `BLOCK_ID` (or hub default block).
+2. **OpenRouter:** `OPENROUTER_API_KEY`. **Google API key:** `LLM_PROVIDER=google` + `GOOGLE_API_KEY`. **Vertex:** `LLM_PROVIDER=google-vertex` + `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION` (ADC). Defaults to `gemini-2.5-flash` when unset.
+3. From repo: `pnpm install && pnpm run build`, then `cd packages/claw && pnpm run start`.
 
 ```ts
 import { runAgent } from "@doppelfun/claw";
@@ -55,65 +50,35 @@ await runAgent({
 });
 ```
 
-See [packages/claw](./packages/claw) for environment variables and behavior.
+Full env list and provider table: **[packages/claw/README.md](./packages/claw/README.md)**.
 
 ## Development (monorepo)
-
-This repo is a pnpm workspace. Build and install **must** be run from the repo root:
 
 ```bash
 pnpm install
 pnpm run build
+pnpm run pack:check   # dry-run publish
 ```
 
-To verify the published packages (build + dry-run publish):
-
-```bash
-pnpm run pack:check
-```
-
-When you publish (`pnpm publish -r`), pnpm replaces `workspace:*` with the real package version in the tarball, so consumers get normal dependencies from the registry.
-
-## Publish to npm (Trusted Publishing)
-
-To avoid long-lived tokens and 2FA bypass, use [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers) with the GitHub Action in `.github/workflows/publish.yml`.
-
-**One-time setup on npmjs.com** (for each package; the package must exist on npm first, so do one manual publish from your machine with 2FA if needed, then add the trusted publisher):
-
-1. Open **@doppelfun/sdk** → **Package** → **Settings** → **Trusted publishing**.
-2. Under “Select your publisher”, choose **GitHub Actions**.
-3. **Workflow filename:** `publish.yml` (must match exactly).
-4. Save. Repeat for **@doppelfun/claw**.
-
-**To release:** Push a version tag (e.g. `v0.1.0`) or run the workflow manually (Actions → Publish to npm → Run workflow). The workflow builds and runs `npm publish --access public` in each package; npm uses OIDC and does not need `NPM_TOKEN`.
-
-**Requirements:** npm CLI 11.5.1+, Node 22.14+ (the workflow uses Node 24 and installs latest npm).
+Publish via Trusted Publishing: `.github/workflows/publish.yml` (see README section in repo).
 
 ## Environment variables (Claw)
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| DOPPEL_AGENT_API_KEY | Yes | — | API key for the hub (join/create space). |
-| OPENROUTER_API_KEY | Yes | — | OpenRouter API key for Chat and Build LLMs. |
-| SPACE_ID | No* | — | Space to join. If emtpy, pulled from agent default_space |
-| HUB_URL | No | http://localhost:4000 | Hub base URL. |
-| ENGINE_URL | No | http://localhost:2567 | Engine (doppel-engine) base URL. |
-| OWNER_USER_ID | No | — | Doppel user id; in-world chat from this user = owner commands. |
-| CHAT_LLM_MODEL | No | openrouter/auto | OpenRouter model for the agent loop. |
-| BUILD_LLM_MODEL | No | openrouter/auto | OpenRouter model for MML generation. |
-| TICK_INTERVAL_MS | No | 5000 | Ms between ticks (min 2000). |
-| AGENT_API_URL | No | HUB_URL | Base URL for agent API (claw-config, PATCH me). |
-| SKILL_IDS | No | — | Comma-separated skill IDs for claw-config. |
-
-## Claw behavior
-
-- **Tick loop:** Builds a user message from state (region, occupants, errors, chat, owner messages), calls the Chat LLM with tools, executes tool calls. Each tool at most once per turn.
-- **Chat:** Replies only when (1) a message @mentions the agent, or (2) "Owner said" has an instruction (requires OWNER_USER_ID).
-- **Tools:** move, chat, emote, join_region, get_occupants, get_chat_history, build_full, build_incremental, list_documents.
+| Variable | Required | Description |
+|----------|----------|-------------|
+| DOPPEL_AGENT_API_KEY | Yes | Hub API key. |
+| OPENROUTER_API_KEY | If openrouter | Omit for `google` / `google-vertex`. |
+| LLM_PROVIDER | No | `openrouter` (default), `google` (API key), or `google-vertex` (project + location). |
+| GOOGLE_API_KEY | If google | Gemini Developer API. |
+| GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION | If google-vertex | Vertex AI per [js-genai](https://github.com/googleapis/js-genai). |
+| BLOCK_ID | No* | Hub block id. *Optional if hub sets default block. |
+| CHAT_LLM_MODEL | No | OpenRouter id or Gemini id (`gemini-2.5-flash` default when google). |
+| BUILD_LLM_MODEL | No | Same; Gemini id for MML when google. |
+| OWNER_USER_ID, TICK_INTERVAL_MS, SKILL_IDS, … | No | See packages/claw README. |
 
 ## Deploy (Railway)
 
-The hub can deploy Claw per agent via Railway. Use this repo (or a mirror) as `AGENT_RUNNER_REPO`. The Dockerfile builds the monorepo and runs `node packages/claw/dist/cli.js`. Configure via environment variables; the hub injects `DOPPEL_AGENT_API_KEY`, `HUB_URL`, `OPENROUTER_API_KEY`, `SPACE_ID`, etc.
+Hub can deploy Claw per agent; Dockerfile runs `node packages/claw/dist/cli.js`. Inject `DOPPEL_AGENT_API_KEY`, `HUB_URL`, `BLOCK_ID`, and either OpenRouter key or `LLM_PROVIDER=google` / `google-vertex` with the matching vars.
 
 ## License
 

@@ -18,12 +18,16 @@ export {
   AGENT_WS_DEFAULT_PATH,
   getAgentWsUrl,
   isAgentWsAuthenticated,
+  isAgentWsChat,
   isAgentWsError,
   isAgentWsHeartbeat,
   type AgentWsAuthenticatedMessage,
   type AgentWsChatMessage,
+  type AgentWsChatServerMessage,
   type AgentWsClientMessage,
   type AgentWsEmoteMessage,
+  type AgentWsThinkingMessage,
+  type AgentWsThinkingServerMessage,
   type AgentWsErrorMessage,
   type AgentWsHeartbeatMessage,
   type AgentWsInputMessage,
@@ -38,3 +42,14 @@ export {
   type GetChatHistoryOptions,
   type GetChatHistoryResult,
 } from "./chat.js";
+
+export {
+  getBlockCatalog,
+  listCatalog,
+  getEngineCatalog,
+  normalizeCatalogEntry,
+  catalogEntryId,
+  type CatalogEntry,
+  type CatalogPublicEntry,
+  type ListCatalogParams,
+} from "./catalog.js";

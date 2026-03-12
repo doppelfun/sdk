@@ -11,25 +11,38 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "license": "UNLICENSED",
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
     "start": "node dist/cli.js",
-    "run": "pnpm run build && pnpm run start"
+    "run": "pnpm run build && pnpm run start",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "bin": {
     "doppel-claw": "./dist/cli.js"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.43",
+    "@ai-sdk/google-vertex": "^4.0.80",
+    "@ai-sdk/openai": "^3.0.41",
+    "@doppelfun/gen": "workspace:*",
     "@doppelfun/sdk": "workspace:*",
+    "@google/genai": "^1.44.0",
+    "ai": "^6.0.116",
     "dotenv": "^16.4.5",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/ws": "^8.5.13",
-    "typescript": "~5.7.2"
+    "typescript": "~5.7.2",
+    "vitest": "^4.0.18"
   }
 }

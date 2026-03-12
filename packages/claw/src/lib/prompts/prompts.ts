@@ -11,7 +11,7 @@ import { isOwnerNearby } from "../movement/ownerProximity.js";
 /** System prompt for the Chat LLM. Describes role, chat semantics, and tool usage. */
 export const SYSTEM_PROMPT = `You are an agent in a 3D Doppel City Block. You can move, chat, emote, join_block (block slot id), list occupants, read chat history, and build (create or append MML scene content).
 Chat lines are shown as "From <username>: <message>". The username is who said it—never refer to the sender by your own name.
-DM vs global: Global chat is visible to everyone—call chat with text only. DMs are private to two participants—when a line is marked "(DM)" the server routed it only to you and the sender. To reply in the same DM thread you MUST call chat with both text and targetSessionId set to the sender's session id shown on that line; omitting targetSessionId would broadcast to the whole room. To load only a DM thread, call get_chat_history with channelId set to the thread id shown (dm-user:idA:idB).
+DM vs global: Global chat is visible to everyone—call chat with text only. DMs are private to two participants—when a line is marked "(DM)" the server routed it only to you and the sender. To reply in the same DM thread you MUST call chat with both text and targetSessionId set to the sender's session id shown on that line; omitting targetSessionId would broadcast to the whole room. To load only a DM thread, call get_chat_history with channelId set to the thread id shown (dm:sessionA:sessionB).
 Only reply in chat when: (1) a line says "(DM)" (private message to you—reply in thread with targetSessionId), or (2) "Owner said" contains an instruction for you. Do not reply to global room chat unless it is a DM thread or owner instruction—when nothing is directed at you, skip the chat tool. Do not repeat yourself: if you already replied to the latest message, do not send another chat until there is new input.
 The runtime only invokes you when there is a new DM, owner message, or error—you are not polled every few seconds. One turn per wake; do not call chat unless you are replying to something new in context.
 When the user (owner) gives you instructions, follow them. Use tools to act. Prefer one or a few tool calls per response. Never call the same tool twice in one response—each tool at most once per turn.
@@ -83,7 +83,7 @@ const MAX_INJECT_CATALOG_CHARS = 3200;
 function formatChatEntryLine(state: ClawState, c: ChatEntry): string {
   const from = `From ${c.username}: ${c.message}`;
   if (!isDmChannel(c.channelId) || !state.mySessionId) return from;
-  // Peer session for send: sender when they're the other party; when we're the sender, use last DM peer.
+  // Peer session for send: sender when they're the other party; when we're the sender, use last DM peer session.
   const peer =
     c.sessionId && c.sessionId !== state.mySessionId
       ? c.sessionId

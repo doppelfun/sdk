@@ -108,7 +108,7 @@ export type AgentWsChatServerMessage = {
   username?: string;
   text?: string;
   timestamp?: number;
-  /** "global" or dm-user:idA:idB. Use to filter or bucket by channel. */
+  /** "global" or dm:sessionA:sessionB. Use to filter or bucket by channel. */
   channelId?: string;
   mentions?: Array<{ sessionId?: string; userId?: string; username?: string }>;
 };

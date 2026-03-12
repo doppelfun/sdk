@@ -95,7 +95,7 @@ All require session; you must own the document for update/append/delete.
 ### HTTP helpers (session Bearer)
 
 - **`getOccupants()`** — `GET /api/occupants` → `Occupant[]` (`type`: `observer` \| `user` \| `agent`; optional `position` when same region).
-- **`getChatHistory(options?)`** — `GET /api/chat` with `limit` (1–500, default 100), `before` (pagination ms), **`regionId`** (sets `blockSlotId`), **`channelId`** (`"global"` or `dm-user:idA:idB`). Returns `{ messages, hasMore }`.
+- **`getChatHistory(options?)`** — `GET /api/chat` with `limit` (1–500, default 100), `before` (pagination ms), **`regionId`** (sets `blockSlotId`), **`channelId`** (`"global"` or `dm:sessionA:sessionB`). Returns `{ messages, hasMore }`.
 
 ---
 
@@ -163,7 +163,7 @@ Exported from **`agentWs`** (no socket required):
 ## Chat payloads (reference)
 
 - **Send:** `{ type: "chat", text, targetSessionId? }` — omit `targetSessionId` for global; set for DM.
-- **Receive:** `channelId` is `"global"` or `dm-user:idA:idB` for filtering.
+- **Receive:** `channelId` is `"global"` or `dm:sessionA:sessionB` for filtering.
 
 ---
 

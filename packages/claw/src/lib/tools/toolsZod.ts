@@ -200,7 +200,7 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "get_chat_history",
     description:
-      "Get recent chat. Omit channelId for global room chat only. Set channelId to a DM thread id (dm-user:idA:idB) to load that private thread.",
+      "Get recent chat. Omit channelId for global room chat only. Set channelId to a DM thread id (dm:sessionA:sessionB) to load that private thread.",
     schema: getChatHistorySchema,
   },
   {

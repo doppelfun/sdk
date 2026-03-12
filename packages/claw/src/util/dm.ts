@@ -1,11 +1,10 @@
 /**
- * DM channel check only — mirrors schema DM_USER_CHANNEL_PREFIX (keep in sync).
- * Claw avoids a dependency on @doppel-engine/schema. Replies use targetSessionId;
- * channelId is for get_chat_history.
+ * DM channel check — session-based threads use dm: prefix (dmThreadId on server).
+ * Claw avoids a dependency on @doppel-engine/schema. Replies use targetSessionId.
  */
-const DM_USER_PREFIX = "dm-user:"; // sync: schema chatChannels.DM_USER_CHANNEL_PREFIX
+const DM_PREFIX = "dm:";
 
-/** True if channelId is a DM thread (dm-user:… only). */
+/** True if channelId is a DM thread (dm:sessionA:sessionB). */
 export function isDmChannel(channelId: string | undefined): boolean {
-  return typeof channelId === "string" && channelId.startsWith(DM_USER_PREFIX);
+  return typeof channelId === "string" && channelId.startsWith(DM_PREFIX);
 }

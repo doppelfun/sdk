@@ -356,7 +356,6 @@ export async function executeTool(
       const text = typeof args.text === "string" ? args.text.slice(0, 500).trim() : "";
       let targetSessionId =
         typeof args.targetSessionId === "string" ? args.targetSessionId.trim() || undefined : undefined;
-      // If replying after inbound DM and model omitted targetSessionId, keep thread
       if (text && !targetSessionId && state.lastDmPeerSessionId) {
         targetSessionId = state.lastDmPeerSessionId;
       }
@@ -419,7 +418,7 @@ export async function executeTool(
         message: m.message,
         createdAt: m.createdAt,
         channelId: typeof m.channelId === "string" ? m.channelId : undefined,
-        // History API may not include sessionId; WS pushes do—DM reply still uses lastDmPeerSessionId from WS
+        // History API may omit sessionId; WS pushes set lastDmPeerSessionId for DM reply thread
       }));
       return { ok: true, summary: `${messages.length} messages${channelId ? ` (channel ${channelId.slice(0, 24)}…)` : ""}` };
     }

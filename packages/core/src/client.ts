@@ -272,7 +272,11 @@ export class DoppelClient {
   /** Send a chat message over the connected WebSocket. No-op if not connected. Use targetSessionId for DM. */
   sendChat(text: string, options?: { targetSessionId?: string }): void {
     if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
-    const msg: AgentWsChatMessage = { type: "chat", text, ...(options?.targetSessionId && { targetSessionId: options.targetSessionId }) };
+    const msg: AgentWsChatMessage = {
+      type: "chat",
+      text,
+      ...(options?.targetSessionId && { targetSessionId: options.targetSessionId }),
+    };
     this.ws.send(JSON.stringify(msg));
   }
 

@@ -102,7 +102,7 @@ type ChatPayload = {
   timestamp?: number;
   userId: string;
   sessionId?: string;
-  /** "global" or dm-user:idA:idB. Use to filter or bucket by channel. */
+  /** "global" or dm:sessionA:sessionB. Use to filter or bucket by channel. */
   channelId?: string;
 };
 
@@ -579,7 +579,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     const createdAt = typeof p.createdAt === "number" ? p.createdAt : p.timestamp ?? Date.now();
     const userId = typeof p.userId === "string" && p.userId.trim() ? p.userId.trim() : undefined;
     const sessionId = typeof p.sessionId === "string" ? p.sessionId : undefined;
-    /** DM from another participant — entire message is to you; reply with targetSessionId = sender. */
+    /** DM from another participant — reply with targetSessionId = sender session. */
     const dmFromOther =
       state.mySessionId &&
       sessionId &&
@@ -589,7 +589,6 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     if (dmFromOther && sessionId) {
       state.lastDmPeerSessionId = sessionId;
     } else if (p.channelId === "global") {
-      // Global broadcast — clear DM focus so replies go to room unless agent sets targetSessionId
       state.lastDmPeerSessionId = null;
     }
     const shouldWake = fromOwner || dmFromOther;

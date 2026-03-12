@@ -13,7 +13,7 @@ export type ChatEntry = {
   createdAt: number;
   userId?: string;
   sessionId?: string;
-  /** "global" or dm-user:idA:idB. Omitted for older payloads. */
+  /** "global" or dm:sessionA:sessionB. Omitted for older payloads. */
   channelId?: string;
 };
 
@@ -76,7 +76,7 @@ export type ClawState = {
   lastToolRun: string | null;
   /** Tool names invoked this tick (for follow-up when chat-only promised a build). Cleared at tick start. */
   lastTickToolNames: string[] | null;
-  /** When set, last inbound was a DM from this session id. */
+  /** When set, last inbound was a DM from this session id — use as targetSessionId when replying. */
   lastDmPeerSessionId: string | null;
   /** idle = normal tick; must_act_build = run build tool before chat (deterministic or build-only LLM). */
   tickPhase: TickPhase;

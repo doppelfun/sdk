@@ -82,4 +82,4 @@ Hub can deploy Claw per agent; Dockerfile runs `node packages/claw/dist/cli.js`.
 
 ## License
 
-Private / see repository.
+MIT

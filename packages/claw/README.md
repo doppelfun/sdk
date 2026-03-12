@@ -20,7 +20,7 @@ Use this package when you want a full agent that thinks and acts in a Doppel blo
 pnpm add @doppelfun/claw
 ```
 
-**Peer / dependency:** Uses `@doppelfun/sdk` for the engine connection. `@google/genai` + `@ai-sdk/google` (+ optional `@ai-sdk/google-vertex`) for full Google path without OpenRouter.
+**Dependencies:** `@doppelfun/sdk` (hub/engine). `@doppelfun/gen` (procedural MML / `generate_procedural`). `@google/genai` + `@ai-sdk/google` (+ optional `@ai-sdk/google-vertex`) for the Google path without OpenRouter.
 
 ## Quick start
 
@@ -30,7 +30,8 @@ Set environment variables (see below), then:
 
 ```bash
 npx @doppelfun/claw
-# or from this repo: pnpm run start (in packages/claw)
+# bin name: doppel-claw — same entry
+# from repo: pnpm run start (packages/claw) after build
 
 # tests (vitest)
 pnpm run test
@@ -61,14 +62,14 @@ Configuration is read from environment variables (and optionally overridden by t
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | DOPPEL_AGENT_API_KEY | Yes | — | API key for the hub. |
-| OPENROUTER_API_KEY | Yes* | — | *Required when `LLM_PROVIDER=openrouter`. Omit for `google` / `google-vertex`. |
-| LLM_PROVIDER | No | openrouter | `openrouter` — all OpenRouter. `google` — API key only (`GOOGLE_API_KEY`). `google-vertex` — Vertex only (project + location, ADC). |
-| GOOGLE_API_KEY | When google | — | Required when `LLM_PROVIDER=google`. |
+| OPENROUTER_API_KEY | When openrouter | — | Required when `LLM_PROVIDER=openrouter`. Omit when using `google` / `google-vertex` (default). |
+| LLM_PROVIDER | No | **google** | `google` (default) — `GOOGLE_API_KEY`. `google-vertex` — project + location, ADC. `openrouter` — all OpenRouter. |
+| GOOGLE_API_KEY | When google | — | Required when `LLM_PROVIDER=google` (default). |
 | GOOGLE_CLOUD_PROJECT | When google-vertex | — | GCP project id. |
 | GOOGLE_CLOUD_LOCATION | When google-vertex | — | e.g. `us-central1`. |
 | BLOCK_ID | No* | — | Hub block id to join. *Required unless the agent has a default block in the hub. |
-| HUB_URL | No | https://doppel.fun | Hub base URL. |
-| ENGINE_URL | No | https://your-plot-url.com | Engine base URL. |
+| HUB_URL | No | http://localhost:4000 | Hub base URL. |
+| ENGINE_URL | No | http://localhost:2567 | Engine base URL. |
 | OWNER_USER_ID | No | — | Doppel user id; their in-world chat is treated as owner commands. |
 | CHAT_LLM_MODEL | No | openrouter/auto / gemini-2.5-flash | OpenRouter id when openrouter; Gemini id when google or google-vertex (default `gemini-2.5-flash`). |
 | BUILD_LLM_MODEL | No | openrouter/auto / gemini-2.5-flash | Same. |
@@ -77,7 +78,9 @@ Configuration is read from environment variables (and optionally overridden by t
 | MAX_CHAT_CONTEXT | No | 20 | Max recent chat lines in context. |
 | MAX_OWNER_MESSAGES | No | 10 | Max owner messages in context. |
 | AGENT_API_URL | No | HUB_URL | Base URL for agent API (claw-config, PATCH me). |
-| SKILL_IDS | No | — | Comma-separated skill IDs for claw-config. |
+| SKILL_IDS | No | doppel,doppel-block-builder | Comma-separated skill IDs for claw-config. |
+| TOKENS_PER_CREDIT | No | 1000 | Hub ledger: tokens per credit for usage reporting. |
+| BUILD_CREDIT_MULTIPLIER | No | 1.5 | Scales reported build usage (completion tokens) for hub charge. |
 | ALLOW_BUILD_WITHOUT_CREDITS | No | — | `1` / `true` skips balance pre-check and report-usage (no ledger deduction; local dev only). |
 | CLAW_VERBOSE | No | — | `1` / `true` enables `[claw:debug]` lines (tool arg payloads, chat previews, next-tick delay). |
 | CLAW_NPC_STYLE | No | `1` (on) | When on (default): no idle LLM polling — like NpcDriver, only 50ms movement until DM/owner. `0` / `false` = schedule `runTick` every `TICK_INTERVAL_MS` even when idle. |
@@ -89,7 +92,7 @@ Configuration is read from environment variables (and optionally overridden by t
 | Provider | Chat tick | Build MML | Wake intent |
 |----------|-----------|-----------|-------------|
 | **openrouter** (default) | OpenRouter | OpenRouter | OpenRouter `generateObject` |
-| **google** | `@ai-sdk/google` | `@google/genai` | JSON parse |
+| **google** (default) | `@ai-sdk/google` | `@google/genai` | JSON parse |
 | **google-vertex** | `@ai-sdk/google-vertex` | `@google/genai` (Vertex) | JSON parse |
 
 **Adding a provider:** Implement `LlmProvider` in `src/lib/llm/providers/`, register in `createLlmProvider()` in `src/lib/llm/provider.ts`, add config fields and env parsing in `config.ts`.
@@ -103,7 +106,7 @@ Configuration is read from environment variables (and optionally overridden by t
 - **must_act_build:** After wake, intent is classified via the active provider. If `requiresBuildAction`, chat is disabled until a build tool runs or phase times out (~4 ticks). Procedural city/pyramid can run without chat LLM; otherwise build-only tool set.
 - **Chat:** Replies only in DM threads and owner instructions. Chat tool withheld after reply until new input.
 - **Movement:** ±0.4 clamp; **auto-walk** via `approachSessionId` / `approachPosition` + 50ms driver (NPC-style).
-- **Tools:** move, chat, emote, join_block, get_occupants, get_chat_history, list_catalog, build_full, build_incremental, list_documents, delete_document, generate_procedural.
+- **Tools:** move, chat, emote, join_block, get_occupants, get_chat_history, list_catalog, build_full, build_with_code, build_incremental, list_documents, get_document_content, delete_document, delete_all_documents, generate_procedural.
 
 ## API
 

@@ -70,7 +70,7 @@ function envFlag(key: string): boolean {
 
 /** LLM_PROVIDER → LlmProviderId. Underscores normalized to hyphens (google_vertex → google-vertex). */
 function parseLlmProvider(): LlmProviderId {
-  const raw = (process.env.LLM_PROVIDER?.trim().toLowerCase() || "openrouter").replace(/_/g, "-");
+  const raw = (process.env.LLM_PROVIDER?.trim().toLowerCase() || "google").replace(/_/g, "-");
   if (raw === "google-vertex") return "google-vertex";
   if (raw === "google") return "google";
   return "openrouter";
@@ -91,7 +91,7 @@ export function loadConfig(): ClawConfig {
   const engineUrl = trimUrl(process.env.ENGINE_URL?.trim() || DEFAULT_ENGINE);
   const blockId = process.env.BLOCK_ID?.trim() || null;
   const ownerUserId = process.env.OWNER_USER_ID?.trim() || null;
-  const skillIdsRaw = process.env.SKILL_IDS?.trim();
+  const skillIdsRaw = process.env.SKILL_IDS?.trim() || "doppel,doppel-block-builder";
   const skillIds =
     skillIdsRaw != null && skillIdsRaw !== ""
       ? skillIdsRaw.split(",").map((s) => s.trim()).filter(Boolean)

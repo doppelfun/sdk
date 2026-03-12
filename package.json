@@ -1,7 +1,8 @@
 {
   "name": "doppel-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
+  "license": "MIT",
   "description": "Doppel SDK monorepo: core client and agent claw",
   "scripts": {
     "build": "pnpm -r run build",

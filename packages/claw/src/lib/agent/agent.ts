@@ -641,6 +641,27 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
 
   await client.connect();
 
+  // --- Auto refresh hub JWT + HTTP session + WS (avoids expiry without pm2 restart) ---
+  let sessionRefreshTimer: ReturnType<typeof setInterval> | null = null;
+  if (config.sessionRefreshIntervalMs > 0 && blockId) {
+    const refresh = (): void => {
+      joinBlock(config.hubUrl, config.apiKey, blockId)
+        .then((r) => {
+          if (!r.ok) {
+            clawLog("session refresh joinBlock failed", r.error);
+            return;
+          }
+          jwt = r.jwt;
+          if (r.serverUrl && r.serverUrl.trim()) engineUrl = r.serverUrl.trim();
+          return client.getSessionToken().then(() => client.reconnectNow());
+        })
+        .then(() => clawDebug("session refresh ok (JWT + session + WS)"))
+        .catch((e) => clawLog("session refresh error", e instanceof Error ? e.message : String(e)));
+    };
+    sessionRefreshTimer = setInterval(refresh, config.sessionRefreshIntervalMs);
+    clawLog("session auto-refresh every", config.sessionRefreshIntervalMs, "ms");
+  }
+
   // --- Refresh occupants for owner proximity (isOwnerNearby) ---
   const OCCUPANTS_REFRESH_MS = 8000;
   let occupantsRefreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -672,6 +693,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   if (typeof clientAny.close === "function") {
     const orig = clientAny.close.bind(client);
     clientAny.close = () => {
+      if (sessionRefreshTimer) clearInterval(sessionRefreshTimer);
       if (occupantsRefreshTimer) clearInterval(occupantsRefreshTimer);
       clearMovementInterval();
       orig();

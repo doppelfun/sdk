@@ -13,6 +13,9 @@
   },
   "files": ["dist", "CONTRIBUTING.md", "README.md"],
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",

@@ -86,6 +86,7 @@ Configuration is read from environment variables (and optionally overridden by t
 | CLAW_NPC_STYLE | No | `1` (on) | When on (default): no idle LLM polling — like NpcDriver, only 50ms movement until DM/owner. `0` / `false` = schedule `runTick` every `TICK_INTERVAL_MS` even when idle. |
 | OWNER_NEARBY_RADIUS_M | No | 14 | Meters within which the owner counts as “nearby”—obedient mode only (Owner said / DMs). |
 | AUTONOMOUS_SOUL_TICK_MS | No | 45000 | When owner away, LLM runs this often so **autonomous actions follow the SOUL**. `0` = no autonomous ticks between wakes (movement only via explicit `movementTarget` from last LLM). |
+| SESSION_REFRESH_INTERVAL_MS | No | 1200000 (20m) | Periodically **POST joinBlock** to refresh hub JWT, **POST /api/session** to refresh HTTP session, and **reconnect WS** so the agent stays connected without pm2 restart. `0` disables. |
 
 ## LLM providers (detail)
 

@@ -41,6 +41,12 @@ export type ClawConfig = {
    * follows the SOUL (and skills). When 0, no autonomous ticks until wake.
    */
   autonomousSoulTickMs: number;
+  /**
+   * If > 0, periodically POST joinBlock to refresh hub JWT, POST /api/session to refresh
+   * HTTP session token, and reconnect WS so the socket URL stays valid (avoids expiry drops).
+   * Default 20 minutes. Set 0 to disable.
+   */
+  sessionRefreshIntervalMs: number;
 };
 
 const DEFAULT_HUB = "http://localhost:4000";
@@ -124,6 +130,13 @@ export function loadConfig(): ClawConfig {
     0,
     300000
   );
+  // 0 = disabled; default 20m so hub JWT + WS stay ahead of typical 30m expiry
+  const sessionRefreshIntervalMs = parseIntEnv(
+    "SESSION_REFRESH_INTERVAL_MS",
+    20 * 60 * 1000,
+    0,
+    24 * 60 * 60 * 1000
+  );
 
   const gemini = llmProvider === "google" || llmProvider === "google-vertex";
   const defaultModel = gemini ? DEFAULT_GOOGLE_MODEL : "openrouter/auto";
@@ -154,5 +167,6 @@ export function loadConfig(): ClawConfig {
     npcStyleIdle,
     ownerNearbyRadiusM,
     autonomousSoulTickMs,
+    sessionRefreshIntervalMs,
   };
 }

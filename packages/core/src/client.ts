@@ -100,6 +100,8 @@ export class DoppelClient {
   private disconnectRequested = false;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
+  /** When true, socket close does not schedule backoff reconnect (used by reconnectNow). */
+  private skipReconnectOnClose = false;
 
   constructor(options: DoppelClientOptions) {
     this.base = normalizeBaseUrl(options.engineUrl);
@@ -229,8 +231,14 @@ export class DoppelClient {
       };
 
       const onClose = (): void => {
+        // Ignore stale close if we already replaced the socket (e.g. reconnectNow).
+        if (this.ws !== socket) return;
         this.ws = null;
         removeErrorListener();
+        if (this.skipReconnectOnClose) {
+          this.skipReconnectOnClose = false;
+          return;
+        }
         scheduleReconnect();
       };
 
@@ -305,6 +313,32 @@ export class DoppelClient {
     if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
     const msg: AgentWsEmoteMessage = { type: "emote", emoteId: emoteId.trim() };
     this.ws.send(JSON.stringify(msg));
+  }
+
+  /**
+   * Close the current WebSocket and immediately open a new one using the latest
+   * JWT from getJwt() (e.g. after hub joinBlock refresh). Waits for `authenticated`
+   * again. Does not set disconnectRequested — reconnect policy remains active.
+   */
+  async reconnectNow(): Promise<void> {
+    if (this.reconnectTimeout !== null) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    const socket = this.ws;
+    if (socket && (socket.readyState === 0 || socket.readyState === 1)) {
+      this.skipReconnectOnClose = true;
+      try {
+        socket.close();
+      } catch {
+        /* ignore */
+      }
+      // onClose may run sync; ensure ws cleared before doConnect
+      if (this.ws === socket) this.ws = null;
+    }
+    // If close didn't run onClose (already closed), don't leave flag set
+    if (this.skipReconnectOnClose && !socket) this.skipReconnectOnClose = false;
+    await this.doConnect();
   }
 
   /** Close the WebSocket if open and stop reconnecting. */

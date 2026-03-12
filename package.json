@@ -7,7 +7,7 @@
   "scripts": {
     "build": "pnpm -r run build",
     "clean": "pnpm -r run clean",
-    "pack:check": "pnpm run build && pnpm publish -r --dry-run --no-git-checks"
+    "pack:check": "pnpm run build && pnpm publish -r --dry-run --no-git-checks --access public"
   },
   "engines": {
     "node": ">=20"

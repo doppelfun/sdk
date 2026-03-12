@@ -27,6 +27,7 @@ function minimalConfig(): ClawConfig {
     npcStyleIdle: true,
     ownerNearbyRadiusM: 14,
     autonomousSoulTickMs: 0,
+    sessionRefreshIntervalMs: 0,
     llmProvider: "openrouter",
     googleApiKey: null,
     googleCloudProject: null,

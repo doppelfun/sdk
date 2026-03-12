@@ -67,7 +67,7 @@ Configuration is read from environment variables (and optionally overridden by t
 | GOOGLE_API_KEY | When google | — | Required when `LLM_PROVIDER=google` (default). |
 | GOOGLE_CLOUD_PROJECT | When google-vertex | — | GCP project id. |
 | GOOGLE_CLOUD_LOCATION | When google-vertex | — | e.g. `us-central1`. |
-| BLOCK_ID | No* | — | Hub block id to join. *Required unless the agent has a default block in the hub. |
+| BLOCK_ID | No | — | **Optional local override.** Block to join comes from the agent profile (`GET /api/agents/me` → `defaultBlock.blockId`, i.e. hub `default_space_id`). Set `BLOCK_ID` only when the profile has no default space or you need to force a different block locally. |
 | HUB_URL | No | http://localhost:4000 | Hub base URL. |
 | ENGINE_URL | No | http://localhost:2567 | Engine base URL. |
 | OWNER_USER_ID | No | — | Doppel user id; their in-world chat is treated as owner commands. |

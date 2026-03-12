@@ -95,6 +95,7 @@ export function loadConfig(): ClawConfig {
   const hubUrl = trimUrl(process.env.HUB_URL?.trim() || DEFAULT_HUB);
   const agentApiUrl = trimUrl(process.env.AGENT_API_URL?.trim() || hubUrl);
   const engineUrl = trimUrl(process.env.ENGINE_URL?.trim() || DEFAULT_ENGINE);
+  // Optional fallback only: profile default_space_id (GET /api/agents/me defaultBlock) is preferred at join time.
   const blockId = process.env.BLOCK_ID?.trim() || null;
   const ownerUserId = process.env.OWNER_USER_ID?.trim() || null;
   const skillIdsRaw = process.env.SKILL_IDS?.trim() || "doppel,doppel-block-builder";

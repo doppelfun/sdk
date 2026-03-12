@@ -49,12 +49,40 @@ export type AgentRunOptions = {
   skillIds?: string[];
 };
 
-/** Response from GET /api/agents/me: profile, soul, and default block (hub may still call it defaultSpace). */
+/** Response from GET /api/agents/me: profile, soul, and default block (DB column default_space_id → API defaultBlock). */
 type AgentBootstrapResponse = {
   hosted?: boolean;
   soul?: string | null;
+  /** Current hub shape: default space from agent profile (default_space_id). */
+  defaultBlock?: { blockId: string; serverUrl: string | null } | null;
+  /** Legacy/alternate name for defaultBlock. */
   defaultSpace?: { blockId: string; serverUrl: string | null } | null;
+  /** If hub exposes raw id only. */
+  default_space_id?: string | null;
 };
+
+/** Resolve default block from bootstrap: profile default_space_id wins over BLOCK_ID env. */
+function defaultBlockFromBootstrap(
+  bootstrap: AgentBootstrapResponse | null | undefined
+): { blockId: string; serverUrl: string | null } | null {
+  if (!bootstrap) return null;
+  const nested =
+    bootstrap.defaultBlock ?? bootstrap.defaultSpace ?? null;
+  if (nested?.blockId && String(nested.blockId).trim()) {
+    return {
+      blockId: String(nested.blockId).trim(),
+      serverUrl:
+        nested.serverUrl != null && String(nested.serverUrl).trim()
+          ? String(nested.serverUrl).trim()
+          : null,
+    };
+  }
+  const raw = bootstrap.default_space_id;
+  if (raw != null && String(raw).trim()) {
+    return { blockId: String(raw).trim(), serverUrl: null };
+  }
+  return null;
+}
 
 /** Fetch agent profile and soul from GET /api/agents/me (single bootstrap call). */
 async function fetchAgentBootstrap(
@@ -110,29 +138,33 @@ type ChatPayload = {
 type ErrorPayload = { code?: string; error?: string; regionId?: string };
 
 /**
- * Resolve engine URL and JWT: join existing block or create then join.
- * defaultSpaceFromBootstrap: from GET /api/agents/me (defaultSpace JSON field), used when BLOCK_ID env is not set.
+ * Resolve engine URL and JWT: join existing block.
+ * Profile default block (defaultBlock / default_space_id from GET /api/agents/me) takes precedence over BLOCK_ID env.
  */
 async function getJwtAndEngineUrl(
   config: ClawConfig,
-  defaultSpaceFromBootstrap?: { blockId: string; serverUrl: string | null } | null
+  bootstrap: AgentBootstrapResponse | null | undefined
 ): Promise<{
   jwt: string;
   engineUrl: string;
   blockId: string;
   blockSlotId: string;
 }> {
-  let blockId = config.blockId;
+  const fromProfile = defaultBlockFromBootstrap(bootstrap);
+  let blockId: string | null = null;
   let engineUrl = config.engineUrl;
 
-  if (!blockId && defaultSpaceFromBootstrap?.blockId) {
-    blockId = defaultSpaceFromBootstrap.blockId;
-    if (defaultSpaceFromBootstrap.serverUrl) engineUrl = defaultSpaceFromBootstrap.serverUrl;
+  if (fromProfile?.blockId) {
+    blockId = fromProfile.blockId;
+    if (fromProfile.serverUrl) engineUrl = fromProfile.serverUrl;
+  } else if (config.blockId) {
+    // Fallback when profile has no default space (local/dev only).
+    blockId = config.blockId;
   }
 
   if (!blockId) {
     throw new Error(
-      "No block to join: set a default block for this agent in the hub, or set BLOCK_ID"
+      "No block to join: set default space for this agent in the hub (profile default_space_id), or set BLOCK_ID for local override"
     );
   }
 
@@ -427,7 +459,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   let blockId: string;
   let blockSlotId: string;
   try {
-    const resolved = await getJwtAndEngineUrl(config, bootstrap?.defaultSpace ?? null);
+    const resolved = await getJwtAndEngineUrl(config, bootstrap);
     jwt = resolved.jwt;
     engineUrl = resolved.engineUrl;
     blockId = resolved.blockId;
@@ -436,6 +468,9 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     options.onDisconnect?.(e instanceof Error ? e : new Error(String(e)));
     throw e;
   }
+
+  // So catalog/tools using config.blockId match the joined space (profile default_space_id may have been used instead of env).
+  config.blockId = blockId;
 
   const getJwt = () => jwt;
   const client = createClient({

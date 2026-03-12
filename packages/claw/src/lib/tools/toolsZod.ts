@@ -64,20 +64,34 @@ export const getChatHistorySchema = z.object({
     .describe('Optional. "global" or dm thread id from context—filters to that channel only.'),
 });
 
+/** API document ids are UUIDs only — reject filenames so Zod fails before executeTool. */
+const DOCUMENT_ID_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const documentIdUuidOptional = z
+  .string()
+  .optional()
+  .refine(
+    (s) =>
+      s === undefined ||
+      String(s).trim() === "" ||
+      DOCUMENT_ID_UUID_RE.test(String(s).trim()),
+    {
+      message:
+        "documentId must be a UUID from list_documents only—not a filename. Omit documentId to create a new document; use documentTarget replace_current to update the tracked doc.",
+    }
+  );
+
 export const buildFullSchema = z.object({
   instruction: z.string().describe("What to build"),
   documentTarget: z
     .string()
     .optional()
     .describe(
-      'Optional. Default = always create a new document. Use "replace_current", "replace", or "update" only when explicitly updating the tracked doc in place. documentId alone also updates that id.'
+      'Optional. Default = new document (documentId ignored). Use "replace_current"/"replace"/"update" to update in place; with documentId (UUID from list_documents) updates that id; without documentId replaces the tracked doc only.'
     ),
-  documentId: z
-    .string()
-    .optional()
-    .describe(
-      "Optional. When set, update this document id in place (replaces its content). Overrides documentTarget except new still creates if you want a second doc—prefer documentTarget new without documentId."
-    ),
+  documentId: documentIdUuidOptional.describe(
+    "Optional. UUID from list_documents. Ignored when creating new. With replace/update, updates that document in place. Never a filename."
+  ),
 });
 
 export const buildIncrementalSchema = z.object({
@@ -88,12 +102,9 @@ export const buildIncrementalSchema = z.object({
     .describe(
       'Optional. Default = create a new document with the fragment only. Use "append_current" or "append" only when explicitly appending to the tracked doc.'
     ),
-  documentId: z
-    .string()
-    .optional()
-    .describe(
-      "Optional. Append to this id only if it is the current region document (same as append_current)."
-    ),
+  documentId: documentIdUuidOptional.describe(
+    "Optional. UUID from list_documents. With append/append_current, appends to that id (or tracked doc if omitted). Never a filename."
+  ),
   position: z.string().optional().describe("Optional position hint (e.g. 5,0,5)"),
 });
 
@@ -107,7 +118,7 @@ export const listCatalogSchema = z.object({
 export const listDocumentsSchema = z.object({});
 
 export const getDocumentContentSchema = z.object({
-  documentId: z.string().optional().describe("Document id from list_documents; omit with target current to read tracked doc."),
+  documentId: documentIdUuidOptional.describe("UUID from list_documents only; omit with target current to read tracked doc."),
   target: z
     .string()
     .optional()
@@ -119,18 +130,23 @@ export const deleteDocumentSchema = z.object({
     .string()
     .optional()
     .describe('Optional. "current" = tracked active doc. "last" = last id from list_documents.'),
-  documentId: z.string().optional().describe("Optional. Delete this id explicitly."),
+  documentId: documentIdUuidOptional.describe("Optional. UUID only—delete this id explicitly."),
 });
 
 export const deleteAllDocumentsSchema = z.object({});
 
 /** LLM often emits hyphenated kinds; normalize before gen dispatch. */
-const PROCEDURAL_KIND_ALIASES: Record<string, "city" | "pyramid"> = {
+type ProceduralKind = "city" | "pyramid" | "grass" | "trees";
+const PROCEDURAL_KIND_ALIASES: Record<string, ProceduralKind> = {
   "procedural-city": "city",
   procedural_city: "city",
   citygrid: "city",
   "procedural-pyramid": "pyramid",
   procedural_pyramid: "pyramid",
+  "procedural-grass": "grass",
+  procedural_grass: "grass",
+  "procedural-trees": "trees",
+  procedural_trees: "trees",
 };
 
 /**
@@ -145,16 +161,25 @@ export const generateProceduralSchema = z.object({
       const k = s.trim().toLowerCase();
       return PROCEDURAL_KIND_ALIASES[k] ?? k;
     })
-    .pipe(z.enum(["city", "pyramid"]))
-    .describe('Use "city" (grid + buildings) or "pyramid". Synonyms like procedural-city are normalized.'),
+    .pipe(z.enum(["city", "pyramid", "grass", "trees"]))
+    .describe(
+      'Use "city", "pyramid", "grass", or "trees". Synonyms like procedural-city / procedural-grass are normalized.'
+    ),
   documentMode: z
     .string()
     .optional()
-    .describe('Optional. Default = "new" (create document). Use "replace" or "append" only when explicitly updating or appending.'),
+    .describe(
+      'Optional. Default = "new". Use "replace" or "append" with documentId (UUID from list_documents) to target that doc; omit documentId to use tracked doc only.'
+    ),
+  documentId: documentIdUuidOptional.describe(
+    "Optional. UUID when documentMode is replace or append—targets that document. Ignored for new."
+  ),
   params: z
     .record(z.string(), z.unknown())
     .optional()
-    .describe("Params for the procedural; shape is per-kind in gen (pyramid/city keys live here)."),
+    .describe(
+      "Params per kind: pyramid (baseWidth, layers, blockSize, seed, cx, cz, cornerColors, cornerEmissionIntensity); city (rows/cols, blockSize, streetWidth, pyramidRow/pyramidCol) — building pool is filled from hub catalog when available; optional params.buildings array {id,name?,url?} to override; grass (patches, count, spreadMin/spreadMax, height, seed, margin, emissionIntensity); trees (count, catalogId, catalogIds[], seed, margin, collide)."
+    ),
 });
 
 /** Lookup schema by tool name (for execute-time validation). */
@@ -212,13 +237,13 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "build_full",
     description:
-      "Create a full scene with MML. x and z must be in [0, 100) only — use 0..99.x, never 100+ (invisible). Same for code paths: Python range(0,100). Default = always create a new document (omit documentTarget). Use documentTarget replace_current/replace/update only when explicitly replacing the tracked doc; documentId updates that id in place.",
+      "Create a full scene with MML. x,z in [0,100). Default = new document (documentId ignored). replace_current/replace/update: pass documentId UUID to update that doc, or omit to replace tracked doc only.",
     schema: buildFullSchema,
   },
   {
     name: "build_with_code",
     description:
-      "Like build_full but uses Gemini code execution (Python sandbox) to compute layouts/loops then emit MML. No catalog injected — hardcoded MML syntax only in the model context. x,z in [0,100); unique id; x y z only; y>=0; raw MML only. Use list_catalog + build_full if you need catalog ids. Requires LLM_PROVIDER=google or google-vertex. Same documentTarget/documentId as build_full.",
+      "Like build_full but Gemini Python sandbox. Same document rules as build_full: new by default; replace/update with optional documentId UUID.",
     schema: buildFullSchema,
   },
   {
@@ -230,7 +255,7 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "list_documents",
     description:
-      "List document ids owned by this agent. Summary includes ids so you can pass documentId to build_full or delete_document.",
+      "List document ids (UUIDs). Pass to build_full replace, build_incremental append, generate_procedural replace/append, delete_document, get_document_content.",
     schema: listDocumentsSchema,
   },
   {
@@ -254,7 +279,7 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "generate_procedural",
     description:
-      'Deterministic procedural MML (no LLM). Call this in the same turn when you tell the user you are building a city/pyramid—do not only chat. kind: city or pyramid. City defaults when params omitted: rows=3 cols=3 pyramid 1,1 blockSize=30 streetWidth=6 (same as test:create-city)—only pass rows/cols/blockSize/streetWidth if the user asks for a different size. pyramid uses baseWidth, layers, blockSize, etc. documentMode defaults to new; use replace or append only when explicitly told. Owner gate applies.',
+      'Deterministic procedural MML (no LLM). kind: city, pyramid, grass, or trees. City defaults when params omitted: rows=5 cols=5 pyramid 1,1 blockSize=30 streetWidth=6 (same as test:create-city)—only pass rows/cols/blockSize/streetWidth if the user asks for a different size. Pyramid params (inside params): baseWidth, layers, blockSize, doorWidthBlocks, seed, cx, cz; optional cornerColors as array of hex strings for emissive corner cubes (one = all same; four = one per corner); optional cornerEmissionIntensity number. documentMode defaults to new; use replace or append only when explicitly told. Owner gate applies.',
     schema: generateProceduralSchema,
   },
 ];

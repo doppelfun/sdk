@@ -12,10 +12,10 @@ export type CityGenConfig = {
   pyramidCol?: number;
 };
 
-/** Aligns with create-test-city-document defaults: --rows=3 --cols=3 --pyramid=1,1 */
+/** Aligns with create-test-city-document defaults: --rows=5 --cols=5 --pyramid=1,1 */
 export const DEFAULT_CITY_CONFIG: CityGenConfig = {
-  gridRows: 3,
-  gridCols: 3,
+  gridRows: 5,
+  gridCols: 5,
   blockSize: 30,
   streetWidth: 6,
   buildingSetback: 0.5,

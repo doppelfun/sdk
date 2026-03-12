@@ -15,7 +15,7 @@ Use when integrating with **doppel-engine**: session, **Agent WebSocket** (move,
 | **Lifecycle** | `connect()` (waits for `authenticated`), `disconnect()` (stops reconnect), `onMessage(type, handler)` before connect. |
 | **Session** | `getSessionToken()` — POST /api/session with JWT, cached. `getAgentWsUrl()` — WS URL with token. |
 | **WS outbound** | `sendInput({ moveX, moveZ, sprint?, jump? })`, `sendChat(text, { targetSessionId? })` (omit = global; set = DM), `sendJoin(regionId)`, `sendEmote(url)`. |
-| **Documents** | `createDocument(content, documentId?)`, `updateDocument`, `appendDocument`, `deleteDocument`, `listDocuments` — POST/GET `/api/document`; owner only for mutate. |
+| **Documents** | `createDocument(content, documentId?)`, `updateDocument`, `appendDocument`, `deleteDocument`, `listDocuments`, **`getDocumentContent(documentId)`** — POST/GET `/api/document`, GET `/api/document/content?documentId=` (owner); mutate owner-only. |
 | **HTTP** | `getOccupants()`, `getChatHistory({ limit, before?, regionId?, channelId? })` — Bearer session. |
 
 **Options:** `engineUrl`, `getJwt` (sync/async), `apiKey?` (`x-api-key`), `WebSocket?` (required in Node), `agentWsPath?` (default `/connect`), `reconnect?` (default true), `reconnectBackoffMs?`, `reconnectMaxBackoffMs?`, `onReconnecting?(attempt)`.
@@ -46,5 +46,7 @@ Import from `@doppelfun/sdk`: **`getAgentWsUrl`**, **`AGENT_WS_DEFAULT_PATH`**, 
 1. Obtain JWT from hub (block join / agent API key — see hub API).
 2. `createClient({ engineUrl, getJwt, WebSocket })` then `await client.connect()` (token in query via `getAgentWsUrl`).
 3. After `authenticated`, use send* and HTTP methods above.
+
+**MML hints for agents:** Block size is **100×100 m** per slot (`BLOCK_SIZE_M`). Keep **x/z** in **[xMin, xMax)** / **[zMin, zMax)** — coordinates at or past max are outside the block. Use **`emission`** / **`emission-intensity`** for glow (not `emissive`). Use **`x`**, **`y`**, **`z`** only (not `position=`).
 
 Full endpoint list: **doppel-engine** README (`/api/document`, `/api/chat`, `/api/occupants`). Package source: `packages/core/src/client.ts`, `catalog.ts`, `agentWs.ts`, `chat.ts`.

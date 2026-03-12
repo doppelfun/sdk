@@ -4,7 +4,23 @@ import { createInitialState } from "../state/state.js";
 import type { DoppelClient } from "@doppelfun/sdk";
 
 describe("movementDriverTick", () => {
-  it("no-ops without movementTarget", () => {
+  it("streams movementIntent every tick without world target (smooth stick hold)", () => {
+    const sendInput = vi.fn();
+    const client = { sendInput } as unknown as DoppelClient;
+    const state = createInitialState("0_0");
+    state.movementIntent = { moveX: 0.2, moveZ: 0.1, sprint: false };
+    expect(movementDriverTick(client, state)).toBe(true);
+    expect(sendInput).toHaveBeenCalledWith(
+      expect.objectContaining({ moveX: 0.2, moveZ: 0.1, sprint: false })
+    );
+    sendInput.mockClear();
+    expect(movementDriverTick(client, state)).toBe(true);
+    expect(sendInput).toHaveBeenCalledWith(
+      expect.objectContaining({ moveX: 0.2, moveZ: 0.1 })
+    );
+  });
+
+  it("no-ops without movementTarget or movementIntent", () => {
     const sendInput = vi.fn();
     const client = { sendInput } as unknown as DoppelClient;
     const state = createInitialState("0_0");

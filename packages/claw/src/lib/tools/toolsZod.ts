@@ -10,7 +10,7 @@ export const moveSchema = z.object({
   moveX: z
     .number()
     .describe(
-      "Horizontal component, -0.4 to 0.4. Use 0,0 to stop. Prefer approachSessionId or approachPosition for smooth NPC-style walk—the driver streams input every 50ms until arrival."
+      "Horizontal component, -0.4 to 0.4. Use 0,0 to stop. Non-zero values are held and sent every 50ms like NPCs until 0,0. Prefer approachSessionId or approachPosition to walk to a world target until close."
     ),
   moveZ: z
     .number()
@@ -106,6 +106,14 @@ export const listCatalogSchema = z.object({
 
 export const listDocumentsSchema = z.object({});
 
+export const getDocumentContentSchema = z.object({
+  documentId: z.string().optional().describe("Document id from list_documents; omit with target current to read tracked doc."),
+  target: z
+    .string()
+    .optional()
+    .describe('Optional. "current" = tracked doc for this block slot; "last" = last id from list_documents.'),
+});
+
 export const deleteDocumentSchema = z.object({
   target: z
     .string()
@@ -163,7 +171,7 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "move",
     description:
-      "Move toward a target. Prefer approachSessionId (occupant clientId after get_occupants) or approachPosition \"x,z\" for NPC-style auto-walk until close—input is streamed every 50ms like block NPCs. Or use moveX/moveZ -0.4..0.4 for one-shot input; 0,0 stops and clears auto-approach.",
+      "Move toward a target. Prefer approachSessionId or approachPosition for auto-walk to a world point (50ms stream until close). Or moveX/moveZ -0.4..0.4—held and streamed every 50ms like NPCs until move 0,0 stops; 0,0 also clears auto-approach.",
     schema: moveSchema,
   },
   {
@@ -204,13 +212,19 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "build_full",
     description:
-      "Create a full scene with MML. Default = always create a new document (omit documentTarget). Use documentTarget replace_current/replace/update only when explicitly replacing the tracked doc; documentId updates that id in place.",
+      "Create a full scene with MML. All x,z must stay inside the block’s 100×100 m area (half-open [min,max)—values at or past max are outside and invisible). Default = always create a new document (omit documentTarget). Use documentTarget replace_current/replace/update only when explicitly replacing the tracked doc; documentId updates that id in place.",
+    schema: buildFullSchema,
+  },
+  {
+    name: "build_with_code",
+    description:
+      "Like build_full but uses Gemini code execution (Python sandbox) to compute layouts/loops then emit MML. Same MML rules as build_full: x,z strictly inside 100×100 block bounds (Python loops must clamp/range within bounds); call list_catalog first for catalogId on <m-model>; every entity needs unique id; use x y z only (never position=); y>=0; final output raw MML only. Requires LLM_PROVIDER=google or google-vertex. Same documentTarget/documentId as build_full.",
     schema: buildFullSchema,
   },
   {
     name: "build_incremental",
     description:
-      "Add MML as a fragment. Default = new document with fragment only. Use documentTarget append_current/append only when explicitly appending to the tracked doc.",
+      "Add MML as a fragment. Same bounds as build_full: x,z must stay inside the block 100×100 area. Default = new document with fragment only. Use documentTarget append_current/append only when explicitly appending to the tracked doc.",
     schema: buildIncrementalSchema,
   },
   {
@@ -218,6 +232,12 @@ export const CLAW_TOOL_REGISTRY: Array<{
     description:
       "List document ids owned by this agent. Summary includes ids so you can pass documentId to build_full or delete_document.",
     schema: listDocumentsSchema,
+  },
+  {
+    name: "get_document_content",
+    description:
+      "Read stored MML for a document (what was actually saved). Use after build/update to verify contents or debug. Pass documentId or target current|last. Large docs return truncated—re-call list_documents if needed.",
+    schema: getDocumentContentSchema,
   },
   {
     name: "delete_document",
@@ -234,7 +254,7 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "generate_procedural",
     description:
-      'Deterministic procedural MML (no LLM). Call this in the same turn when you tell the user you are building a city/pyramid—do not only chat. kind: city or pyramid. Params: city uses rows/cols, blockSize, streetWidth, setback, seed; pyramid uses baseWidth, layers, blockSize, etc. documentMode defaults to new; use replace or append only when explicitly told. Owner gate applies.',
+      'Deterministic procedural MML (no LLM). Call this in the same turn when you tell the user you are building a city/pyramid—do not only chat. kind: city or pyramid. City defaults when params omitted: rows=3 cols=3 pyramid 1,1 blockSize=30 streetWidth=6 (same as test:create-city)—only pass rows/cols/blockSize/streetWidth if the user asks for a different size. pyramid uses baseWidth, layers, blockSize, etc. documentMode defaults to new; use replace or append only when explicitly told. Owner gate applies.',
     schema: generateProceduralSchema,
   },
 ];

@@ -73,6 +73,14 @@ export class OpenRouterProvider implements LlmProvider {
     }
   }
 
+  async completeWithCodeExecution(): Promise<CompletionResult> {
+    return {
+      ok: false,
+      error:
+        "build_with_code requires LLM_PROVIDER=google or google-vertex (Gemini code execution sandbox).",
+    };
+  }
+
   async classifyBuildIntent(message: string, modelId: string): Promise<BuildIntentResult> {
     const text = message.trim();
     if (!text) return { proceduralKind: null, requiresBuildAction: false };

@@ -21,9 +21,11 @@ Do not call get_occupants or get_chat_history every tick. Only call them when yo
 If the user message includes a cached catalog (compact snapshot from list_catalog) or cached document list (from list_documents), use that data when enough—re-call list_catalog or list_documents only when you need the full list or things may have changed.
 You only act on the CURRENT MESSAGE (or current owner instruction) in the user message. Older chat lines are background context only—do not reply to them again, do not re-run tools for them, and do not call chat unless the current message is a DM to you or an owner instruction. Cached occupants/documents/catalog are already-fetched data: use them to answer or build without re-listing unless the current message asks to refresh or you know the data changed (e.g. after you deleted a document).
 If you receive a boundary error with a slot id, use join_block with blockSlotId to move to that block slot (engine may still report region_boundary).
-For building: call list_catalog when you need catalog ids for MML (same source as build_full). Default is always a new document unless the owner explicitly asks to update, replace, append, or delete. Omit documentTarget/documentMode to create new; use replace_current/replace/update or append_current/append only when instructed. documentId on build_full updates that id in place. list_documents returns ids; delete_document deletes one id; delete_all_documents removes every agent document in one call when the user asks to clear/delete all. The block loads all agent documents—Claw tracks one id per slot for optional replace/append.
+When the user message includes an ENGINE ERROR block, you MUST respond in human terms: briefly explain what failed (translate codes like region_boundary into plain language) and what the player can do. Call the chat tool once with that summary—use targetSessionId if there is an active DM peer so the person who triggered the action gets the message; otherwise global chat is allowed for this error summary only. After explaining, use join_block if the error says how to fix it.
+If a tool call fails (error in tool result), do the same: one short chat explaining the failure in plain language when in DM or owner context.
+For building: all MML x,z must stay inside the current block’s 100×100 m bounds (half-open [min,max)—never use coordinates at or past max or geometry is invisible). Call list_catalog when you need catalog ids for MML (same source as build_full). build_with_code uses Gemini Python sandbox for complex layouts then posts MML like build_full (Google provider only). Default is always a new document unless the owner explicitly asks to update, replace, append, or delete. Omit documentTarget/documentMode to create new; use replace_current/replace/update or append_current/append only when instructed. documentId on build_full updates that id in place. list_documents returns ids; delete_document deletes one id; delete_all_documents removes every agent document in one call when the user asks to clear/delete all. The block loads all agent documents—Claw tracks one id per slot for optional replace/append.
 
-Movement: When approaching a user or build location, prefer move with approachSessionId (clientId from get_occupants) or approachPosition "x,z"—the agent then walks continuously like block NPCs until within ~2 m. Otherwise use small moveX/moveZ (-0.4..0.4). Stop with move 0,0. When the owner player is nearby, only follow what they tell you—no wandering, no unsolicited global chat. When the owner is not nearby, your autonomous behavior must follow the soul (and skills) appended below—personality, goals, and tone define what you do (move, emote, idle, or rare build if the soul implies it).`;
+Movement: When approaching a user or build location, prefer move with approachSessionId (clientId from get_occupants) or approachPosition "x,z"—the agent then walks continuously like block NPCs until within ~2 m. Otherwise use small moveX/moveZ (-0.4..0.4)—held and streamed every 50ms like NPCs until move 0,0 stops. Stop with move 0,0. When the owner player is nearby, only follow what they tell you—no wandering, no unsolicited global chat. When the owner is not nearby, your autonomous behavior must follow the soul (and skills) appended below—personality, goals, and tone define what you do (move, emote, idle, or rare build if the soul implies it).`;
 
 export type ClawConfigPrompt = {
   soul: string | null;
@@ -69,7 +71,7 @@ const HINT_NO_CONTEXT =
   "No context yet. Call get_occupants or get_chat_history once to gather context, then act or wait.";
 
 /** Build tools that must not be called twice back-to-back in the same session turn. */
-const BUILD_TOOLS_NO_REPEAT = new Set(["build_full", "build_incremental"]);
+const BUILD_TOOLS_NO_REPEAT = new Set(["build_full", "build_with_code", "build_incremental"]);
 
 /** Cap injected catalog bytes so wake ticks stay bounded. */
 const MAX_INJECT_CATALOG_CHARS = 3200;
@@ -150,7 +152,7 @@ export function buildUserMessage(state: ClawState, config: ClawConfig): string {
   if (state.lastToolRun) {
     if (BUILD_TOOLS_NO_REPEAT.has(state.lastToolRun)) {
       parts.push(
-        `Last tool you ran: ${state.lastToolRun}. Do not call build_full or build_incremental again now; wait or do something else (e.g. move, get_occupants) or make no tool calls.`
+        `Last tool you ran: ${state.lastToolRun}. Do not call build_full, build_with_code, or build_incremental again now; wait or do something else (e.g. move, get_occupants) or make no tool calls.`
       );
     } else {
       parts.push(`Last tool you ran: ${state.lastToolRun}.`);
@@ -196,9 +198,14 @@ export function buildUserMessage(state: ClawState, config: ClawConfig): string {
 
   if (state.lastError) {
     const fix = state.lastError.blockSlotId
-      ? ` Use join_block with blockSlotId "${state.lastError.blockSlotId}" to fix.`
+      ? ` Suggested fix: join_block with blockSlotId "${state.lastError.blockSlotId}".`
       : "";
-    parts.push(`Last error: ${state.lastError.code} - ${state.lastError.message}.${fix}`);
+    parts.push(
+      "[ENGINE ERROR — REPLY REQUIRED] The server/engine reported a problem. " +
+        "Summarize in simple, friendly language what went wrong (not raw codes—explain like to a player). " +
+        "Then call chat once with that summary so the user knows what happened. " +
+        `Technical detail for you: code=${state.lastError.code} message=${state.lastError.message}.${fix}`
+    );
   }
 
   // Chat: single-message focus — only the latest line is actionable; rest is context only.

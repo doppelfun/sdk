@@ -30,6 +30,28 @@ const MAX_MOVE = 0.4;
  */
 export function movementDriverTick(client: DoppelClient, state: ClawState): boolean {
   const target = state.movementTarget;
+
+  // --- Continuous stick input (no world target): repeat every tick like NpcDriver pendingInput ---
+  if (!target && state.movementIntent) {
+    const { moveX, moveZ, sprint } = state.movementIntent;
+    const my = state.myPosition;
+    let mx = moveX;
+    let mz = moveZ;
+    if (my) {
+      const bounds = getBlockBounds(state.blockSlotId);
+      const xMin = bounds.xMin + BOUNDS_MARGIN;
+      const xMax = bounds.xMax - BOUNDS_MARGIN;
+      const zMin = bounds.zMin + BOUNDS_MARGIN;
+      const zMax = bounds.zMax - BOUNDS_MARGIN;
+      if (my.x <= xMin && mx < 0) mx = 0;
+      if (my.x >= xMax && mx > 0) mx = 0;
+      if (my.z <= zMin && mz < 0) mz = 0;
+      if (my.z >= zMax && mz > 0) mz = 0;
+    }
+    client.sendInput({ moveX: mx, moveZ: mz, sprint, jump: false });
+    return true;
+  }
+
   if (!target) return false;
 
   const my = state.myPosition;

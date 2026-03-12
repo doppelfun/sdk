@@ -1,5 +1,6 @@
 /**
  * Block slot bounds for the claw. Must match @doppel-engine/schema (BLOCK_SIZE_M, slot id "cx_cz").
+ * MML builds must keep every entity x in [xMin, xMax) and z in [zMin, zMax) — see buildLlm.formatBoundsStrict.
  */
 export const BLOCK_SIZE_M = 100;
 export const PLAY_AREA_WIDTH_M = 100;

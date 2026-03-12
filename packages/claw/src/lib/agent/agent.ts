@@ -8,6 +8,7 @@ import type { DoppelClient } from "@doppelfun/sdk";
 import { joinBlock, reportUsage as hubReportUsage } from "../hub/hub.js";
 import { loadConfig, type ClawConfig } from "../config/config.js";
 import {
+  clearLastError,
   createInitialState,
   pushChat,
   pushOwnerMessage,
@@ -187,7 +188,12 @@ function reportChatUsageToHub(
 // --- Tick: prompt + LLM + tool execution ---
 
 const MUST_ACT_MAX_TICKS = 4;
-const BUILD_TOOLS = new Set(["generate_procedural", "build_full", "build_incremental"]);
+const BUILD_TOOLS = new Set([
+  "generate_procedural",
+  "build_full",
+  "build_with_code",
+  "build_incremental",
+]);
 
 function ownerBuildBlocked(config: ClawConfig, state: ClawState): boolean {
   return (
@@ -224,7 +230,7 @@ async function runTick(
   if (state.lastError?.code === "region_boundary" && boundarySlot) {
     client.sendJoin(boundarySlot);
     state.blockSlotId = boundarySlot;
-    state.lastError = null;
+    clearLastError(state);
     options.onTick?.(`join_block: ${state.blockSlotId} (auto from boundary)`);
   }
 
@@ -338,6 +344,33 @@ async function runTick(
     options.onTick?.("no tool calls");
   }
 
+  // Engine error wake: model must summarize in chat — if it sent no tools, force a fallback message
+  if (
+    state.errorReplyPending &&
+    !result.hadToolCalls &&
+    result.ok &&
+    "replyText" in result
+  ) {
+    const text =
+      result.replyText && result.replyText.trim().length > 0
+        ? result.replyText.trim().slice(0, 500)
+        : "Something went wrong on the server. If it keeps happening, try again in a moment.";
+    if (state.lastDmPeerSessionId) {
+      client.sendChat(text, { targetSessionId: state.lastDmPeerSessionId });
+    } else {
+      client.sendChat(text);
+    }
+    state.lastAgentChatMessage = text;
+    state.lastTickSentChat = true;
+    state.lastToolRun = "chat";
+    options.onTick?.(`error-reply fallback chat: ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`);
+  }
+
+  // Once we've notified (or auto-fixed boundary), don't re-prompt the same error every tick
+  if (state.lastError && state.lastTickSentChat) {
+    clearLastError(state);
+  }
+  state.errorReplyPending = false;
   state.dmReplyPending = false;
   state.lastTickToolNames = null;
 }
@@ -601,7 +634,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     const p = payload as { regionId?: string };
     if (typeof p.regionId === "string") {
       state.blockSlotId = p.regionId;
-      state.lastError = null;
+      clearLastError(state);
       state.lastDmPeerSessionId = null;
       syncMainDocumentForBlock(state);
     }

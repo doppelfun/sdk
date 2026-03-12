@@ -6,6 +6,7 @@ LLM-driven agent runtime for Doppel. Connects to the hub and engine via [@doppel
 
 - **Chat tick:** [Vercel AI SDK](https://sdk.vercel.ai/) `generateText` + tools — **OpenRouter** by default, or **Gemini** when `LLM_PROVIDER=google` ([`@ai-sdk/google`](https://ai-sdk.dev/providers/ai-sdk-providers/google-generative-ai)) or `LLM_PROVIDER=google-vertex` ([`@ai-sdk/google-vertex`](https://ai-sdk.dev/providers/ai-sdk-providers/google-vertex)). Model ids: [Gemini models](https://ai.google.dev/gemini-api/docs/models).
 - **Build MML:** **`LlmProvider.complete`** — OpenRouter, or **`@google/genai`** for both `google` and `google-vertex`.
+- **build_with_code:** Gemini-only — `generateContent` with **`tools: [{ codeExecution: {} }]`** so the model can run Python in Google’s sandbox, then emit MML; same persist path as `build_full` (`createDocument` / `updateDocument`). OpenRouter returns a clear error if invoked.
 - **Wake intent** (`must_act_build`): same provider as build; OpenRouter uses `generateObject`, Google uses `generateContent` + JSON parse.
 - Tool schemas: **`lib/tools/toolsZod.ts`**; execution: **`lib/tools/tools.ts`**.
 

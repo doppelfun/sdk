@@ -67,6 +67,11 @@ export type ClawState = {
   movementStopDistanceM: number;
   /** Sprint while auto-approaching. */
   movementSprint: boolean;
+  /**
+   * When set (and no movementTarget), movementDriverTick sends this input every ~50ms—
+   * same cadence as NpcDriver so motion stays smooth instead of one-shot jerk per LLM tick.
+   */
+  movementIntent: { moveX: number; moveZ: number; sprint: boolean } | null;
   /** Last tool name that was run. */
   lastToolRun: string | null;
   /** Tool names invoked this tick (for follow-up when chat-only promised a build). Cleared at tick start. */
@@ -95,6 +100,11 @@ export type ClawState = {
    * Used to force/fallback chat when the model returns no tool calls (e.g. Gemini text-only).
    */
   dmReplyPending: boolean;
+  /**
+   * True when setLastError just ran — next LLM turn should summarize the failure in plain language
+   * and call chat (DM thread or global once). Cleared after chat is sent or lastError cleared.
+   */
+  errorReplyPending: boolean;
   /**
    * Compact catalog snapshot from last list_catalog (bounded size)—injected into buildUserMessage.
    * Full JSON was only in that tool turn; re-call list_catalog if more entries needed. Cleared on join_block.
@@ -132,6 +142,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     movementTarget: null,
     movementStopDistanceM: 2,
     movementSprint: false,
+    movementIntent: null,
     lastToolRun: null,
     lastTickToolNames: null,
     lastDmPeerSessionId: null,
@@ -141,6 +152,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     llmWakePending: true,
     autonomousSoulTickDue: false,
     dmReplyPending: false,
+    errorReplyPending: false,
     lastCatalogContext: null,
     lastDocumentsList: null,
     lastOccupantsSummary: null,
@@ -175,4 +187,11 @@ export function setLastError(
 ): void {
   state.lastError = { code, message, blockSlotId };
   state.llmWakePending = true;
+  state.errorReplyPending = true;
+}
+
+/** Clear error and reply flag (e.g. after join or after user was notified). */
+export function clearLastError(state: ClawState): void {
+  state.lastError = null;
+  state.errorReplyPending = false;
 }

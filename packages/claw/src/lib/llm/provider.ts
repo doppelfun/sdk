@@ -36,6 +36,17 @@ export interface LlmProvider {
     maxOutputTokens?: number;
     temperature?: number;
   }): Promise<CompletionResult>;
+  /**
+   * Gemini only: generateContent with code execution tool (Python sandbox).
+   * Used for build_with_code — model can loop with code then emit MML.
+   */
+  completeWithCodeExecution?(options: {
+    model: string;
+    system: string;
+    user: string;
+    maxOutputTokens?: number;
+    temperature?: number;
+  }): Promise<CompletionResult>;
   classifyBuildIntent(message: string, modelId: string): Promise<BuildIntentResult>;
 }
 

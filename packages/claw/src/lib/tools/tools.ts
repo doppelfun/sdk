@@ -10,7 +10,7 @@ import type { ClawState } from "../state/state.js";
 import { syncMainDocumentForBlock } from "../state/state.js";
 import type { ClawConfig } from "../config/config.js";
 import { getBlockBounds } from "../../util/blockBounds.js";
-import { buildFull, buildIncremental } from "../llm/buildLlm.js";
+import { buildFull, buildFullWithCodeExecution, buildIncremental } from "../llm/buildLlm.js";
 import { createLlmProvider } from "../llm/provider.js";
 import { checkBalance, reportUsage as hubReportUsage } from "../hub/hub.js";
 import { clawLog, clawDebug } from "../log.js";
@@ -113,6 +113,39 @@ function invalidateDocumentListCache(state: ClawState): void {
 }
 
 /**
+ * Parse documentId / target from tool args — shared by delete_document and get_document_content.
+ * - explicit documentId wins.
+ * - target "current" → tracked doc for this block slot.
+ * - target "last" → last id from listDocuments() (server order).
+ */
+async function resolveDocumentIdTarget(
+  args: { documentId?: string; target?: string },
+  state: ClawState,
+  client: DoppelClient,
+  toolName: string
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const explicitId =
+    typeof args.documentId === "string" && args.documentId.trim() ? args.documentId.trim() : null;
+  const targetRaw = typeof args.target === "string" ? args.target.trim().toLowerCase() : "";
+
+  if (explicitId) return { ok: true, id: explicitId };
+
+  if (targetRaw === "current") {
+    const id = state.documentsByBlockSlot[state.blockSlotId]?.documentId ?? null;
+    if (!id) return { ok: false, error: `${toolName} target current but no tracked document` };
+    return { ok: true, id };
+  }
+
+  if (targetRaw === "last") {
+    const ids = await client.listDocuments();
+    if (ids.length === 0) return { ok: false, error: `${toolName} target last but no documents` };
+    return { ok: true, id: ids[ids.length - 1]! };
+  }
+
+  return { ok: false, error: `${toolName} requires documentId or target current|last` };
+}
+
+/**
  * When the tracked document for this block slot is deleted, drop slot state so
  * replace/append tools don't target a gone id.
  */
@@ -186,6 +219,50 @@ function parsePositionHint(hint: string): { x: number; y: number; z: number } | 
   return { x, y, z };
 }
 
+/**
+ * Shared persistence for build_full and build_with_code: create/update document + state sync.
+ * Args shape matches buildFullSchema (instruction already consumed to produce mml).
+ */
+async function persistFullBuildMml(
+  client: DoppelClient,
+  state: ClawState,
+  mml: string,
+  args: Record<string, unknown>
+): Promise<ExecuteToolResult> {
+  const explicitId =
+    typeof args.documentId === "string" && args.documentId.trim() ? args.documentId.trim() : null;
+  const targetRaw =
+    typeof args.documentTarget === "string" ? args.documentTarget.trim().toLowerCase() : "";
+  const wantReplace =
+    targetRaw === "replace_current" || targetRaw === "replace" || targetRaw === "update";
+
+  if (explicitId) {
+    await client.updateDocument(explicitId, mml);
+    const blockDoc = state.documentsByBlockSlot[state.blockSlotId];
+    if (blockDoc?.documentId === explicitId) {
+      state.documentsByBlockSlot[state.blockSlotId] = { documentId: explicitId, mml };
+    }
+    syncMainDocumentForBlock(state);
+    return { ok: true, summary: `built full scene (updated ${explicitId})` };
+  }
+  if (!wantReplace) {
+    const { documentId: newId } = await client.createDocument(mml);
+    state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml };
+    syncMainDocumentForBlock(state);
+    return { ok: true, summary: `built full scene (new document ${newId})` };
+  }
+  const blockDoc = state.documentsByBlockSlot[state.blockSlotId];
+  if (blockDoc) {
+    await client.updateDocument(blockDoc.documentId, mml);
+    state.documentsByBlockSlot[state.blockSlotId] = { documentId: blockDoc.documentId, mml };
+  } else {
+    const { documentId: newId } = await client.createDocument(mml);
+    state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml };
+  }
+  syncMainDocumentForBlock(state);
+  return { ok: true, summary: "built full scene (replaced current)" };
+}
+
 // --- Tool execution ---
 
 /** Tool invocation: name + validated args (Zod-validated in toolsAi before calling). */
@@ -230,6 +307,7 @@ export async function executeTool(
               "approachSessionId requires occupant with position—call get_occupants first and use clientId from context.",
           };
         }
+        state.movementIntent = null;
         state.movementTarget = { x: occ.position.x, z: occ.position.z };
         state.movementSprint = sprint;
         client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
@@ -243,6 +321,7 @@ export async function executeTool(
         if (!parsed) {
           return { ok: false, error: "approachPosition must be like \"x,z\" or \"x,y,z\" (world coords)" };
         }
+        state.movementIntent = null;
         state.movementTarget = { x: parsed.x, z: parsed.z };
         state.lastBuildTarget = { x: parsed.x, z: parsed.z };
         state.movementSprint = sprint;
@@ -253,16 +332,25 @@ export async function executeTool(
         };
       }
 
-      // Explicit stop clears auto-approach
+      // Explicit stop clears auto-approach and held stick intent
       if (rawX === 0 && rawZ === 0) {
         state.movementTarget = null;
+        state.movementIntent = null;
         state.movementSprint = false;
+        client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump });
+        return { ok: true, summary: "move stop" };
       }
 
       const moveX = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, rawX));
       const moveZ = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, rawZ));
-      client.sendInput({ moveX, moveZ, sprint, jump });
-      return { ok: true, summary: `move ${moveX},${moveZ}` };
+      // Stream same input every 50ms like NpcDriver—avoids one-shot jerk between LLM ticks
+      state.movementIntent = { moveX, moveZ, sprint };
+      state.movementTarget = null;
+      client.sendInput({ moveX, moveZ, sprint, jump: false });
+      return {
+        ok: true,
+        summary: `move ${moveX},${moveZ} (held until move 0,0 or approach*)`,
+      };
     }
     case "chat": {
       const text = typeof args.text === "string" ? args.text.slice(0, 500).trim() : "";
@@ -296,6 +384,7 @@ export async function executeTool(
         state.myPosition = null;
         state.lastBuildTarget = null;
         state.movementTarget = null;
+        state.movementIntent = null;
         state.lastToolRun = null;
         state.lastDmPeerSessionId = null;
         state.lastCatalogContext = null;
@@ -402,42 +491,33 @@ export async function executeTool(
       }
       if (!result.ok) return result;
       reportBuildUsage(config, result.usage);
-      const mml = result.mml;
-      const explicitId = typeof args.documentId === "string" && args.documentId.trim() ? args.documentId.trim() : null;
-      const targetRaw = typeof args.documentTarget === "string" ? args.documentTarget.trim().toLowerCase() : "";
-      // Default is always a new document unless explicitly told to replace/update (or documentId set).
-      const wantReplace =
-        targetRaw === "replace_current" ||
-        targetRaw === "replace" ||
-        targetRaw === "update";
-
-      if (explicitId) {
-        await client.updateDocument(explicitId, mml);
-        const blockDoc = state.documentsByBlockSlot[state.blockSlotId];
-        if (blockDoc?.documentId === explicitId) {
-          state.documentsByBlockSlot[state.blockSlotId] = { documentId: explicitId, mml };
-        }
-        syncMainDocumentForBlock(state);
-        return { ok: true, summary: `built full scene (updated ${explicitId})` };
+      return persistFullBuildMml(client, state, result.mml, args);
+    }
+    case "build_with_code": {
+      const instruction = typeof args.instruction === "string" ? args.instruction.trim() : "";
+      if (!instruction) return { ok: false, error: "build_with_code requires instruction" };
+      const denied = ownerGateDenied(config, state);
+      if (denied) return denied;
+      const balErr = await preCheckBalance(config);
+      if (balErr) return { ok: false, error: balErr };
+      const catalog = await getCatalogForBuild(config);
+      const blockBounds = getBlockBounds(state.blockSlotId);
+      client.sendThinking(true);
+      let result: Awaited<ReturnType<typeof buildFullWithCodeExecution>>;
+      try {
+        result = await buildFullWithCodeExecution(
+          createLlmProvider(config),
+          config.buildLlmModel,
+          instruction,
+          catalogToJson(catalog),
+          blockBounds
+        );
+      } finally {
+        client.sendThinking(false);
       }
-      if (!wantReplace) {
-        // Default (omit documentTarget) or any value other than replace/update: always createDocument
-        const { documentId: newId } = await client.createDocument(mml);
-        state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml };
-        syncMainDocumentForBlock(state);
-        return { ok: true, summary: `built full scene (new document ${newId})` };
-      }
-      // replace_current / replace / update only when explicitly requested
-      const blockDoc = state.documentsByBlockSlot[state.blockSlotId];
-      if (blockDoc) {
-        await client.updateDocument(blockDoc.documentId, mml);
-        state.documentsByBlockSlot[state.blockSlotId] = { documentId: blockDoc.documentId, mml };
-      } else {
-        const { documentId: newId } = await client.createDocument(mml);
-        state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml };
-      }
-      syncMainDocumentForBlock(state);
-      return { ok: true, summary: "built full scene (replaced current)" };
+      if (!result.ok) return result;
+      reportBuildUsage(config, result.usage);
+      return persistFullBuildMml(client, state, result.mml, args);
     }
     case "build_incremental": {
       const instruction = typeof args.instruction === "string" ? args.instruction.trim() : "";
@@ -450,6 +530,7 @@ export async function executeTool(
       if (positionHint) {
         const parsed = parsePositionHint(positionHint);
         if (parsed) {
+          state.movementIntent = null;
           state.lastBuildTarget = { x: parsed.x, z: parsed.z };
           state.movementTarget = { x: parsed.x, z: parsed.z };
         }
@@ -512,30 +593,34 @@ export async function executeTool(
       const { summaryForTool } = cacheDocumentsList(state, ids);
       return { ok: true, summary: summaryForTool };
     }
+    case "get_document_content": {
+      const denied = ownerGateDenied(config, state);
+      if (denied) return denied;
+      const resolved = await resolveDocumentIdTarget(args, state, client, "get_document_content");
+      if (!resolved.ok) return { ok: false, error: resolved.error };
+      const res = await client.getDocumentContent(resolved.id);
+      // Same bound as list_documents tool return — keeps LLM payload predictable.
+      const preview =
+        res.content.length > DOC_LIST_TOOL_RETURN_MAX_CHARS
+          ? res.content.slice(0, DOC_LIST_TOOL_RETURN_MAX_CHARS) +
+            "\n… (truncated in summary; full in tool result)"
+          : res.content;
+      const truncatedNote = res.truncated ? ` server truncated at ${res.totalChars ?? "?"} chars` : "";
+      return {
+        ok: true,
+        summary: `document ${res.documentId} (${res.content.length} chars${truncatedNote})\n${preview}`,
+      };
+    }
     case "delete_document": {
       const denied = ownerGateDenied(config, state);
       if (denied) return denied;
-      const explicitId = typeof args.documentId === "string" && args.documentId.trim() ? args.documentId.trim() : null;
-      const targetRaw = typeof args.target === "string" ? args.target.trim().toLowerCase() : "";
+      const resolved = await resolveDocumentIdTarget(args, state, client, "delete_document");
+      if (!resolved.ok) return { ok: false, error: resolved.error };
 
-      let idToDelete: string | null = explicitId;
-      if (!idToDelete && targetRaw === "current") {
-        idToDelete = state.documentsByBlockSlot[state.blockSlotId]?.documentId ?? null;
-        if (!idToDelete) return { ok: false, error: "delete_document target current but no tracked document" };
-      }
-      if (!idToDelete && targetRaw === "last") {
-        const ids = await client.listDocuments();
-        if (ids.length === 0) return { ok: false, error: "delete_document target last but no documents" };
-        idToDelete = ids[ids.length - 1]!;
-      }
-      if (!idToDelete) {
-        return { ok: false, error: "delete_document requires documentId or target current|last" };
-      }
-
-      await client.deleteDocument(idToDelete);
+      await client.deleteDocument(resolved.id);
       invalidateDocumentListCache(state);
-      clearTrackedDocumentIfDeleted(state, idToDelete);
-      return { ok: true, summary: `deleted document ${idToDelete}` };
+      clearTrackedDocumentIfDeleted(state, resolved.id);
+      return { ok: true, summary: `deleted document ${resolved.id}` };
     }
     case "delete_all_documents": {
       const denied = ownerGateDenied(config, state);

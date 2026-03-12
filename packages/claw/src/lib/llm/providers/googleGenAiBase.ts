@@ -106,6 +106,44 @@ export abstract class GoogleGenAiProviderBase implements LlmProvider {
     }
   }
 
+  /**
+   * Enables Gemini code execution (Python sandbox). Model may run code iteratively;
+   * final answer should be raw MML — response.text aggregates candidate text parts.
+   */
+  async completeWithCodeExecution(options: {
+    model: string;
+    system: string;
+    user: string;
+    maxOutputTokens?: number;
+    temperature?: number;
+  }): Promise<CompletionResult> {
+    try {
+      const response = await this.ai.models.generateContent({
+        model: options.model,
+        contents: options.user,
+        config: {
+          systemInstruction: options.system,
+          maxOutputTokens: options.maxOutputTokens ?? 8192,
+          temperature: options.temperature ?? 0.2,
+          // @google/genai: code execution tool — Python only in Google sandbox
+          tools: [{ codeExecution: {} }],
+        },
+      });
+      let content = response.text ?? "";
+      // If model only printed MML from Python, codeExecutionResult may hold stdout;
+      // append so extractMml can still find XML if the model echoed it there only.
+      const codeOut = response.codeExecutionResult;
+      if (!content.trim() && typeof codeOut === "string" && codeOut.trim()) {
+        content = codeOut;
+      }
+      const usage = usageFromGoogle(response.usageMetadata);
+      return { ok: true, content, usage };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { ok: false, error: msg };
+    }
+  }
+
   async classifyBuildIntent(message: string, modelId: string): Promise<BuildIntentResult> {
     const text = message.trim();
     if (!text) return { proceduralKind: null, requiresBuildAction: false };

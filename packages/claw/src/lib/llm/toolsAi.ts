@@ -74,6 +74,7 @@ function clawTool(
 export const MUST_ACT_BUILD_TOOL_NAMES = [
   "generate_procedural",
   "build_full",
+  "build_with_code",
   "build_incremental",
   "list_catalog",
   "list_documents",

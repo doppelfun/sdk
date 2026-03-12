@@ -36,6 +36,8 @@ Claw’s `generate_procedural` tool calls `runProceduralMml(kind, args)` from th
 
 - **Input:** `raw.params` is the only place for kind-specific options; top-level `kind` / `documentMode` are set by the caller.
 - **Output:** `string` — raw MML only (no markdown fences).
+- **Spatial bounds:** Generated MML must place geometry **inside the block** — **100×100 m** per slot (`BLOCK_SIZE_M` from `@doppel-engine/schema`). Every **x** must satisfy **xMin ≤ x < xMax** and every **z** **zMin ≤ z < zMax** for the target block; otherwise the scene is invisible where the player stands. City layout helpers already offset by `BLOCK_SIZE_M / 2` when centering.
+- **Glow:** Use **`emission`** and **`emission-intensity`** on cubes/models if needed — the client does not read **`emissive`**.
 - **Errors:** throw `Error` with a clear message; Claw surfaces it to the agent.
 
 ## Stable API used by Claw (do not break)

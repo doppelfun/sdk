@@ -408,6 +408,30 @@ export class DoppelClient {
   }
 
   /**
+   * Fetch stored MML for a document (GET /api/document/content?documentId=).
+   * Owner agent only. Returns truncated content if over server limit.
+   */
+  async getDocumentContent(documentId: string): Promise<{
+    documentId: string;
+    content: string;
+    truncated: boolean;
+    totalChars?: number;
+  }> {
+    const token = await this.ensureSession();
+    const params = new URLSearchParams({ documentId });
+    return fetchJson<{
+      documentId: string;
+      content: string;
+      truncated: boolean;
+      totalChars?: number;
+    }>(
+      `${this.base}/api/document/content?${params}`,
+      { headers: bearerHeaders(token, this.apiKey) },
+      "GET /api/document/content"
+    );
+  }
+
+  /**
    * List connected occupants (GET /api/occupants). Any session. Each occupant has type: "observer" | "user" | "agent".
    */
   async getOccupants(): Promise<Occupant[]> {

@@ -36,6 +36,11 @@ function pyramidHandler(raw: Record<string, unknown>): string {
 
 function cityHandler(raw: Record<string, unknown>): string {
   const c = getParams(raw);
+  const noPyramid =
+    c.pyramid === false ||
+    c.noPyramid === true ||
+    c.pyramid === "none" ||
+    c.pyramid === "off";
   const cfg = clampCityConfig({
     gridRows: typeof c.rows === "number" ? c.rows : typeof c.gridRows === "number" ? c.gridRows : undefined,
     gridCols: typeof c.cols === "number" ? c.cols : typeof c.gridCols === "number" ? c.gridCols : undefined,
@@ -46,6 +51,7 @@ function cityHandler(raw: Record<string, unknown>): string {
     seed: typeof c.seed === "number" ? c.seed : undefined,
     pyramidRow: typeof c.pyramidRow === "number" ? c.pyramidRow : undefined,
     pyramidCol: typeof c.pyramidCol === "number" ? c.pyramidCol : undefined,
+    noPyramid,
   });
   return generateCityMml(cfg);
 }

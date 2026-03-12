@@ -5,6 +5,15 @@
  * - Hub GET /api/blocks/:id/catalog — full entries; engine caches this.
  * - Hub GET /api/catalog?blockId=&type=&category= — public list shape.
  * - Engine GET /api/catalog — proxy of hub cache (empty if hub down and no cache).
+ *
+ * Mutations are block-scoped (blockId in path only):
+ * - POST /api/blocks/:id/catalog — JSON create
+ * - POST /api/blocks/:id/catalog/upload-model — GLB (multipart)
+ * - POST /api/blocks/:id/catalog/upload-audio — audio (multipart)
+ * - POST /api/blocks/:id/catalog/generate — image/text-to-3D (JSON or multipart)
+ * - PATCH/DELETE GET .../blocks/:id/catalog/:catalogId — by asset id
+ * - GET .../blocks/:id/catalog/:catalogId/jobs — jobs for asset
+ * Legacy POST /api/catalog/upload etc. return 410 Gone.
  */
 
 import { fetchJson, normalizeBaseUrl } from "./utils.js";
@@ -108,6 +117,32 @@ export function normalizeCatalogEntry(entry: CatalogEntry): CatalogEntry {
   const id = entry.id || entry.tag;
   if (!id) return entry;
   return { ...entry, id };
+}
+
+/**
+ * Base URLs for block-scoped catalog mutations. Use with fetch + Bearer apiKey.
+ * Multipart uploads: POST uploadModel/uploadAudio with FormData field "file".
+ */
+export function blockCatalogMutationUrls(hubUrl: string, blockId: string) {
+  const base = normalizeBaseUrl(hubUrl);
+  const b = encodeURIComponent(blockId);
+  const prefix = `${base}/api/blocks/${b}/catalog`;
+  return {
+    /** GET list / POST JSON create */
+    catalog: prefix,
+    /** POST multipart GLB */
+    uploadModel: `${prefix}/upload-model`,
+    /** POST multipart audio */
+    uploadAudio: `${prefix}/upload-audio`,
+    /** POST JSON or multipart image; x402 when configured */
+    generate: `${prefix}/generate`,
+    /** GET/PATCH/DELETE one block-scoped asset */
+    asset: (catalogId: string) =>
+      `${prefix}/${encodeURIComponent(catalogId)}`,
+    /** GET jobs for asset */
+    jobs: (catalogId: string) =>
+      `${prefix}/${encodeURIComponent(catalogId)}/jobs`,
+  };
 }
 
 /** MML catalogId resolution: prefer id then tag. */

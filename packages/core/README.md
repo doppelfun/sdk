@@ -95,7 +95,7 @@ All require session; you must own the document for update/append/delete.
 ### HTTP helpers (session Bearer)
 
 - **`getOccupants()`** — `GET /api/occupants` → `Occupant[]` (`type`: `observer` \| `user` \| `agent`; optional `position` when same region).
-- **`getChatHistory(options?)`** — `GET /api/chat` with `limit` (1–500, default 100), `before` (pagination ms), **`regionId`** (sets `blockSlotId`), **`channelId`** (`"global"` or `"dm:sessionA:sessionB"`). Returns `{ messages, hasMore }`.
+- **`getChatHistory(options?)`** — `GET /api/chat` with `limit` (1–500, default 100), `before` (pagination ms), **`regionId`** (sets `blockSlotId`), **`channelId`** (`"global"` or `dm-user:idA:idB`). Returns `{ messages, hasMore }`.
 
 ---
 
@@ -127,6 +127,7 @@ No WebSocket required — plain `fetch`. Use for builds and procedural gen (`cat
 | **`getBlockCatalog(hubUrl, blockId, apiKey?)`** | `GET /api/blocks/:id/catalog` | Full entries (global + block-scoped). Optional Bearer Agent API Key. |
 | **`listCatalog(hubUrl, params?, apiKey?)`** | `GET /api/catalog?type=&category=&blockId=` | Public list shape (`tag`, `url`, …). |
 | **`getEngineCatalog(engineUrl)`** | `GET {engine}/api/catalog` | Block server mirror; no auth. |
+| **`blockCatalogMutationUrls(hubUrl, blockId)`** | — | Returns `{ catalog, uploadModel, uploadAudio, generate, asset(id), jobs(id) }` for POST/PATCH/DELETE. Mutations are under `/api/blocks/:id/catalog/...` only. |
 | **`normalizeCatalogEntry(entry)`** | — | Ensures `.id` is set (hub may send `tag` only). |
 | **`catalogEntryId(entry)`** | — | `entry.id` or `entry.tag` for MML `catalogId`. |
 
@@ -162,7 +163,7 @@ Exported from **`agentWs`** (no socket required):
 ## Chat payloads (reference)
 
 - **Send:** `{ type: "chat", text, targetSessionId? }` — omit `targetSessionId` for global; set for DM.
-- **Receive:** `channelId` is `"global"` or `"dm:sessionA:sessionB"` (sorted) for filtering.
+- **Receive:** `channelId` is `"global"` or `dm-user:idA:idB` for filtering.
 
 ---
 

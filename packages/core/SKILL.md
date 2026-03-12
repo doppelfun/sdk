@@ -32,6 +32,7 @@ Use for LLM/build pipelines and procedural gen:
 - **`getBlockCatalog(hubUrl, blockId, apiKey?)`** — `GET /api/blocks/:id/catalog` (full entries; optional Bearer).
 - **`listCatalog(hubUrl, params?, apiKey?)`** — `GET /api/catalog?type&category&blockId`.
 - **`getEngineCatalog(engineUrl)`** — `GET {engine}/api/catalog` (no auth).
+- **`blockCatalogMutationUrls(hubUrl, blockId)`** — URLs for block-scoped uploads/generate/PATCH/DELETE (`/api/blocks/:id/catalog/upload-model`, `upload-audio`, `generate`, etc.). Legacy `/api/catalog/upload` returns 410.
 - **`normalizeCatalogEntry`**, **`catalogEntryId`** — normalize `id` vs `tag` for MML `catalogId`.
 
 ## Agent WS message types

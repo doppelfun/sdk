@@ -47,6 +47,7 @@ export {
   getBlockCatalog,
   listCatalog,
   getEngineCatalog,
+  blockCatalogMutationUrls,
   normalizeCatalogEntry,
   catalogEntryId,
   type CatalogEntry,

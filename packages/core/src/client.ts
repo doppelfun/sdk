@@ -8,6 +8,7 @@ import { getAgentWsUrl, AGENT_WS_DEFAULT_PATH } from "./agentWs.js";
 import type {
   AgentWsInputMessage,
   AgentWsChatMessage,
+  AgentWsThinkingMessage,
   AgentWsJoinMessage,
   AgentWsEmoteMessage,
 } from "./agentWs.js";
@@ -17,7 +18,7 @@ const CHAT_LIMIT_MIN = 1;
 const CHAT_LIMIT_MAX = 500;
 const CHAT_LIMIT_DEFAULT = 100;
 
-/** Occupant type from GET /api/agent/occupants. */
+/** Occupant type from GET /api/occupants. */
 export type OccupantType = "observer" | "user" | "agent";
 
 export type Occupant = {
@@ -113,13 +114,13 @@ export class DoppelClient {
   }
 
   /**
-   * Get or refresh session token (POST /session with JWT). Cached until next call.
+   * Get or refresh session token (POST /api/session with JWT). Cached until next call.
    */
   async getSessionToken(): Promise<string> {
     const jwt = await Promise.resolve(this.getJwt());
     const headers = authHeaders(this.getJwt, this.apiKey);
     const data = await fetchJson<{ sessionToken: string }>(
-      `${this.base}/session`,
+      `${this.base}/api/session`,
       { method: "POST", headers, body: JSON.stringify({ token: jwt }) },
       "session"
     );
@@ -268,10 +269,14 @@ export class DoppelClient {
     this.ws.send(JSON.stringify(msg));
   }
 
-  /** Send a chat message over the connected WebSocket. No-op if not connected. */
-  sendChat(text: string): void {
+  /** Send a chat message over the connected WebSocket. No-op if not connected. Use targetSessionId for DM. */
+  sendChat(text: string, options?: { targetSessionId?: string }): void {
     if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
-    const msg: AgentWsChatMessage = { type: "chat", text };
+    const msg: AgentWsChatMessage = {
+      type: "chat",
+      text,
+      ...(options?.targetSessionId && { targetSessionId: options.targetSessionId }),
+    };
     this.ws.send(JSON.stringify(msg));
   }
 
@@ -282,10 +287,23 @@ export class DoppelClient {
     this.ws.send(JSON.stringify(msg));
   }
 
-  /** Send an emote (animation URL) over the connected WebSocket. No-op if not connected. */
-  sendEmote(emoteFileUrl: string): void {
+  /**
+   * Broadcast thinking state for this session (e.g. while LLM runs).
+   * Server fans out to the room so UIs can show an indicator on the avatar.
+   */
+  sendThinking(thinking: boolean): void {
     if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
-    const msg: AgentWsEmoteMessage = { type: "emote", emoteFileUrl };
+    const msg: AgentWsThinkingMessage = { type: "thinking", thinking };
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  /**
+   * Play an emote by catalog id (e.g. wave, heart, thumbs, clap, dance, shocked).
+   * No-op if not connected. Server accepts only known ids (see @doppel-engine/schema EMOTES).
+   */
+  sendEmote(emoteId: string): void {
+    if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
+    const msg: AgentWsEmoteMessage = { type: "emote", emoteId: emoteId.trim() };
     this.ws.send(JSON.stringify(msg));
   }
 
@@ -321,13 +339,13 @@ export class DoppelClient {
     const body: { action: "create"; content: string; documentId?: string } = { action: "create", content };
     if (documentId != null && documentId !== "") body.documentId = documentId;
     const data = await fetchJson<{ success: boolean; documentId: string }>(
-      `${this.base}/api/agent/mml`,
+      `${this.base}/api/document`,
       {
         method: "POST",
         headers: bearerHeaders(token, this.apiKey),
         body: JSON.stringify(body),
       },
-      "POST /api/agent/mml create"
+      "POST /api/document create"
     );
     return { documentId: data.documentId };
   }
@@ -338,13 +356,13 @@ export class DoppelClient {
   async updateDocument(documentId: string, content: string): Promise<void> {
     const token = await this.ensureSession();
     await fetchJson<{ success: boolean }>(
-      `${this.base}/api/agent/mml`,
+      `${this.base}/api/document`,
       {
         method: "POST",
         headers: bearerHeaders(token, this.apiKey),
         body: JSON.stringify({ action: "update", documentId, content }),
       },
-      "POST /api/agent/mml update"
+      "POST /api/document update"
     );
   }
 
@@ -354,13 +372,13 @@ export class DoppelClient {
   async appendDocument(documentId: string, content: string): Promise<void> {
     const token = await this.ensureSession();
     await fetchJson<{ success: boolean }>(
-      `${this.base}/api/agent/mml`,
+      `${this.base}/api/document`,
       {
         method: "POST",
         headers: bearerHeaders(token, this.apiKey),
         body: JSON.stringify({ action: "append", documentId, content }),
       },
-      "POST /api/agent/mml append"
+      "POST /api/document append"
     );
   }
 
@@ -370,38 +388,62 @@ export class DoppelClient {
   async deleteDocument(documentId: string): Promise<void> {
     const token = await this.ensureSession();
     await fetchJson<{ success: boolean }>(
-      `${this.base}/api/agent/mml`,
+      `${this.base}/api/document`,
       {
         method: "POST",
         headers: bearerHeaders(token, this.apiKey),
         body: JSON.stringify({ action: "delete", documentId }),
       },
-      "POST /api/agent/mml delete"
+      "POST /api/document delete"
     );
   }
 
   /**
-   * List document ids owned by this agent (GET /api/agent/mml).
+   * List document ids owned by this agent (GET /api/document).
    */
   async listDocuments(): Promise<string[]> {
     const token = await this.ensureSession();
     const data = await fetchJson<{ content: string; documentIds?: string[] }>(
-      `${this.base}/api/agent/mml`,
+      `${this.base}/api/document`,
       { headers: bearerHeaders(token, this.apiKey) },
-      "GET /api/agent/mml"
+      "GET /api/document"
     );
     return data.documentIds ?? [];
   }
 
   /**
-   * List connected occupants (GET /api/agent/occupants). Requires agent session. Each occupant has type: "observer" | "user" | "agent".
+   * Fetch stored MML for a document (GET /api/document/content?documentId=).
+   * Owner agent only. Returns truncated content if over server limit.
+   */
+  async getDocumentContent(documentId: string): Promise<{
+    documentId: string;
+    content: string;
+    truncated: boolean;
+    totalChars?: number;
+  }> {
+    const token = await this.ensureSession();
+    const params = new URLSearchParams({ documentId });
+    return fetchJson<{
+      documentId: string;
+      content: string;
+      truncated: boolean;
+      totalChars?: number;
+    }>(
+      `${this.base}/api/document/content?${params}`,
+      { headers: bearerHeaders(token, this.apiKey) },
+      "GET /api/document/content"
+    );
+  }
+
+  /**
+   * List connected occupants (GET /api/occupants). Any session. Each occupant has type: "observer" | "user" | "agent".
    */
   async getOccupants(): Promise<Occupant[]> {
     const token = await this.ensureSession();
     const data = await fetchJson<{ occupants: Occupant[] }>(
-      `${this.base}/api/agent/occupants`,
+      `${this.base}/api/occupants`,
       { headers: bearerHeaders(token, this.apiKey) },
-      "GET /api/agent/occupants"
+      "GET /api/occupants"
     );
     return data.occupants ?? [];
   }
@@ -418,6 +460,12 @@ export class DoppelClient {
     const params = new URLSearchParams({ limit: String(limit) });
     if (options.before != null && Number.isFinite(options.before)) {
       params.set("before", String(options.before));
+    }
+    if (options.regionId != null && options.regionId !== "") {
+      params.set("blockSlotId", options.regionId);
+    }
+    if (options.channelId != null && options.channelId !== "") {
+      params.set("channelId", options.channelId);
     }
     const data = await fetchJson<{ messages: ChatHistoryMessage[]; hasMore?: boolean }>(
       `${this.base}/api/chat?${params}`,

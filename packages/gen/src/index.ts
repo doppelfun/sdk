@@ -1,0 +1,29 @@
+/**
+ * @doppelfun/gen — procedural MML generators. No I/O in core services.
+ *
+ * Claw integration: only runProceduralMml + listProceduralKinds are required.
+ * New procedurals = gen-only PR (see CONTRIBUTING.md) — do not edit Claw.
+ */
+
+export { generatePyramidMml, pyramidBlockCount } from "./pyramid/service.js";
+export {
+  type PyramidGenConfig,
+  DEFAULT_PYRAMID_CONFIG,
+  clampPyramidConfig,
+} from "./pyramid/config.js";
+
+export { generateCityMml } from "./city/service.js";
+export {
+  type CityGenConfig,
+  DEFAULT_CITY_CONFIG,
+  clampCityConfig,
+} from "./city/config.js";
+
+export { mulberry32, r2, deg } from "./shared/prng.js";
+
+export {
+  runProceduralMml,
+  listProceduralKinds,
+  type ProceduralHandler,
+  type ProceduralEntry,
+} from "./procedural.js";

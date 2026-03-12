@@ -8,6 +8,8 @@ export type ChatHistoryMessage = {
   username: string;
   message: string;
   createdAt: number;
+  /** "global" or dm:sessionA:sessionB. Present when server supports channels. */
+  channelId?: string;
 };
 
 export type GetChatHistoryResult = {
@@ -22,6 +24,8 @@ export type GetChatHistoryOptions = {
   before?: number;
   /** When set, return only messages for this region; omit for global (e.g. observer) history. */
   regionId?: string | null;
+  /** When set, return only messages in this channel (e.g. "global" or dm:sessionA:sessionB). */
+  channelId?: string | null;
 };
 
 const CHAT_LIMIT_MIN = 1;
@@ -29,7 +33,7 @@ const CHAT_LIMIT_MAX = 500;
 const CHAT_LIMIT_DEFAULT = 100;
 
 /**
- * Fetch chat history. Requires a session token (e.g. from POST /session with Bearer JWT).
+ * Fetch chat history. Requires a session token (e.g. from POST /api/session with Bearer JWT).
  * Poll with optional `before` (e.g. latest createdAt) to "listen" for new messages.
  */
 export async function getChatHistory(
@@ -45,6 +49,10 @@ export async function getChatHistory(
   }
   if (options.regionId != null && options.regionId !== "") {
     params.set("regionId", options.regionId);
+    params.set("blockSlotId", options.regionId);
+  }
+  if (options.channelId != null && options.channelId !== "") {
+    params.set("channelId", options.channelId);
   }
   const data = await fetchJson<{ messages: ChatHistoryMessage[]; hasMore?: boolean }>(
     `${base}/api/chat?${params}`,

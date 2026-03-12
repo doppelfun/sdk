@@ -102,7 +102,7 @@ type ChatPayload = {
   timestamp?: number;
   userId: string;
   sessionId?: string;
-  /** "global" or "dm:sessionA:sessionB". Use to filter or bucket by channel. */
+  /** "global" or dm-user:idA:idB. Use to filter or bucket by channel. */
   channelId?: string;
 };
 

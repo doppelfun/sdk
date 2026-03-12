@@ -1,24 +1,11 @@
 /**
- * DM channel helpers — mirror @doppel-engine/schema chatChannels so Claw
- * can route replies without depending on the engine package.
- * Channel id format: dm:<sessionA>:<sessionB> (sorted).
+ * DM channel check only — mirrors schema DM_USER_CHANNEL_PREFIX (keep in sync).
+ * Claw avoids a dependency on @doppel-engine/schema. Replies use targetSessionId;
+ * channelId is for get_chat_history.
  */
+const DM_USER_PREFIX = "dm-user:"; // sync: schema chatChannels.DM_USER_CHANNEL_PREFIX
 
-/** True if channelId is a DM thread. */
+/** True if channelId is a DM thread (dm-user:… only). */
 export function isDmChannel(channelId: string | undefined): boolean {
-  return typeof channelId === "string" && channelId.startsWith("dm:");
-}
-
-/**
- * From dm:s1:s2 and local session id, return the other participant's session id.
- */
-export function otherSessionIdFromDmChannel(channelId: string, localSessionId: string): string | null {
-  if (!isDmChannel(channelId) || !localSessionId) return null;
-  const parts = channelId.split(":");
-  if (parts.length !== 3 || parts[0] !== "dm") return null;
-  const a = parts[1];
-  const b = parts[2];
-  if (a === localSessionId) return b;
-  if (b === localSessionId) return a;
-  return null;
+  return typeof channelId === "string" && channelId.startsWith(DM_USER_PREFIX);
 }

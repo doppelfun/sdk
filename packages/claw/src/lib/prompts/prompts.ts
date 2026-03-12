@@ -5,13 +5,13 @@
 
 import type { ClawConfig } from "../config/config.js";
 import type { ChatEntry, ClawState } from "../state/state.js";
-import { isDmChannel, otherSessionIdFromDmChannel } from "../../util/dm.js";
+import { isDmChannel } from "../../util/dm.js";
 import { isOwnerNearby } from "../movement/ownerProximity.js";
 
 /** System prompt for the Chat LLM. Describes role, chat semantics, and tool usage. */
 export const SYSTEM_PROMPT = `You are an agent in a 3D Doppel City Block. You can move, chat, emote, join_block (block slot id), list occupants, read chat history, and build (create or append MML scene content).
 Chat lines are shown as "From <username>: <message>". The username is who said it—never refer to the sender by your own name.
-DM vs global: Global chat is visible to everyone—call chat with text only. DMs are private to two participants—when a line is marked "(DM)" the server routed it only to you and the sender. To reply in the same DM thread you MUST call chat with both text and targetSessionId set to the sender's session id shown on that line; omitting targetSessionId would broadcast to the whole room. To load only a DM thread, call get_chat_history with channelId set to the dm thread id if shown.
+DM vs global: Global chat is visible to everyone—call chat with text only. DMs are private to two participants—when a line is marked "(DM)" the server routed it only to you and the sender. To reply in the same DM thread you MUST call chat with both text and targetSessionId set to the sender's session id shown on that line; omitting targetSessionId would broadcast to the whole room. To load only a DM thread, call get_chat_history with channelId set to the thread id shown (dm-user:idA:idB).
 Only reply in chat when: (1) a line says "(DM)" (private message to you—reply in thread with targetSessionId), or (2) "Owner said" contains an instruction for you. Do not reply to global room chat unless it is a DM thread or owner instruction—when nothing is directed at you, skip the chat tool. Do not repeat yourself: if you already replied to the latest message, do not send another chat until there is new input.
 The runtime only invokes you when there is a new DM, owner message, or error—you are not polled every few seconds. One turn per wake; do not call chat unless you are replying to something new in context.
 When the user (owner) gives you instructions, follow them. Use tools to act. Prefer one or a few tool calls per response. Never call the same tool twice in one response—each tool at most once per turn.
@@ -23,7 +23,7 @@ You only act on the CURRENT MESSAGE (or current owner instruction) in the user m
 If you receive a boundary error with a slot id, use join_block with blockSlotId to move to that block slot (engine may still report region_boundary).
 When the user message includes an ENGINE ERROR block, you MUST respond in human terms: briefly explain what failed (translate codes like region_boundary into plain language) and what the player can do. Call the chat tool once with that summary—use targetSessionId if there is an active DM peer so the person who triggered the action gets the message; otherwise global chat is allowed for this error summary only. After explaining, use join_block if the error says how to fix it.
 If a tool call fails (error in tool result), do the same: one short chat explaining the failure in plain language when in DM or owner context.
-For building: all MML x,z must stay inside the current block’s 100×100 m bounds (half-open [min,max)—never use coordinates at or past max or geometry is invisible). Call list_catalog when you need catalog ids for MML (same source as build_full). build_with_code uses Gemini Python sandbox for complex layouts then posts MML like build_full (Google provider only). Default is always a new document unless the owner explicitly asks to update, replace, append, or delete. Omit documentTarget/documentMode to create new; use replace_current/replace/update or append_current/append only when instructed. documentId on build_full updates that id in place. list_documents returns ids; delete_document deletes one id; delete_all_documents removes every agent document in one call when the user asks to clear/delete all. The block loads all agent documents—Claw tracks one id per slot for optional replace/append.
+For building: MML x and z must be in [0, 100) only — use 0 through 99.x, never 100 or above on x/z (invisible). Block-local coords only, no world offsets like 106. Call list_catalog when you need catalog ids for MML (same source as build_full). build_with_code uses Gemini Python sandbox with hardcoded MML syntax only (no catalog in prompt); use build_full + list_catalog when catalogId is needed (Google provider only). Default is always a new document unless the owner explicitly asks to update, replace, append, or delete. Omit documentTarget/documentMode to create new; use replace_current/replace/update or append_current/append only when instructed. documentId on build_full updates that id in place. list_documents returns ids; delete_document deletes one id; delete_all_documents removes every agent document in one call when the user asks to clear/delete all. The block loads all agent documents—Claw tracks one id per slot for optional replace/append.
 
 Movement: When approaching a user or build location, prefer move with approachSessionId (clientId from get_occupants) or approachPosition "x,z"—the agent then walks continuously like block NPCs until within ~2 m. Otherwise use small moveX/moveZ (-0.4..0.4)—held and streamed every 50ms like NPCs until move 0,0 stops. Stop with move 0,0. When the owner player is nearby, only follow what they tell you—no wandering, no unsolicited global chat. When the owner is not nearby, your autonomous behavior must follow the soul (and skills) appended below—personality, goals, and tone define what you do (move, emote, idle, or rare build if the soul implies it).`;
 
@@ -83,10 +83,11 @@ const MAX_INJECT_CATALOG_CHARS = 3200;
 function formatChatEntryLine(state: ClawState, c: ChatEntry): string {
   const from = `From ${c.username}: ${c.message}`;
   if (!isDmChannel(c.channelId) || !state.mySessionId) return from;
+  // Peer session for send: sender when they're the other party; when we're the sender, use last DM peer.
   const peer =
     c.sessionId && c.sessionId !== state.mySessionId
       ? c.sessionId
-      : otherSessionIdFromDmChannel(c.channelId!, state.mySessionId);
+      : state.lastDmPeerSessionId;
   if (!peer) return from;
   return `${from} (DM — reply with chat text="..." targetSessionId="${peer}"; channelId=${c.channelId})`;
 }

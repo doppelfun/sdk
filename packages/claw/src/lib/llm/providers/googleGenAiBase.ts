@@ -140,6 +140,14 @@ export abstract class GoogleGenAiProviderBase implements LlmProvider {
       return { ok: true, content, usage };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      // 1M input limit — not output; code-exec tool + large prompt triggers this.
+      if (/1048576|input token count exceeds/i.test(msg)) {
+        return {
+          ok: false,
+          error:
+            "Gemini input limit (1M tokens) exceeded — not your output. build_with_code counts system+user+tool; try build_full instead, or shorten catalog via list_catalog and fewer models. If this persists, use build_full for complex scenes.",
+        };
+      }
       return { ok: false, error: msg };
     }
   }

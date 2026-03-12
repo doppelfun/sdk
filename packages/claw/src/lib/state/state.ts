@@ -13,7 +13,7 @@ export type ChatEntry = {
   createdAt: number;
   userId?: string;
   sessionId?: string;
-  /** "global" or "dm:sessionA:sessionB". Omitted for older payloads. */
+  /** "global" or dm-user:idA:idB. Omitted for older payloads. */
   channelId?: string;
 };
 

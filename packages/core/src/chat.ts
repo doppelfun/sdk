@@ -8,7 +8,7 @@ export type ChatHistoryMessage = {
   username: string;
   message: string;
   createdAt: number;
-  /** "global" or "dm:sessionA:sessionB". Present when server supports channels. */
+  /** "global" or dm-user:idA:idB. Present when server supports channels. */
   channelId?: string;
 };
 
@@ -24,7 +24,7 @@ export type GetChatHistoryOptions = {
   before?: number;
   /** When set, return only messages for this region; omit for global (e.g. observer) history. */
   regionId?: string | null;
-  /** When set, return only messages in this channel (e.g. "global" or "dm:sessionA:sessionB"). */
+  /** When set, return only messages in this channel (e.g. "global" or dm-user:idA:idB). */
   channelId?: string | null;
 };
 

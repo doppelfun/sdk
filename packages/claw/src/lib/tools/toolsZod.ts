@@ -200,7 +200,7 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "get_chat_history",
     description:
-      "Get recent chat. Omit channelId for global room chat only. Set channelId to a DM thread id (e.g. dm:sessionA:sessionB) to load that private thread—use when continuing a DM.",
+      "Get recent chat. Omit channelId for global room chat only. Set channelId to a DM thread id (dm-user:idA:idB) to load that private thread.",
     schema: getChatHistorySchema,
   },
   {
@@ -212,19 +212,19 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "build_full",
     description:
-      "Create a full scene with MML. All x,z must stay inside the block’s 100×100 m area (half-open [min,max)—values at or past max are outside and invisible). Default = always create a new document (omit documentTarget). Use documentTarget replace_current/replace/update only when explicitly replacing the tracked doc; documentId updates that id in place.",
+      "Create a full scene with MML. x and z must be in [0, 100) only — use 0..99.x, never 100+ (invisible). Same for code paths: Python range(0,100). Default = always create a new document (omit documentTarget). Use documentTarget replace_current/replace/update only when explicitly replacing the tracked doc; documentId updates that id in place.",
     schema: buildFullSchema,
   },
   {
     name: "build_with_code",
     description:
-      "Like build_full but uses Gemini code execution (Python sandbox) to compute layouts/loops then emit MML. Same MML rules as build_full: x,z strictly inside 100×100 block bounds (Python loops must clamp/range within bounds); call list_catalog first for catalogId on <m-model>; every entity needs unique id; use x y z only (never position=); y>=0; final output raw MML only. Requires LLM_PROVIDER=google or google-vertex. Same documentTarget/documentId as build_full.",
+      "Like build_full but uses Gemini code execution (Python sandbox) to compute layouts/loops then emit MML. No catalog injected — hardcoded MML syntax only in the model context. x,z in [0,100); unique id; x y z only; y>=0; raw MML only. Use list_catalog + build_full if you need catalog ids. Requires LLM_PROVIDER=google or google-vertex. Same documentTarget/documentId as build_full.",
     schema: buildFullSchema,
   },
   {
     name: "build_incremental",
     description:
-      "Add MML as a fragment. Same bounds as build_full: x,z must stay inside the block 100×100 area. Default = new document with fragment only. Use documentTarget append_current/append only when explicitly appending to the tracked doc.",
+      "Add MML as a fragment. x,z in [0,100) only like build_full. Default = new document with fragment only. Use documentTarget append_current/append only when explicitly appending to the tracked doc.",
     schema: buildIncrementalSchema,
   },
   {

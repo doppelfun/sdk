@@ -5,23 +5,22 @@
 import type { LlmProvider } from "./provider.js";
 import type { Usage } from "./usage.js";
 import type { BlockBounds } from "../../util/blockBounds.js";
+import { BLOCK_SIZE_M } from "../../util/blockBounds.js";
 
 export type { BlockBounds };
 
 /**
- * Strict bounds text for every build user message. Half-open intervals [xMin,xMax) so x=xMax is OUT.
- * Models often emit x=100 or x=106 when they mean "edge" — that is invisible outside the block.
+ * MML document content is **always** local block space: 0 <= x < 100, 0 <= z < 100.
+ * Server applies block origin when applying to world — authors must never use world x/z in MML.
+ * We never pass getBlockBounds() world ranges here; doing so made the model emit x=150 for slot 1_0
+ * because the prompt said x in [100,200), while the engine still parses local 0–100 only.
  */
-function formatBoundsStrict(blockBounds: BlockBounds): string {
-  const { xMin, xMax, zMin, zMax } = blockBounds;
-  const xSpan = xMax - xMin;
-  const zSpan = zMax - zMin;
-  const same100 = xSpan === 100 && zSpan === 100;
-  const hard =
-    same100
-      ? `HARD RULE — 100×100 m block only. Every m-cube/m-model must have x in [${xMin}, ${xMax}) and z in [${zMin}, ${zMax}) — use x from ${xMin} up to ${xMax - 1} (or ${xMax} - epsilon), never x >= ${xMax}. Same for z. Example valid: x="50" z="50". INVALID: x="${xMax}" or x="${xMax + 6}" (outside; player sees nothing). If using Python loops, clamp or use range(${xMin}, ${xMax}) for x and range(${zMin}, ${zMax}) for z.`
-      : `HARD RULE — stay inside this block only. Every entity x must satisfy ${xMin} <= x < ${xMax}; every z must satisfy ${zMin} <= z < ${zMax}. Never place geometry at or beyond xMax/zMax — it will not appear in the playable area.`;
-  return `Block bounds (y >= 0; x in [${xMin}, ${xMax}), z in [${zMin}, ${zMax})).\n${hard}`;
+function formatBoundsStrict(_blockBounds: BlockBounds): string {
+  return `COORDINATE SPACE — LOCAL ONLY (always). Never world space.
+Every x and z in MML MUST satisfy 0 <= x < 100 and 0 <= z < 100 (half-open). y >= 0.
+Valid: x="50" z="50" x="99.5" — INVALID (invisible): x="100" x="150" z="-1"
+Python: only range(0, 100) or random.uniform(0, 99.9) for x/z; before any print(), x = max(0, min(99.9, x)).
+Server maps this block to world — do not add offsets.`;
 }
 
 /** Single system prompt; mode (full document vs append fragment) is in the user message. */
@@ -29,7 +28,9 @@ const BUILD_SYSTEM = `You are an MML (scene markup) generator for a 3D world. Yo
 - Use catalogId from the provided catalog for <m-model> when available.
 - Every entity MUST have a unique id attribute. If the message says INCREMENTAL, do NOT reuse any id listed under "Existing entity ids".
 - Position is ALWAYS separate attributes: x="..." y="..." z="...". NEVER use a single position="..." attribute.
-- Place all entities at y >= 0. x and z MUST lie strictly inside the block bounds in the user message — half-open [min,max): values at or above max are outside the block and invisible. Prefer coordinates in the middle of the range (e.g. 10–90 when the block is 100 wide) so nothing clips at edges.
+- Place all entities at y >= 0. For a 100×100 block, x and z must ALWAYS be in [0, 100) — use 0 through 99.x only; x="100" or z="100" is wrong and invisible. Never emit world-space offsets (e.g. 106); the scene is already block-local.
+- Glow: ONLY emission="#RRGGBB" and emission-intensity="0.6" (number). NEVER emissive or emissive-intensity — not parsed, no glow.
+- m-attr-anim (child of m-cube/m-group): ONLY attr="..." start="..." end="..." plus optional duration, loop, easing, ping-pong, start-time, pause-time, ping-pong-delay. NEVER attribute/from/to/direction/delay — anim will be ignored. Animatable: ry, x, y, z, width, height, depth, emission-intensity, color, emission — not scale vectors.
 - If the message says FULL: output a complete MML document (single root or <m-group>). If it says INCREMENTAL: output ONLY new tags to append — no full document wrapper, no repeating existing content.
 - No explanation, no markdown code fence — only raw MML.`;
 
@@ -95,37 +96,41 @@ Instruction: ${instruction}`;
     temperature: 0.2,
   });
   if (!result.ok) return result;
-  const mml = extractMml(result.content);
+  let mml = extractMml(result.content);
+  mml = normalizeMmlXZToBlockLocal(mml, blockBounds);
   return { ok: true, mml, usage: result.usage };
 }
 
 /**
- * System prompt when code execution is enabled — same MML rules as BUILD_SYSTEM, plus Python sandbox.
- * Keep in sync with BUILD_SYSTEM for tag/attribute rules so code path produces valid scene markup.
+ * Hardcoded MML syntax only — no catalog, no skills. build_with_code uses this as the sole system
+ * instruction so Gemini code-exec input stays minimal.
  */
-const BUILD_WITH_CODE_SYSTEM = `You are an MML (scene markup) generator for a 3D world. You may use Python in the code execution sandbox to compute layouts, loops, positions, or to build/print MML strings (e.g. loops that emit many <m-cube> lines).
+const BUILD_WITH_CODE_SYSTEM = `You output raw MML only (no markdown, no code fences, no prose). Python sandbox allowed; final message = same MML as plain text.
 
-How to build with MML (must match what build_full uses):
-- Output valid MML only: XML-style tags such as <m-group>, <m-cube>, <m-model>, <m-grass>, etc. One document root (e.g. wrap everything in <m-group>).
-- Use catalogId from the provided catalog for <m-model> when available: <m-model catalogId="..." id="..." x="..." y="..." z="..." />.
-- Every entity MUST have a unique id attribute. If you generate many entities in Python, ensure ids are unique (e.g. prefix + index).
-- Position is ALWAYS separate attributes: x="..." y="..." z="...". NEVER use a single position="..." attribute.
-- Place all entities at y >= 0. x and z MUST be strictly inside the bounds in the user message (half-open [min,max)); never use x >= xMax or z >= zMax — geometry outside is invisible. Python loops must use ranges/clamps within those limits.
-- MODE is always FULL here: output a complete MML document for the whole scene (single root or <m-group>). Do not output incremental fragments only.
+COORDINATES ARE BLOCK-LOCAL ONLY — NOT WORLD SPACE.
+- x and z MUST satisfy 0 <= x < 100 and 0 <= z < 100. Values like 150, 145.5, 106 are INVALID and INVISIBLE.
+- Never add block/world offsets. If you use random.uniform or similar, use random.uniform(0, 99.9) for x and z — NOT 100–200.
+- Python example: x = random.random() * 99.9  # not * 200 + 100
+- Python loop: for xi in range(0, 100): ... for zi in range(0, 100): ...
 
-Python sandbox:
-- You may run Python to compute coordinates, loops, or to assemble a full MML string (print it for your own check).
-- Your final assistant message must still be ONLY raw MML — no markdown, no code fence, no explanation — so it can be posted to the world. If code printed MML, repeat that same MML as the final text response.`;
+MML SYNTAX (y>=0):
+- <m-group id="root-..."> ... </m-group>
+- Every <m-cube>, <m-model>, <m-grass> needs unique id="...". Position only x="..." y="..." z="..." (never position="...").
+- <m-cube> glow: emission="#hex" emission-intensity="0.6" — NEVER emissive/emissive-intensity (ignored).
+- <m-attr-anim> MUST use attr start end (e.g. attr="ry" start="0" end="360" duration="3000" loop="true"). NEVER attribute/from/to/direction/delay — anim dropped. Optional: easing, ping-pong, start-time, pause-time, ping-pong-delay.
+- Animatable attrs: ry, x, y, z, width, height, depth, emission-intensity; color/emission as hex lerp only — no scale="0.5 0.5 0.5".
+- <m-cube id="..." x="0-99.9" y="..." z="0-99.9" width="1" height="1" depth="1" /> — color, collide, rx/ry/rz.
+- <m-model>, <m-grass> same x/z and emission rules.`;
 
 /**
- * Full-scene MML via Gemini code execution (Python sandbox). Falls back error if provider has no sandbox.
- * Same post-processing as build_full (extractMml).
+ * Full-scene MML via Gemini code execution. No catalog or extra context — instruction + bounds only.
  */
+const BUILD_WITH_CODE_INSTRUCTION_MAX_CHARS = 16_000;
+
 export async function buildFullWithCodeExecution(
   provider: LlmProvider,
   model: string,
   instruction: string,
-  catalogJson: string,
   blockBounds: BlockBounds
 ): Promise<BuildMmlResult> {
   const run = provider.completeWithCodeExecution;
@@ -136,15 +141,22 @@ export async function buildFullWithCodeExecution(
         "build_with_code requires Google Gemini (LLM_PROVIDER=google or google-vertex).",
     };
   }
-  const boundsBlock = formatBoundsStrict(blockBounds);
-  const userContent = `MODE: FULL with code execution — use Python if helpful for repetition/math, then output complete MML only (same tag and attribute rules as build_full; see system).
+  // Code-exec requests count toward same 1M input cap; use short bounds blurb (full rules in system).
+  const boundsBlock =
+    blockBounds.xMin === 0 &&
+    blockBounds.zMin === 0 &&
+    blockBounds.xMax === 100 &&
+    blockBounds.zMax === 100
+      ? "CRITICAL — x and z are 0..99.9 only (block-local). x=\"150\" or z=\"145\" renders NOTHING. Python: random.uniform(0,99.9); range(0,100); never 100+."
+      : formatBoundsStrict(blockBounds);
+  const instructionTrimmed =
+    instruction.length > BUILD_WITH_CODE_INSTRUCTION_MAX_CHARS
+      ? instruction.slice(0, BUILD_WITH_CODE_INSTRUCTION_MAX_CHARS) +
+        "\n… (instruction truncated; keep build smaller or use build_full for huge specs)"
+      : instruction;
+  const userContent = `${boundsBlock}
 
-Catalog (id, name, url, category) — use these ids as catalogId on <m-model> where appropriate:
-${catalogJson}
-
-${boundsBlock}
-
-Instruction: ${instruction}`;
+Instruction: ${instructionTrimmed}`;
   // Must call as method on provider — extracting run() loses `this` and breaks this.ai in GoogleGenAiProviderBase.
   const result = await run.call(provider, {
     model,
@@ -162,7 +174,9 @@ Instruction: ${instruction}`;
         "Code execution did not produce MML (no XML tags). Ask for a simpler build or use build_full.",
     };
   }
-  return { ok: true, mml, usage: result.usage };
+  // Model often emits world-space x/z (e.g. 150); engine expects block-local [xMin,xMax) etc. Normalize before persist.
+  const sanitized = normalizeMmlXZToBlockLocal(mml, blockBounds);
+  return { ok: true, mml: sanitized, usage: result.usage };
 }
 
 /** Full-scene replace. Same as buildMml(..., "full", ...). */
@@ -205,6 +219,37 @@ function extractMml(content: string): string {
         : rest.slice(rest.indexOf("\n") + 1).trim();
   }
   return rewritePositionToXyz(s);
+}
+
+/**
+ * Engine parses MML as **local block only**: 0 <= x < BLOCK_SIZE_M, 0 <= z < BLOCK_SIZE_M.
+ * Server then applies BLOCK_ORIGIN_X/Z — authors must never add world offsets in MML.
+ * Models often emit 150+ (thinking world space). getBlockBounds(slot) is **world** extents
+ * (e.g. 1_0 → 100–200); using it for normalize left x=150 unchanged yet still invalid local
+ * → entitiesInLocalBounds drops them. Always fold into [0, 100) so persisted MML matches engine.
+ */
+function normalizeMmlXZToBlockLocal(mml: string, _blockBounds: BlockBounds): string {
+  const lo = 0;
+  const span = BLOCK_SIZE_M;
+  const norm = (v: number): number => {
+    if (v >= lo && v < span) return v;
+    let t = v - lo;
+    t = ((t % span) + span) % span;
+    return lo + t;
+  };
+  const fmt = (v: number): string =>
+    Number.isInteger(v) ? String(v) : String(Math.round(v * 1e6) / 1e6);
+  let out = mml.replace(/\bx\s*=\s*["']([^"']+)["']/gi, (_match, val: string) => {
+    const v = parseFloat(val);
+    if (!Number.isFinite(v)) return `x="${val}"`;
+    return `x="${fmt(norm(v))}"`;
+  });
+  out = out.replace(/\bz\s*=\s*["']([^"']+)["']/gi, (_match, val: string) => {
+    const v = parseFloat(val);
+    if (!Number.isFinite(v)) return `z="${val}"`;
+    return `z="${fmt(norm(v))}"`;
+  });
+  return out;
 }
 
 function rewritePositionToXyz(mml: string): string {

@@ -500,7 +500,6 @@ export async function executeTool(
       if (denied) return denied;
       const balErr = await preCheckBalance(config);
       if (balErr) return { ok: false, error: balErr };
-      const catalog = await getCatalogForBuild(config);
       const blockBounds = getBlockBounds(state.blockSlotId);
       client.sendThinking(true);
       let result: Awaited<ReturnType<typeof buildFullWithCodeExecution>>;
@@ -509,7 +508,6 @@ export async function executeTool(
           createLlmProvider(config),
           config.buildLlmModel,
           instruction,
-          catalogToJson(catalog),
           blockBounds
         );
       } finally {

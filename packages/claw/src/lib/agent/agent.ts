@@ -436,13 +436,6 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     if (skillIds.length > 0) {
       try {
         skills = await fetchSkills(config.agentApiUrl, config.apiKey, skillIds);
-        const gotSkills = Boolean(skills.trim());
-        console.log(
-          "[agent] Skills: skillIds=",
-          skillIds,
-          "->",
-          gotSkills ? `${skills.length} chars` : "no skills returned"
-        );
       } catch (e) {
         console.warn("[agent] Failed to fetch skills, using soul only:", e);
       }

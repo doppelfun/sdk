@@ -6,9 +6,11 @@ import type { PyramidGenConfig } from "./config.js";
 import { clampPyramidConfig } from "./config.js";
 
 const STONE_VARIANTS = ["#8a8578", "#6e6960", "#9e978a"];
+/** Corner emissive palette — mixed hues so pyramids aren’t “all green”. */
 const GLOW_COLORS = [
-  "#00ff66", "#33ff88", "#00cc44", "#66ffaa",
-  "#00ff99", "#22ee55", "#44ff77", "#00dd55",
+  "#ff0040", "#00ff88", "#00aaff", "#ff6600",
+  "#cc00ff", "#ffdd00", "#ff0088", "#00ffcc",
+  "#00ff66", "#ff3366", "#66aaff", "#ffaa00",
 ];
 const DOOR_HEIGHT_LAYERS = 3;
 
@@ -22,15 +24,53 @@ type PyramidBlock = {
   emissionIntensity?: number;
 };
 
+/**
+ * Stable corner index 0..3 from perimeter grid position (door faces bz===0).
+ * 0 = (0,0), 1 = (max,0), 2 = (0,max), 3 = (max,max) in (bx,bz).
+ */
+function cornerPaletteIndex(bx: number, bz: number, span: number): number {
+  const left = bx === 0 ? 0 : 1;
+  const front = bz === 0 ? 0 : 2;
+  return left + front;
+}
+
+function pickCornerColor(
+  bx: number,
+  bz: number,
+  span: number,
+  layer: number,
+  cornerColors: string[] | undefined,
+  singleRandomColor: string | undefined,
+): string {
+  if (cornerColors && cornerColors.length > 0) {
+    const idx = cornerPaletteIndex(bx, bz, span);
+    const i = (idx + layer * 4) % cornerColors.length;
+    return cornerColors[i]!;
+  }
+  // No palette: one random color for the whole pyramid (caller passes same string every time).
+  return singleRandomColor ?? GLOW_COLORS[0]!;
+}
+
 function generatePyramidBlocks(
   baseWidth: number,
   layers: number,
   blockSize: number,
   doorWidthBlocks: number,
   seed: number,
+  cornerColors?: string[],
+  cornerEmissionIntensity?: number,
 ): PyramidBlock[] {
   const rng = mulberry32(seed);
   const blocks: PyramidBlock[] = [];
+  // One random emissive color for entire pyramid when not using cornerColors.
+  const singleGlowColor =
+    !cornerColors?.length
+      ? GLOW_COLORS[Math.floor(rng() * GLOW_COLORS.length)]!
+      : undefined;
+  const singleGlowIntensity =
+    cornerEmissionIntensity == null && singleGlowColor != null
+      ? 3 + rng() * 4
+      : undefined;
   const baseBlocks = Math.floor(baseWidth / blockSize);
 
   for (let layer = 0; layer < layers; layer++) {
@@ -59,11 +99,17 @@ function generatePyramidBlocks(
           (bx === 0 || bx === span - 1) && (bz === 0 || bz === span - 1);
 
         if (isCorner) {
-          const color = GLOW_COLORS[Math.floor(rng() * GLOW_COLORS.length)]!;
+          const color = pickCornerColor(
+            bx, bz, span, layer, cornerColors, singleGlowColor,
+          );
+          const emissionIntensity =
+            cornerEmissionIntensity != null
+              ? cornerEmissionIntensity
+              : singleGlowIntensity ?? 3 + rng() * 4;
           blocks.push({
             x, y, z, size: blockSize,
             color, emission: color,
-            emissionIntensity: 3 + rng() * 4,
+            emissionIntensity,
           });
         } else {
           const color = STONE_VARIANTS[Math.floor(rng() * STONE_VARIANTS.length)]!;
@@ -93,7 +139,13 @@ function blocksToMml(blocks: PyramidBlock[], cx: number, cz: number): string {
 export function generatePyramidMml(config: Partial<PyramidGenConfig> = {}): string {
   const c = clampPyramidConfig(config);
   const blocks = generatePyramidBlocks(
-    c.baseWidth, c.layers, c.blockSize, c.doorWidthBlocks, c.seed,
+    c.baseWidth,
+    c.layers,
+    c.blockSize,
+    c.doorWidthBlocks,
+    c.seed,
+    c.cornerColors,
+    c.cornerEmissionIntensity,
   );
   return blocksToMml(blocks, c.cx, c.cz);
 }
@@ -101,6 +153,12 @@ export function generatePyramidMml(config: Partial<PyramidGenConfig> = {}): stri
 export function pyramidBlockCount(config: Partial<PyramidGenConfig> = {}): number {
   const c = clampPyramidConfig(config);
   return generatePyramidBlocks(
-    c.baseWidth, c.layers, c.blockSize, c.doorWidthBlocks, c.seed,
+    c.baseWidth,
+    c.layers,
+    c.blockSize,
+    c.doorWidthBlocks,
+    c.seed,
+    c.cornerColors,
+    c.cornerEmissionIntensity,
   ).length;
 }

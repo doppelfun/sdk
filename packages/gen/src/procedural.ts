@@ -9,6 +9,11 @@ import { generatePyramidMml } from "./pyramid/service.js";
 import { clampPyramidConfig } from "./pyramid/config.js";
 import { generateCityMml } from "./city/service.js";
 import { clampCityConfig } from "./city/config.js";
+import { normalizeBuildingsParam } from "./city/layout/catalog-bridge.js";
+import { generateGrassMml } from "./grass/service.js";
+import { clampGrassConfig } from "./grass/config.js";
+import { generateTreesMml } from "./trees/service.js";
+import { clampTreesConfig } from "./trees/config.js";
 
 export type ProceduralHandler = (raw: Record<string, unknown>) => string;
 export type ProceduralEntry = { kind: string; run: ProceduralHandler };
@@ -22,6 +27,8 @@ function getParams(raw: Record<string, unknown>): Record<string, unknown> {
 
 function pyramidHandler(raw: Record<string, unknown>): string {
   const p = getParams(raw);
+  const cornerColors =
+    Array.isArray(p.cornerColors) ? p.cornerColors : Array.isArray(p.corner_colors) ? p.corner_colors : undefined;
   const cfg = clampPyramidConfig({
     baseWidth: typeof p.baseWidth === "number" ? p.baseWidth : undefined,
     layers: typeof p.layers === "number" ? p.layers : undefined,
@@ -30,12 +37,21 @@ function pyramidHandler(raw: Record<string, unknown>): string {
     seed: typeof p.seed === "number" ? p.seed : undefined,
     cx: typeof p.cx === "number" ? p.cx : undefined,
     cz: typeof p.cz === "number" ? p.cz : undefined,
+    cornerColors,
+    cornerEmissionIntensity:
+      typeof p.cornerEmissionIntensity === "number"
+        ? p.cornerEmissionIntensity
+        : typeof p.corner_emission_intensity === "number"
+          ? p.corner_emission_intensity
+          : undefined,
   });
   return generatePyramidMml(cfg);
 }
 
 function cityHandler(raw: Record<string, unknown>): string {
   const c = getParams(raw);
+  const buildingsFromParams =
+    normalizeBuildingsParam(c.buildings) ?? normalizeBuildingsParam((raw as { buildings?: unknown }).buildings);
   const noPyramid =
     c.pyramid === false ||
     c.noPyramid === true ||
@@ -53,12 +69,53 @@ function cityHandler(raw: Record<string, unknown>): string {
     pyramidCol: typeof c.pyramidCol === "number" ? c.pyramidCol : undefined,
     noPyramid,
   });
-  return generateCityMml(cfg);
+  return generateCityMml(cfg, buildingsFromParams ? { buildings: buildingsFromParams } : undefined);
+}
+
+function grassHandler(raw: Record<string, unknown>): string {
+  const p = getParams(raw);
+  const cfg = clampGrassConfig({
+    patches: typeof p.patches === "number" ? p.patches : undefined,
+    count: typeof p.count === "number" ? p.count : undefined,
+    spreadMin: typeof p.spreadMin === "number" ? p.spreadMin : undefined,
+    spreadMax: typeof p.spreadMax === "number" ? p.spreadMax : undefined,
+    height: typeof p.height === "number" ? p.height : undefined,
+    y: typeof p.y === "number" ? p.y : undefined,
+    seed: typeof p.seed === "number" ? p.seed : undefined,
+    margin: typeof p.margin === "number" ? p.margin : undefined,
+    emissionIntensity:
+      typeof p.emissionIntensity === "number"
+        ? p.emissionIntensity
+        : typeof p.emission_intensity === "number"
+          ? p.emission_intensity
+          : undefined,
+  });
+  return generateGrassMml(cfg);
+}
+
+function treesHandler(raw: Record<string, unknown>): string {
+  const p = getParams(raw);
+  const catalogIds = Array.isArray(p.catalogIds)
+    ? p.catalogIds
+    : Array.isArray(p.catalog_ids)
+      ? p.catalog_ids
+      : undefined;
+  const cfg = clampTreesConfig({
+    count: typeof p.count === "number" ? p.count : undefined,
+    catalogId: typeof p.catalogId === "string" ? p.catalogId : undefined,
+    catalogIds: catalogIds as string[] | undefined,
+    seed: typeof p.seed === "number" ? p.seed : undefined,
+    margin: typeof p.margin === "number" ? p.margin : undefined,
+    collide: typeof p.collide === "boolean" ? p.collide : undefined,
+  });
+  return generateTreesMml(cfg);
 }
 
 const PROCEDURAL_REGISTRY: ProceduralEntry[] = [
   { kind: "pyramid", run: pyramidHandler },
   { kind: "city", run: cityHandler },
+  { kind: "grass", run: grassHandler },
+  { kind: "trees", run: treesHandler },
 ];
 
 function buildHandlerMap(): Record<string, ProceduralHandler> {

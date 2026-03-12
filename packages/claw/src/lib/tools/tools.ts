@@ -4,7 +4,7 @@
 
 import type { DoppelClient } from "@doppelfun/sdk";
 import { getBlockCatalog, getEngineCatalog, type CatalogEntry as SdkCatalogEntry } from "@doppelfun/sdk";
-import { runProceduralMml } from "@doppelfun/gen";
+import { runProceduralMml, catalogEntriesToSeedBuildings } from "@doppelfun/gen";
 import type { Usage } from "../llm/usage.js";
 import type { ClawState } from "../state/state.js";
 import { syncMainDocumentForBlock } from "../state/state.js";
@@ -113,6 +113,20 @@ function invalidateDocumentListCache(state: ClawState): void {
 }
 
 /**
+ * Document ids from the API are UUIDs. The LLM sometimes invents filenames (e.g. spaceship_build.mml);
+ * reject before POST to avoid 400 invalid uuid and to return a clear tool error.
+ */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isDocumentIdUuid(id: string): boolean {
+  return typeof id === "string" && UUID_RE.test(id.trim());
+}
+
+const DOCUMENT_ID_UUID_HINT =
+  "documentId must be a UUID from list_documents only—not a filename. For replace/append/delete, pass the id explicitly; for new builds omit documentId.";
+
+/**
  * Parse documentId / target from tool args — shared by delete_document and get_document_content.
  * - explicit documentId wins.
  * - target "current" → tracked doc for this block slot.
@@ -128,7 +142,12 @@ async function resolveDocumentIdTarget(
     typeof args.documentId === "string" && args.documentId.trim() ? args.documentId.trim() : null;
   const targetRaw = typeof args.target === "string" ? args.target.trim().toLowerCase() : "";
 
-  if (explicitId) return { ok: true, id: explicitId };
+  if (explicitId) {
+    if (!isDocumentIdUuid(explicitId)) {
+      return { ok: false, error: `${toolName}: ${DOCUMENT_ID_UUID_HINT}` };
+    }
+    return { ok: true, id: explicitId };
+  }
 
   if (targetRaw === "current") {
     const id = state.documentsByBlockSlot[state.blockSlotId]?.documentId ?? null;
@@ -229,28 +248,32 @@ async function persistFullBuildMml(
   mml: string,
   args: Record<string, unknown>
 ): Promise<ExecuteToolResult> {
-  const explicitId =
-    typeof args.documentId === "string" && args.documentId.trim() ? args.documentId.trim() : null;
   const targetRaw =
     typeof args.documentTarget === "string" ? args.documentTarget.trim().toLowerCase() : "";
   const wantReplace =
     targetRaw === "replace_current" || targetRaw === "replace" || targetRaw === "update";
 
-  if (explicitId) {
-    await client.updateDocument(explicitId, mml);
-    const blockDoc = state.documentsByBlockSlot[state.blockSlotId];
-    if (blockDoc?.documentId === explicitId) {
-      state.documentsByBlockSlot[state.blockSlotId] = { documentId: explicitId, mml };
-    }
-    syncMainDocumentForBlock(state);
-    return { ok: true, summary: `built full scene (updated ${explicitId})` };
-  }
+  // Default is always a new document — ignore documentId so stray filenames never hit the API.
   if (!wantReplace) {
     const { documentId: newId } = await client.createDocument(mml);
     state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml };
     syncMainDocumentForBlock(state);
     return { ok: true, summary: `built full scene (new document ${newId})` };
   }
+
+  // Replace/update path: optional explicit UUID updates that doc; else tracked doc for this slot.
+  const explicitId =
+    typeof args.documentId === "string" && args.documentId.trim() ? args.documentId.trim() : null;
+  if (explicitId) {
+    if (!isDocumentIdUuid(explicitId)) {
+      return { ok: false, error: `build_full replace/update: ${DOCUMENT_ID_UUID_HINT}` };
+    }
+    await client.updateDocument(explicitId, mml);
+    state.documentsByBlockSlot[state.blockSlotId] = { documentId: explicitId, mml };
+    syncMainDocumentForBlock(state);
+    return { ok: true, summary: `built full scene (updated ${explicitId})` };
+  }
+
   const blockDoc = state.documentsByBlockSlot[state.blockSlotId];
   if (blockDoc) {
     await client.updateDocument(blockDoc.documentId, mml);
@@ -535,13 +558,40 @@ export async function executeTool(
       const catalog = await getCatalogForBuild(config);
       const blockDoc = state.documentsByBlockSlot[state.blockSlotId];
       const explicitId = typeof args.documentId === "string" && args.documentId.trim() ? args.documentId.trim() : null;
-      if (explicitId && blockDoc && explicitId !== blockDoc.documentId) {
-        return {
-          ok: false,
-          error: "build_incremental documentId must match current tracked document; use list_documents then append_current only",
-        };
+      if (explicitId && !isDocumentIdUuid(explicitId)) {
+        return { ok: false, error: `build_incremental: ${DOCUMENT_ID_UUID_HINT}` };
       }
-      const existingMml = blockDoc?.mml ?? "";
+      const targetRaw = typeof args.documentTarget === "string" ? args.documentTarget.trim().toLowerCase() : "";
+      const appendByTarget =
+        targetRaw === "append_current" || targetRaw === "append";
+      const wantAppend =
+        appendByTarget ||
+        (explicitId && blockDoc && explicitId === blockDoc.documentId);
+
+      // Append target: explicit UUID when append + documentId; else tracked doc when append only.
+      let appendTargetId: string | null = null;
+      if (wantAppend) {
+        if (appendByTarget && explicitId && isDocumentIdUuid(explicitId)) {
+          appendTargetId = explicitId;
+        } else if (appendByTarget && blockDoc) {
+          appendTargetId = blockDoc.documentId;
+        } else if (explicitId && blockDoc && explicitId === blockDoc.documentId) {
+          appendTargetId = blockDoc.documentId;
+        }
+      }
+
+      let existingMml = blockDoc?.mml ?? "";
+      if (wantAppend && appendTargetId && (!blockDoc || appendTargetId !== blockDoc.documentId)) {
+        try {
+          const res = await client.getDocumentContent(appendTargetId);
+          existingMml = res.content;
+        } catch {
+          return {
+            ok: false,
+            error: `build_incremental: could not load document ${appendTargetId} for append—check list_documents`,
+          };
+        }
+      }
       const blockBounds = getBlockBounds(state.blockSlotId);
       client.sendThinking(true);
       let result: Awaited<ReturnType<typeof buildIncremental>>;
@@ -561,12 +611,6 @@ export async function executeTool(
       if (!result.ok) return result;
       reportBuildUsage(config, result.usage);
       const fragment = result.mml;
-      const targetRaw = typeof args.documentTarget === "string" ? args.documentTarget.trim().toLowerCase() : "";
-      // Default is new document; append only when explicitly append_current / append (or documentId matches current).
-      const wantAppend =
-        targetRaw === "append_current" ||
-        targetRaw === "append" ||
-        (explicitId && blockDoc && explicitId === blockDoc.documentId);
 
       if (!wantAppend) {
         const { documentId: newId } = await client.createDocument(fragment);
@@ -574,16 +618,19 @@ export async function executeTool(
         syncMainDocumentForBlock(state);
         return { ok: true, summary: `built fragment as new document ${newId}` };
       }
-      const newMml = existingMml ? `${existingMml}\n${fragment}` : fragment;
-      if (blockDoc) {
-        await client.appendDocument(blockDoc.documentId, fragment);
-        state.documentsByBlockSlot[state.blockSlotId] = { documentId: blockDoc.documentId, mml: newMml };
-      } else {
+
+      const idToAppend = appendTargetId ?? blockDoc?.documentId ?? null;
+      if (!idToAppend) {
         const { documentId: newId } = await client.createDocument(fragment);
         state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml: fragment };
+        syncMainDocumentForBlock(state);
+        return { ok: true, summary: `built fragment as new document ${newId} (no doc to append to)` };
       }
+      const newMml = existingMml ? `${existingMml}\n${fragment}` : fragment;
+      await client.appendDocument(idToAppend, fragment);
+      state.documentsByBlockSlot[state.blockSlotId] = { documentId: idToAppend, mml: newMml };
       syncMainDocumentForBlock(state);
-      return { ok: true, summary: "appended to current document" };
+      return { ok: true, summary: `appended to document ${idToAppend}` };
     }
     case "list_documents": {
       const ids = await client.listDocuments();
@@ -665,15 +712,73 @@ export async function executeTool(
             ? "append"
             : "new";
 
+      // Pyramid corner options live under params; merge top-level keys in case the model puts them next to kind.
+      const raw = { ...(args as Record<string, unknown>) };
+      const kindLower = kind.trim().toLowerCase();
+      if (kindLower === "pyramid") {
+        const hoist: [string, string][] = [
+          ["cornerColors", "cornerColors"],
+          ["corner_colors", "cornerColors"],
+          ["cornerEmissionIntensity", "cornerEmissionIntensity"],
+          ["corner_emission_intensity", "cornerEmissionIntensity"],
+        ];
+        let params =
+          raw.params && typeof raw.params === "object" && !Array.isArray(raw.params)
+            ? ({ ...(raw.params as Record<string, unknown>) } as Record<string, unknown>)
+            : null;
+        for (const [from, to] of hoist) {
+          if (raw[from] !== undefined && (!params || params[to] === undefined)) {
+            if (!params) params = {};
+            params[to] = raw[from];
+          }
+        }
+        if (params) raw.params = params;
+      }
+
+      // City layout packs from a building pool — prefer hub/engine catalog when blockId (or engine cache) is available
+      if (kindLower === "city") {
+        try {
+          const catalog = await loadCatalogEntries(config);
+          const buildings = catalogEntriesToSeedBuildings(catalog);
+          if (buildings.length > 0) {
+            const params =
+              raw.params && typeof raw.params === "object" && !Array.isArray(raw.params)
+                ? ({ ...(raw.params as Record<string, unknown>) } as Record<string, unknown>)
+                : {};
+            params.buildings = buildings.map((b) => ({ id: b.id, name: b.name, url: b.url }));
+            raw.params = params;
+          }
+        } catch {
+          // fall back to static SEED_BUILDINGS inside gen
+        }
+      }
+
       let mml: string;
       try {
-        mml = runProceduralMml(kind, args as Record<string, unknown>);
+        mml = runProceduralMml(kindLower, raw);
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : "generate_procedural failed" };
       }
 
+      const proceduralDocumentId =
+        typeof args.documentId === "string" && args.documentId.trim() ? args.documentId.trim() : null;
+      if (
+        (documentMode === "replace" || documentMode === "append") &&
+        proceduralDocumentId &&
+        !isDocumentIdUuid(proceduralDocumentId)
+      ) {
+        return {
+          ok: false,
+          error: `generate_procedural ${documentMode}: ${DOCUMENT_ID_UUID_HINT}`,
+        };
+      }
+
       const applyMml = async (mmlInner: string, baseSummary: string) => {
         const blockDoc = state.documentsByBlockSlot[state.blockSlotId];
+        const targetId =
+          proceduralDocumentId && isDocumentIdUuid(proceduralDocumentId)
+            ? proceduralDocumentId
+            : blockDoc?.documentId ?? null;
 
         if (documentMode === "new") {
           const { documentId: newId } = await client.createDocument(mmlInner);
@@ -683,10 +788,19 @@ export async function executeTool(
         }
 
         if (documentMode === "append") {
-          if (blockDoc) {
-            await client.appendDocument(blockDoc.documentId, mmlInner);
-            const newMml = blockDoc.mml ? `${blockDoc.mml}\n${mmlInner}` : mmlInner;
-            state.documentsByBlockSlot[state.blockSlotId] = { documentId: blockDoc.documentId, mml: newMml };
+          if (targetId) {
+            let priorMml = blockDoc?.documentId === targetId ? blockDoc.mml ?? "" : "";
+            if (!priorMml && targetId) {
+              try {
+                const res = await client.getDocumentContent(targetId);
+                priorMml = res.content;
+              } catch {
+                // append API may still work; state mml best-effort
+              }
+            }
+            await client.appendDocument(targetId, mmlInner);
+            const newMml = priorMml ? `${priorMml}\n${mmlInner}` : mmlInner;
+            state.documentsByBlockSlot[state.blockSlotId] = { documentId: targetId, mml: newMml };
           } else {
             const { documentId: newId } = await client.createDocument(mmlInner);
             state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml: mmlInner };
@@ -695,10 +809,10 @@ export async function executeTool(
           return { ok: true as const, summary: `${baseSummary} (appended)` };
         }
 
-        // replace: update in place or create if none (explicit only; default is new above)
-        if (blockDoc) {
-          await client.updateDocument(blockDoc.documentId, mmlInner);
-          state.documentsByBlockSlot[state.blockSlotId] = { documentId: blockDoc.documentId, mml: mmlInner };
+        // replace: update targetId (explicit UUID or tracked); create if none
+        if (targetId) {
+          await client.updateDocument(targetId, mmlInner);
+          state.documentsByBlockSlot[state.blockSlotId] = { documentId: targetId, mml: mmlInner };
         } else {
           const { documentId: newId } = await client.createDocument(mmlInner);
           state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml: mmlInner };

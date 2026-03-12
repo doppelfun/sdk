@@ -1,0 +1,52 @@
+/**
+ * Procedural grass patches → MML (m-grass). Aligned with engine create-agent-documents / loadtestBootstrap.
+ */
+import { mulberry32, r2 } from "../shared/prng.js";
+import type { GrassGenConfig } from "./config.js";
+import { clampGrassConfig } from "./config.js";
+
+const BLOCK_SIZE = 100;
+
+/** Neon grass palette [light, dark] — same family as engine scripts. */
+const NEON_GRASS: [string, string][] = [
+  ["#00ff88", "#004422"],
+  ["#00ffaa", "#004433"],
+  ["#88ffaa", "#224433"],
+  ["#00ffcc", "#003322"],
+  ["#50ff90", "#113322"],
+];
+
+/** Generate MML group of m-grass patches within block 0..100. */
+export function generateGrassMml(config: Partial<GrassGenConfig> = {}): string {
+  const c = clampGrassConfig(config);
+  if (c.patches <= 0) {
+    return `<m-group id="grass-root">\n</m-group>`;
+  }
+  const rng = mulberry32(c.seed);
+  const parts: string[] = [];
+  // Same layout as create-agent-documents: patch center so spread fits inside [margin, 100-margin]
+  for (let p = 0; p < c.patches; p++) {
+    const spread =
+      c.spreadMin + rng() * (c.spreadMax - c.spreadMin || 1);
+    const spaceW = BLOCK_SIZE - 2 * c.margin;
+    const spaceD = BLOCK_SIZE - 2 * c.margin;
+    const x =
+      c.margin + rng() * Math.max(0.1, spaceW - spread);
+    const z =
+      c.margin + rng() * Math.max(0.1, spaceD - spread);
+    const [color, colorDark] = NEON_GRASS[Math.floor(rng() * NEON_GRASS.length)]!;
+    let attrs =
+      `id="grass-${p}" x="${r2(x)}" y="${r2(c.y)}" z="${r2(z)}"` +
+      ` count="${Math.floor(c.count)}" spread-x="${r2(spread)}" spread-z="${r2(spread)}" height="${r2(c.height)}"` +
+      ` color="${color}" color-dark="${colorDark}"`;
+    if (c.emissionIntensity > 0) {
+      attrs += ` emission="${color}" emission-intensity="${r2(c.emissionIntensity)}"`;
+    }
+    parts.push(`  <m-grass ${attrs} />`);
+  }
+  return `<m-group id="grass-root">\n${parts.join("\n")}\n</m-group>`;
+}
+
+export function grassPatchCount(config: Partial<GrassGenConfig> = {}): number {
+  return clampGrassConfig(config).patches;
+}

@@ -15,15 +15,18 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "analyze-model-dimensions": "tsx scripts/analyze-model-dimensions.ts"
   },
   "dependencies": {
     "@doppelfun/sdk": "workspace:*",
-    "@doppel-engine/assets": "file:../../../doppel-engine/packages/assets",
-    "@doppel-engine/schema": "file:../../../doppel-engine/packages/schema"
+    "@gltf-transform/core": "^4.0.0"
   },
   "devDependencies": {
+    "@gltf-transform/extensions": "^4.3.0",
     "@types/node": "^22.10.0",
+    "draco3dgltf": "^1.5.7",
+    "tsx": "^4.19.0",
     "typescript": "~5.7.2"
   }
 }

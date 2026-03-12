@@ -15,7 +15,9 @@ This package **generates MML strings only** — no HTTP, no document API. Caller
 | Generator | Export | Purpose |
 |-----------|--------|--------|
 | **Pyramid** | `generatePyramidMml` | Hollow stepped pyramid (`m-cube` shell, doorway, glowing corners). |
-| **City** | `generateCityMml` | Street grid + seed buildings (`m-model` by `catalogId`), optional pyramid cell. |
+| **City** | `generateCityMml` | Street grid + seed buildings (`m-model` by `catalogId`), optional pyramid cell; roads get street lights (poles + emissive lamps) and ping-pong vehicles (`m-attr-anim` on x/z, `collide="false"`). |
+| **Grass** | `generateGrassMml` | Multiple `m-grass` patches in block bounds; neon palette + optional emission (same style as engine `create-agent-documents` / loadtest). |
+| **Trees** | `generateTreesMml` | Random `m-model` placements with `catalogId` (default `def-tree`); optional `catalogIds` array to rotate (e.g. pine/palm from fixtures). |
 
 Core services are **pure** (no `fetch`, no `process.exit`): config in → MML string out.
 
@@ -48,8 +50,10 @@ const pyramidMml = generatePyramidMml({ baseWidth: 30, layers: 15, seed: 99 });
 const cityMml = generateCityMml({ gridRows: 6, gridCols: 6, seed: 42 });
 ```
 
-- **Pyramid** — `PyramidGenConfig`: `baseWidth`, `layers`, `blockSize`, `doorWidthBlocks`, `seed`, `cx`, `cz` (see `src/pyramid/config.ts` / `DEFAULT_PYRAMID_CONFIG`).
+- **Pyramid** — `PyramidGenConfig`: `baseWidth`, `layers`, `blockSize`, `doorWidthBlocks`, `seed`, `cx`, `cz`, optional `cornerColors` (string[] — one color for all corners, or multiple mapped to the four perimeter corners / cycled by layer), optional `cornerEmissionIntensity` (fixed intensity instead of random per corner). **If `seed` / `cx` / `cz` are omitted**, they are **randomized each run** (pass explicit values for reproducible MML). City pyramid cell uses **one random emissive color** for all corners and **placement jitter** inside the cell, derived from `citySeed` + cell bounds so the same city seed stays stable.
 - **City** — `CityGenConfig`: `gridRows`, `gridCols`, `blockSize`, `streetWidth`, `buildingSetback`, `seed`, optional `pyramidRow` / `pyramidCol` (see `src/city/config.ts`).
+- **Grass** — `GrassGenConfig`: `patches`, `count`, `spreadMin`/`spreadMax`, `height`, `y`, `seed`, `margin`, `emissionIntensity` (see `src/grass/config.ts`).
+- **Trees** — `TreesGenConfig`: `count`, `catalogId`, optional `catalogIds[]`, `seed`, `margin`, `collide` (see `src/trees/config.ts`).
 
 Use `clampPyramidConfig` / `clampCityConfig` on partial input before generating.
 
@@ -69,15 +73,23 @@ Anyone can add another procedural by following the same pattern as `pyramid/` an
 2. **Re-export** from `src/index.ts` (types, defaults, clamp, main generator).
 3. **Register** — append `{ kind: "<kind>", run: yourHandler }` to **`PROCEDURAL_REGISTRY`** in `src/procedural.ts`. Claw does not need changes; bump gen version / dependency when shipping.
 4. **Wire other callers (optional)** — scripts can still call your generator directly; gen stays unaware of documents.
-5. **Dependencies** — Prefer keeping new generators free of engine `file:` deps when possible; if you need layout or assets, either depend on `@doppel-engine/assets` / schema like city does, or inject data via config from the caller.
+5. **Dependencies** — Prefer keeping new generators free of unpublished engine packages; if you need layout or catalog data, copy or inject via config from the caller (city uses `src/city/layout/` locally).
 
-Pyramid is the minimal template (config + service + shared PRNG only). City shows how to combine engine layout helpers with MML emission.
+Pyramid is the minimal template (config + service + shared PRNG only). City combines local layout + seed buildings with MML emission.
 
 ---
+
+## Model dimensions (GLB AABB)
+
+Same approach as doppel-engine `analyze-model-dimensions`: glTF-Transform traverses the scene graph with node TRS so scaled roots (e.g. 0.01) yield true world-space size.
+
+- **API:** `getModelDimensionsFromDocument(doc)` — pass a `@gltf-transform/core` `Document` from `NodeIO.read(url)` or `readBinary(buffer)` (register `KHRDracoMeshCompression` + draco decoder if GLB uses Draco).
+- **Origin offsets:** `dimensionsToOriginOffsets(dims)` → `{ originOffsetX, originOffsetZ }` for `DEFAULT_SEED_BUILDING_DIMENSIONS`-style tables.
+- **CLI:** `pnpm run analyze-model-dimensions` (from `packages/gen`) — fetches each `SEED_BUILDINGS` URL, prints JSON to stdout; pass URLs as args to analyse arbitrary GLBs.
 
 ## Dependencies
 
 - **Pyramid** — no engine runtime; only shared PRNG/helpers.
-- **City** — uses `@doppel-engine/assets` (layout + seed buildings) and `@doppel-engine/schema` (`BLOCK_SIZE_M`). Linked via `file:`; package is **monorepo-only** until city layout is extracted.
+- **City** — uses `src/city/layout/` (layout generator, seed buildings, `BLOCK_SIZE_M`) — vendored so `@doppelfun/gen` publishes without `@doppel-engine`.
 
-Catalog-aware placement can use `@doppelfun/sdk` (`getBlockCatalog`, etc.) in the caller; city layout still uses fixed seed building catalog IDs from assets.
+**Hub catalog:** `catalogEntriesToSeedBuildings(entries)` maps hub/engine `CatalogEntry[]` into a building pool (category `Buildings` or known seed ids; otherwise any `.glb` with fallback dims). `generateCityMml(cfg, { buildings })` uses that pool. Claw `generate_procedural` city prefetches the block catalog and passes `params.buildings` automatically when the catalog returns entries.

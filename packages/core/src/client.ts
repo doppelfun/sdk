@@ -320,9 +320,13 @@ export class DoppelClient {
    * Request voice (TTS) for this text. Engine runs TTS and publishes to LiveKit when someone is nearby.
    * No-op if not connected.
    */
-  sendSpeak(text: string): void {
+  sendSpeak(text: string, options?: { voiceId?: string }): void {
     if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
-    const msg: AgentWsSpeakMessage = { type: "speak", text: text.trim().slice(0, 500) };
+    const msg: AgentWsSpeakMessage = {
+      type: "speak",
+      text: text.trim().slice(0, 500),
+      ...(options?.voiceId?.trim() && { voiceId: options.voiceId.trim() }),
+    };
     this.ws.send(JSON.stringify(msg));
   }
 

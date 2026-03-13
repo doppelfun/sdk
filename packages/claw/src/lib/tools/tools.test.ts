@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import type { DoppelClient } from "@doppelfun/sdk";
 import { createInitialState } from "../state/state.js";
-import { executeTool } from "./tools.js";
+import { executeTool } from "./index.js";
 import type { ClawConfig } from "../config/config.js";
 
 function minimalConfig(): ClawConfig {
@@ -91,7 +91,8 @@ describe("executeTool", () => {
 
   it("chat calls sendChat and sets lastTickSentChat", async () => {
     const sendChat = vi.fn();
-    const client = { sendChat } as unknown as DoppelClient;
+    const sendSpeak = vi.fn();
+    const client = { sendChat, sendSpeak } as unknown as DoppelClient;
     const state = createInitialState("0_0");
     const res = await executeTool(client, state, minimalConfig(), {
       name: "chat",
@@ -105,7 +106,8 @@ describe("executeTool", () => {
 
   it("chat with targetSessionId passes options to sendChat", async () => {
     const sendChat = vi.fn();
-    const client = { sendChat } as unknown as DoppelClient;
+    const sendSpeak = vi.fn();
+    const client = { sendChat, sendSpeak } as unknown as DoppelClient;
     const state = createInitialState("0_0");
     const res = await executeTool(client, state, minimalConfig(), {
       name: "chat",

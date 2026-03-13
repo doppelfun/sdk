@@ -72,12 +72,33 @@ export type ClawState = {
    * same cadence as NpcDriver so motion stays smooth instead of one-shot jerk per LLM tick.
    */
   movementIntent: { moveX: number; moveZ: number; sprint: boolean } | null;
+  /**
+   * When > 0 and now < this timestamp, AutonomousManager is in "emote stand still" — movement
+   * driver sends 0,0. Set by AutonomousManager when it triggers an emote; cleared when owner
+   * nearby or when time expires.
+   */
+  autonomousEmoteStandStillUntil: number;
+  /**
+   * When set, we are autonomously approaching this agent to say openingMessage. Movement driver
+   * clears movementTarget on arrive and then sends chat + speak with openingMessage to targetSessionId.
+   */
+  pendingGoTalkToAgent: { targetSessionId: string; openingMessage: string } | null;
+  /**
+   * When > 0 and now < this timestamp, AutonomousManager will not start a new "seek agent" — avoids
+   * immediately re-targeting after we just said something. Set when we fire chat/speak on arrive.
+   */
+  autonomousSeekCooldownUntil: number;
   /** Last tool name that was run. */
   lastToolRun: string | null;
   /** Tool names invoked this tick (for follow-up when chat-only promised a build). Cleared at tick start. */
   lastTickToolNames: string[] | null;
   /** When set, last inbound was a DM from this session id — use as targetSessionId when replying. */
   lastDmPeerSessionId: string | null;
+  /**
+   * When > 0 and now < this timestamp, agent-to-agent chat is in cooldown (don't send DM / autonomous greeting).
+   * Set after sending to slow conversations and allow voice to finish.
+   */
+  agentChatCooldownUntil: number;
   /** idle = normal tick; must_act_build = run build tool before chat (deterministic or build-only LLM). */
   tickPhase: TickPhase;
   /** When set with must_act_build, executeTool(generate_procedural) runs without LLM. */
@@ -122,6 +143,36 @@ export type ClawState = {
   lastOccupantsSummary: string | null;
 };
 
+/** Cooldown (ms) after sending agent-to-agent chat before next send — allows voice to finish. */
+export const AGENT_CHAT_COOLDOWN_MS = 10_000;
+
+/** True if agent-to-agent chat is currently in cooldown (used before sending DM or autonomous greeting). */
+export function isAgentChatCooldownActive(state: ClawState, now = Date.now()): boolean {
+  return state.agentChatCooldownUntil > 0 && now < state.agentChatCooldownUntil;
+}
+
+/** Set agent chat cooldown; call after sending a DM or autonomous greeting. */
+export function setAgentChatCooldown(state: ClawState, now = Date.now()): void {
+  state.agentChatCooldownUntil = now + AGENT_CHAT_COOLDOWN_MS;
+}
+
+/** Remaining cooldown in ms (0 if not active). Used for tool-result message. */
+export function getAgentChatCooldownRemainingMs(state: ClawState, now = Date.now()): number {
+  if (state.agentChatCooldownUntil <= 0 || now >= state.agentChatCooldownUntil) return 0;
+  return state.agentChatCooldownUntil - now;
+}
+
+/** True if we have a DM peer and that peer is an agent with position in the current block (so we stay put). */
+export function isInConversationWithAgentInRoom(state: ClawState): boolean {
+  if (state.lastDmPeerSessionId == null) return false;
+  return state.occupants.some(
+    (o) =>
+      o.type === "agent" &&
+      o.clientId === state.lastDmPeerSessionId &&
+      o.position != null
+  );
+}
+
 /** Create initial state for a block slot id (e.g. "0_0"). */
 export function createInitialState(blockSlotId: string): ClawState {
   return {
@@ -143,9 +194,13 @@ export function createInitialState(blockSlotId: string): ClawState {
     movementStopDistanceM: 2,
     movementSprint: false,
     movementIntent: null,
+    autonomousEmoteStandStillUntil: 0,
+    pendingGoTalkToAgent: null,
+    autonomousSeekCooldownUntil: 0,
     lastToolRun: null,
     lastTickToolNames: null,
     lastDmPeerSessionId: null,
+    agentChatCooldownUntil: 0,
     tickPhase: "idle",
     pendingBuildKind: null,
     pendingBuildTicks: 0,

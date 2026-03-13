@@ -14,7 +14,7 @@ import { dynamicTool, generateText, stepCountIs, zodSchema, type LanguageModel }
 import { createOpenAI } from "@ai-sdk/openai";
 import type { DoppelClient } from "@doppelfun/sdk";
 import { CLAW_TOOL_REGISTRY, getToolSchema } from "../tools/toolsZod.js";
-import { executeTool, type ExecuteToolResult } from "../tools/tools.js";
+import { executeTool, type ExecuteToolResult } from "../tools/index.js";
 import type { ClawState } from "../state/state.js";
 import type { ClawConfig } from "../config/config.js";
 import { createLlmProvider } from "./provider.js";

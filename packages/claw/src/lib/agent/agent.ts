@@ -10,8 +10,10 @@ import { loadConfig, type ClawConfig } from "../config/config.js";
 import {
   clearLastError,
   createInitialState,
+  isAgentChatCooldownActive,
   pushChat,
   pushOwnerMessage,
+  setAgentChatCooldown,
   setLastError,
   syncMainDocumentForBlock,
   type ClawState,
@@ -22,11 +24,12 @@ import type { Usage } from "../llm/usage.js";
 import { runTickWithAiSdk, MUST_ACT_BUILD_TOOL_NAMES } from "../llm/toolsAi.js";
 import { isDmChannel } from "../../util/dm.js";
 import { createLlmProvider, type BuildIntentResult } from "../llm/provider.js";
-import { executeTool } from "../tools/tools.js";
+import { executeTool } from "../tools/index.js";
 import {
   movementDriverTick,
   MOVEMENT_INPUT_INTERVAL_MS,
 } from "../movement/movementDriver.js";
+import { AutonomousManager } from "../movement/autonomousManager.js";
 import { isOwnerNearby } from "../movement/ownerProximity.js";
 import { clawLog, clawDebug, clawVerbose } from "../log.js";
 
@@ -132,6 +135,8 @@ type ChatPayload = {
   sessionId?: string;
   /** "global" or dm:sessionA:sessionB. Use to filter or bucket by channel. */
   channelId?: string;
+  /** When set (agent-to-agent broadcast), this message was directed at this session. */
+  targetSessionId?: string;
 };
 
 /** Payload shape for WebSocket "error" messages. */
@@ -354,7 +359,7 @@ async function runTick(
 
   if (config.hosted) reportChatUsageToHub(config, result.usage, options.onTick);
 
-  // DM wake but model returned no tool calls (common with Gemini) — send text as chat or minimal fallback
+  // DM wake but model returned no tool calls (common with Gemini) — send text as chat or minimal fallback.
   if (
     state.dmReplyPending &&
     !result.hadToolCalls &&
@@ -367,17 +372,20 @@ async function runTick(
       result.replyText && result.replyText.length > 0
         ? result.replyText
         : "Hey — I'm here.";
-    client.sendChat(text, { targetSessionId: peer });
-    state.lastAgentChatMessage = text;
-    state.lastTickSentChat = true;
-    state.lastToolRun = "chat";
-    client.sendSpeak(text);
-    options.onTick?.(`dm fallback chat: ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`);
+    if (!isAgentChatCooldownActive(state)) {
+      client.sendChat(text, { targetSessionId: peer });
+      state.lastAgentChatMessage = text;
+      state.lastTickSentChat = true;
+      state.lastToolRun = "chat";
+      setAgentChatCooldown(state);
+      client.sendSpeak(text);
+      options.onTick?.(`dm fallback chat: ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`);
+    }
   } else if (!result.hadToolCalls) {
     options.onTick?.("no tool calls");
   }
 
-  // Engine error wake: model must summarize in chat — if it sent no tools, force a fallback message
+  // Engine error wake: model must summarize in chat — if it sent no tools, force a fallback message.
   if (
     state.errorReplyPending &&
     !result.hadToolCalls &&
@@ -388,16 +396,21 @@ async function runTick(
       result.replyText && result.replyText.trim().length > 0
         ? result.replyText.trim().slice(0, 500)
         : "Something went wrong on the server. If it keeps happening, try again in a moment.";
-    if (state.lastDmPeerSessionId) {
-      client.sendChat(text, { targetSessionId: state.lastDmPeerSessionId });
-    } else {
-      client.sendChat(text);
+    const blockedByCooldown =
+      state.lastDmPeerSessionId != null && isAgentChatCooldownActive(state);
+    if (!blockedByCooldown) {
+      if (state.lastDmPeerSessionId) {
+        client.sendChat(text, { targetSessionId: state.lastDmPeerSessionId });
+        setAgentChatCooldown(state);
+      } else {
+        client.sendChat(text);
+      }
+      state.lastAgentChatMessage = text;
+      state.lastTickSentChat = true;
+      state.lastToolRun = "chat";
+      client.sendSpeak(text);
+      options.onTick?.(`error-reply fallback chat: ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`);
     }
-    state.lastAgentChatMessage = text;
-    state.lastTickSentChat = true;
-    state.lastToolRun = "chat";
-    client.sendSpeak(text);
-    options.onTick?.(`error-reply fallback chat: ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`);
   }
 
   // Once we've notified (or auto-fixed boundary), don't re-prompt the same error every tick
@@ -616,13 +629,18 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     const userId = typeof p.userId === "string" && p.userId.trim() ? p.userId.trim() : undefined;
     const sessionId = typeof p.sessionId === "string" ? p.sessionId : undefined;
     /** DM from another participant — reply with targetSessionId = sender session. */
+    const targetSessionId =
+      typeof p.targetSessionId === "string" && p.targetSessionId.trim()
+        ? p.targetSessionId.trim()
+        : undefined;
+    const directedAtMe = state.mySessionId && targetSessionId === state.mySessionId;
     const dmFromOther =
       state.mySessionId &&
       sessionId &&
       sessionId !== state.mySessionId &&
-      isDmChannel(p.channelId);
+      (isDmChannel(p.channelId) || directedAtMe);
     const fromOwner = config.ownerUserId && userId === config.ownerUserId && message;
-    if (dmFromOther && sessionId) {
+    if ((dmFromOther || directedAtMe) && sessionId) {
       state.lastDmPeerSessionId = sessionId;
     } else if (p.channelId === "global") {
       state.lastDmPeerSessionId = null;
@@ -712,9 +730,11 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     }, OCCUPANTS_REFRESH_MS);
   }
 
-  // --- 50ms movement driver: explicit movementTarget only (LLM/soul ticks set target) ---
+  // --- 50ms movement driver + autonomous (wander/emote when owner away) ---
+  const autonomousManager = new AutonomousManager();
   const movementInterval = setInterval(() => {
     try {
+      autonomousManager.tick(client, state, config);
       movementDriverTick(client, state);
     } catch {
       // ignore

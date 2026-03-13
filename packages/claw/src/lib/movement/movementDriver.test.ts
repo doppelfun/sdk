@@ -28,6 +28,17 @@ describe("movementDriverTick", () => {
     expect(sendInput).not.toHaveBeenCalled();
   });
 
+  it("sends 0,0 during autonomous emote stand-still", () => {
+    const sendInput = vi.fn();
+    const client = { sendInput } as unknown as DoppelClient;
+    const state = createInitialState("0_0");
+    state.autonomousEmoteStandStillUntil = Date.now() + 5000;
+    expect(movementDriverTick(client, state)).toBe(true);
+    expect(sendInput).toHaveBeenCalledWith(
+      expect.objectContaining({ moveX: 0, moveZ: 0, sprint: false })
+    );
+  });
+
   it("no-ops without myPosition", () => {
     const sendInput = vi.fn();
     const client = { sendInput } as unknown as DoppelClient;
@@ -49,6 +60,28 @@ describe("movementDriverTick", () => {
       expect.objectContaining({ moveX: 0, moveZ: 0 })
     );
     expect(state.movementTarget).toBeNull();
+  });
+
+  it("on arrive with pendingGoTalkToAgent sends chat and speak then clears pending", () => {
+    const sendInput = vi.fn();
+    const sendChat = vi.fn();
+    const sendSpeak = vi.fn();
+    const client = { sendInput, sendChat, sendSpeak } as unknown as DoppelClient;
+    const state = createInitialState("0_0");
+    state.movementTarget = { x: 10, z: 10 };
+    state.myPosition = { x: 9.5, y: 0, z: 10 };
+    state.movementStopDistanceM = 2;
+    state.pendingGoTalkToAgent = { targetSessionId: "other-session", openingMessage: "Hi!" };
+    expect(movementDriverTick(client, state)).toBe(true);
+    expect(sendInput).toHaveBeenCalledWith(
+      expect.objectContaining({ moveX: 0, moveZ: 0 })
+    );
+    expect(sendChat).toHaveBeenCalledWith("Hi!", { targetSessionId: "other-session" });
+    expect(sendSpeak).toHaveBeenCalledWith("Hi!");
+    expect(state.movementTarget).toBeNull();
+    expect(state.pendingGoTalkToAgent).toBeNull();
+    expect(state.autonomousSeekCooldownUntil).toBeGreaterThan(Date.now());
+    expect(state.agentChatCooldownUntil).toBeGreaterThan(Date.now());
   });
 
   it("sends non-zero input when far from target", () => {

@@ -65,6 +65,8 @@ export type AgentWsThinkingMessage = {
 export type AgentWsSpeakMessage = {
   type: "speak";
   text: string;
+  /** Optional voice id for TTS (e.g. ElevenLabs voice_id). */
+  voiceId?: string;
 };
 
 /** All outbound Agent WebSocket message types. Send as JSON after receiving `authenticated`. */

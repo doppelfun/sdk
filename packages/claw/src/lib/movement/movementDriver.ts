@@ -7,7 +7,11 @@
  */
 
 import type { DoppelClient } from "@doppelfun/sdk";
-import type { ClawState } from "../state/state.js";
+import {
+  type ClawState,
+  isAgentChatCooldownActive,
+  setAgentChatCooldown,
+} from "../state/state.js";
 import { getBlockBounds } from "../../util/blockBounds.js";
 
 /** Match NpcDriver INPUT_INTERVAL_MS so agent motion feels similar. */
@@ -30,6 +34,15 @@ const MAX_MOVE = 0.4;
  */
 export function movementDriverTick(client: DoppelClient, state: ClawState): boolean {
   const target = state.movementTarget;
+
+  // --- AutonomousManager emote stand-still: send 0,0 until timestamp expires ---
+  if (
+    state.autonomousEmoteStandStillUntil > 0 &&
+    Date.now() < state.autonomousEmoteStandStillUntil
+  ) {
+    client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
+    return true;
+  }
 
   // --- Continuous stick input (no world target): repeat every tick like NpcDriver pendingInput ---
   if (!target && state.movementIntent) {
@@ -78,6 +91,19 @@ export function movementDriverTick(client: DoppelClient, state: ClawState): bool
   if (dist < stopDist) {
     client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
     state.movementTarget = null;
+    const pending = state.pendingGoTalkToAgent;
+    if (pending) {
+      // Wait for agent chat cooldown so we don’t spam; will send on a later tick when expired.
+      if (!isAgentChatCooldownActive(state)) {
+        client.sendChat(pending.openingMessage, { targetSessionId: pending.targetSessionId });
+        client.sendSpeak(pending.openingMessage);
+        state.lastAgentChatMessage = pending.openingMessage;
+        state.lastDmPeerSessionId = pending.targetSessionId;
+        setAgentChatCooldown(state);
+        state.pendingGoTalkToAgent = null;
+        state.autonomousSeekCooldownUntil = Date.now() + 5000;
+      }
+    }
     if (
       state.lastBuildTarget &&
       Math.hypot(state.lastBuildTarget.x - my.x, state.lastBuildTarget.z - my.z) < stopDist

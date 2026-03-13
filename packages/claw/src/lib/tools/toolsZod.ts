@@ -37,6 +37,12 @@ export const chatSchema = z.object({
     .describe(
       "Recipient session id for DM only. Omit for global. When context shows a DM line, use the given targetSessionId so the reply stays in the same thread."
     ),
+  voiceId: z
+    .string()
+    .optional()
+    .describe(
+      "Optional TTS voice id (e.g. ElevenLabs voice_id). When set, this message is spoken with that voice."
+    ),
 });
 
 /** Emote ids match engine catalog: wave, heart, thumbs, clap, dance, shocked */

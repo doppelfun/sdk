@@ -7,15 +7,7 @@ import WebSocket from "ws";
 import { createClient } from "@doppelfun/sdk";
 import { joinBlock } from "../hub/hub.js";
 import { loadConfig, type ClawConfig } from "../config/config.js";
-import {
-  clearLastError,
-  createInitialState,
-  pushChat,
-  pushOwnerMessage,
-  setLastError,
-  syncMainDocumentForBlock,
-  type ClawState,
-} from "../state/state.js";
+import { createClawStore, type ClawStore } from "../state/index.js";
 import { clearConversation, onWeReceivedDm } from "../conversation/index.js";
 import { buildSystemContent } from "../prompts/prompts.js";
 import type { ClawConfigPrompt } from "../prompts/prompts.js";
@@ -51,7 +43,7 @@ export type { ToolCallResult, AgentRunOptions } from "./types.js";
  * Optionally classifies build intent from the message and sets must_act_build phase.
  *
  * @param client - Doppel client (sendThinking, etc.).
- * @param state - Claw state (mutated: llmWakePending, dmReplyPending, tickPhase, etc.).
+ * @param store - Claw store (mutated via actions).
  * @param config - Claw config (wakeTickDebounceMs, buildLlmModel).
  * @param options - Agent run options (onTick callback).
  * @param tickInProgress - Ref whose .current is true while a tick is running.
@@ -62,7 +54,7 @@ export type { ToolCallResult, AgentRunOptions } from "./types.js";
  */
 function createRequestWakeTick(
   client: ReturnType<typeof createClient>,
-  state: ClawState,
+  store: ClawStore,
   config: ClawConfig,
   options: AgentRunOptions,
   tickInProgress: { current: boolean },
@@ -72,8 +64,8 @@ function createRequestWakeTick(
 ) {
   let wakeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   return function requestWakeTick(reason: string, wakeMessage?: string): void {
-    state.llmWakePending = true;
-    if (reason === "dm") state.dmReplyPending = true;
+    store.setLlmWakePending(true);
+    if (reason === "dm") store.setDmReplyPending(true);
     if (tickInProgress.current) {
       wakeAfterTick.current = true;
       options.onTick?.(`wake after tick (${reason})`);
@@ -92,7 +84,7 @@ function createRequestWakeTick(
       tickScheduled.current = null;
       options.onTick?.(`wake tick (${reason})`);
       void (async () => {
-        if (msg && !ownerBuildBlocked(config, state)) {
+        if (msg && !ownerBuildBlocked(config, store.getState())) {
           try {
             client.sendThinking(true);
             let intent;
@@ -105,10 +97,10 @@ function createRequestWakeTick(
               client.sendThinking(false);
             }
             if (intent.requiresBuildAction) {
-              state.tickPhase = "must_act_build";
-              state.pendingBuildKind = intent.proceduralKind;
-              state.pendingBuildTicks = 0;
-              state.lastTickSentChat = false;
+              store.setTickPhase("must_act_build");
+              store.setPendingBuildKind(intent.proceduralKind);
+              store.setPendingBuildTicks(0);
+              store.setLastTickSentChat(false);
               options.onTick?.(
                 intent.proceduralKind
                   ? `must_act_build: ${intent.proceduralKind}`
@@ -197,7 +189,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     agentWsPath: "/connect",
   });
 
-  const state = createInitialState(blockSlotId);
+  const store = createClawStore(blockSlotId);
 
   const tickScheduledRef = { current: null as ReturnType<typeof setTimeout> | null };
   const wakeAfterTickRef = { current: false };
@@ -209,7 +201,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
       return;
     }
     tickInProgress = true;
-    runTick(client, state, config, systemContent, {
+    runTick(client, store, config, systemContent, {
       onTick: options.onTick,
       onToolCallResult: options.onToolCallResult,
     })
@@ -223,6 +215,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
         if (tickScheduledRef.current) clearTimeout(tickScheduledRef.current);
         tickScheduledRef.current = null;
 
+        const state = store.getState();
         let delayMs: number | null = null;
         if (needImmediateFollowUp) delayMs = 0;
         else if (state.tickPhase === "must_act_build") delayMs = 0;
@@ -234,7 +227,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
             state.myPosition &&
             !isOwnerNearby(state, config);
           if (ownerAway) {
-            state.autonomousSoulTickDue = true;
+            store.setAutonomousSoulTickDue(true);
             delayMs = config.autonomousSoulTickMs;
             clawDebug("next soul tick in", delayMs, "ms (owner away)");
           } else delayMs = null;
@@ -252,7 +245,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   const tickInProgressRef = { get current() { return tickInProgress; } };
   const requestWakeTick = createRequestWakeTick(
     client,
-    state,
+    store,
     config,
     options,
     tickInProgressRef,
@@ -270,16 +263,17 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     };
     const slot = typeof p.blockId === "string" ? p.blockId : p.regionId;
     if (typeof slot === "string") {
-      state.blockSlotId = slot;
+      store.setBlockSlotId(slot);
       blockSlotId = slot;
-      syncMainDocumentForBlock(state);
+      store.syncMainDocumentForBlock();
     }
-    if (typeof p.sessionId === "string") state.mySessionId = p.sessionId;
-    options.onConnected?.(state.blockSlotId, engineUrl);
+    if (typeof p.sessionId === "string") store.setMySessionId(p.sessionId);
+    options.onConnected?.(store.getState().blockSlotId, engineUrl);
   });
 
   client.onMessage("chat", (payload: unknown) => {
     const p = payload as ChatPayload;
+    const state = store.getState();
     if (state.mySessionId && p.sessionId === state.mySessionId) return;
     const username = typeof p.username === "string" ? p.username : "?";
     const message = typeof p.message === "string" ? p.message : typeof p.text === "string" ? p.text : "";
@@ -298,23 +292,22 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
       (isDmChannel(p.channelId) || directedAtMe);
     const fromOwner = config.ownerUserId && userId === config.ownerUserId && message;
     if (fromOwner) {
-      clearConversation(state);
+      clearConversation(store);
     } else if ((dmFromOther || directedAtMe) && sessionId) {
       const audioDurationMs = typeof (p as { audioDurationMs?: number }).audioDurationMs === "number"
         ? (p as { audioDurationMs: number }).audioDurationMs
         : undefined;
-      onWeReceivedDm(state, sessionId, { audioDurationMs, messageLength: message.length });
+      onWeReceivedDm(store, sessionId, { audioDurationMs, messageLength: message.length });
     } else if (p.channelId === "global") {
-      clearConversation(state);
+      clearConversation(store);
     }
     const shouldWake = fromOwner || dmFromOther;
     if (shouldWake) {
-      state.lastAgentChatMessage = null;
-      state.lastTickSentChat = false;
-      if (userId) state.lastTriggerUserId = userId;
+      store.setLastAgentChatMessage(null);
+      store.setLastTickSentChat(false);
+      if (userId) store.setLastTriggerUserId(userId);
     }
-    pushChat(
-      state,
+    store.pushChat(
       {
         username,
         message,
@@ -326,7 +319,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
       config.maxChatContext
     );
     if (fromOwner) {
-      pushOwnerMessage(state, message, config.maxOwnerMessages);
+      store.pushOwnerMessage(message, config.maxOwnerMessages);
     }
     if (shouldWake && message.trim()) {
       const reason = dmFromOther ? "dm" : "owner";
@@ -341,16 +334,16 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     const code = typeof p.code === "string" ? p.code : "error";
     const message = typeof p.error === "string" ? p.error : "Unknown error";
     const slot = typeof p.regionId === "string" ? p.regionId : undefined;
-    setLastError(state, code, message, slot);
+    store.setLastError(code, message, slot);
   });
 
   client.onMessage("joined", (payload: unknown) => {
     const p = payload as { regionId?: string };
     if (typeof p.regionId === "string") {
-      state.blockSlotId = p.regionId;
-      clearLastError(state);
-      clearConversation(state, { skipSeekCooldown: true });
-      syncMainDocumentForBlock(state);
+      store.setBlockSlotId(p.regionId);
+      store.clearLastError();
+      clearConversation(store, { skipSeekCooldown: true });
+      store.syncMainDocumentForBlock();
     }
   });
 
@@ -382,9 +375,8 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     occupantsRefreshTimer = setInterval(() => {
       if (tickInProgress) return;
       client.getOccupants().then((list) => {
-        state.occupants = list;
-        const self = list.find((o) => o.clientId === state.mySessionId);
-        if (self?.position) state.myPosition = self.position;
+        const state = store.getState();
+        store.setOccupants(list, state.mySessionId);
       }).catch(() => {});
     }, OCCUPANTS_REFRESH_MS);
   }
@@ -392,17 +384,18 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   const autonomousManager = new AutonomousManager();
   const movementInterval = setInterval(() => {
     try {
-      checkBreak(state, Date.now(), {
+      const state = store.getState();
+      checkBreak(store, Date.now(), {
         occupants: state.occupants,
         ownerUserId: config.ownerUserId,
         lastTriggerUserId: state.lastTriggerUserId,
         maxRounds: CONVERSATION_MAX_ROUNDS,
       });
-      autonomousManager.tick(client, state, config);
-      movementDriverTick(client, state, { voiceId: config.voiceId });
-      const pending = drainPendingReply(state);
+      autonomousManager.tick(client, store, config);
+      movementDriverTick(client, store, { voiceId: config.voiceId });
+      const pending = drainPendingReply(store);
       if (pending) {
-        sendDmAndTransition(client, state, pending.text, pending.targetSessionId, config.voiceId);
+        sendDmAndTransition(client, store, pending.text, pending.targetSessionId, config.voiceId);
       }
     } catch {
       // ignore

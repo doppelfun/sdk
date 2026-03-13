@@ -194,7 +194,7 @@ export function getFacingTowardNearestOccupant(state: ClawState): number | undef
   return Math.atan2(nearest.x - my.x, nearest.z - my.z);
 }
 
-/** Create initial state for a block slot id (e.g. "0_0"). */
+/** Create initial state for a block slot (e.g. "0_0"). Used by createClawStore. */
 export function createInitialState(blockSlotId: string): ClawState {
   return {
     blockSlotId,
@@ -242,39 +242,17 @@ export function createInitialState(blockSlotId: string): ClawState {
   };
 }
 
-/** Sync mainDocumentId/mainDocumentMml from tracked doc for current block slot. */
-export function syncMainDocumentForBlock(state: ClawState): void {
+/**
+ * Pure helper: compute next state for mainDocumentId/mainDocumentMml from documentsByBlockSlot.
+ * Used by store.syncMainDocumentForBlock(); callers should use the store action.
+ */
+export function computeMainDocumentForBlock(state: ClawState): {
+  mainDocumentId: string | null;
+  mainDocumentMml: string;
+} {
   const doc = state.documentsByBlockSlot[state.blockSlotId];
-  state.mainDocumentId = doc?.documentId ?? null;
-  state.mainDocumentMml = doc?.mml ?? "";
-}
-
-/** Append chat entry; keep at most max. */
-export function pushChat(state: ClawState, entry: ChatEntry, max: number): void {
-  state.chat.push(entry);
-  if (state.chat.length > max) state.chat.shift();
-}
-
-/** Append owner message; keep at most max. */
-export function pushOwnerMessage(state: ClawState, text: string, max: number): void {
-  state.ownerMessages.push({ text, at: Date.now() });
-  if (state.ownerMessages.length > max) state.ownerMessages.shift();
-}
-
-/** Set last error (e.g. boundary). Optional blockSlotId for join_block hint (engine may send as regionId). */
-export function setLastError(
-  state: ClawState,
-  code: string,
-  message: string,
-  blockSlotId?: string
-): void {
-  state.lastError = { code, message, blockSlotId };
-  state.llmWakePending = true;
-  state.errorReplyPending = true;
-}
-
-/** Clear error and reply flag (e.g. after join or after user was notified). */
-export function clearLastError(state: ClawState): void {
-  state.lastError = null;
-  state.errorReplyPending = false;
+  return {
+    mainDocumentId: doc?.documentId ?? null,
+    mainDocumentMml: doc?.mml ?? "",
+  };
 }

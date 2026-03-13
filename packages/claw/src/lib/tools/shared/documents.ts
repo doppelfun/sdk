@@ -3,14 +3,12 @@
  */
 
 import type { DoppelClient } from "@doppelfun/sdk";
+import { isUuid } from "../../../util/uuid.js";
 import type { ClawState } from "../../state/state.js";
-import { syncMainDocumentForBlock } from "../../state/state.js";
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import type { ClawStore } from "../../state/store.js";
 
 export function isDocumentIdUuid(id: string): boolean {
-  return typeof id === "string" && UUID_RE.test(id.trim());
+  return isUuid(id);
 }
 
 export const DOCUMENT_ID_UUID_HINT =
@@ -20,7 +18,7 @@ export const DOC_LIST_CACHE_MAX_CHARS = 6000;
 export const DOC_LIST_TOOL_RETURN_MAX_CHARS = 4000;
 
 export function cacheDocumentsList(
-  state: ClawState,
+  store: ClawStore,
   ids: string[]
 ): { summaryForTool: string } {
   const fullSummary =
@@ -31,16 +29,18 @@ export function cacheDocumentsList(
     summaryForTool = `${ids.length} document(s); first 40: ${head}… (truncated; re-call with care if you need every id)`;
   }
   if (fullSummary.length <= DOC_LIST_CACHE_MAX_CHARS) {
-    state.lastDocumentsList = fullSummary;
+    store.setState({ lastDocumentsList: fullSummary });
   } else {
     const head = ids.slice(0, 80).join(", ");
-    state.lastDocumentsList = `${ids.length} document(s); first 80: ${head}… (truncated in cache; re-call list_documents if you need every id)`;
+    store.setState({
+      lastDocumentsList: `${ids.length} document(s); first 80: ${head}… (truncated in cache; re-call list_documents if you need every id)`,
+    });
   }
   return { summaryForTool };
 }
 
-export function invalidateDocumentListCache(state: ClawState): void {
-  state.lastDocumentsList = null;
+export function invalidateDocumentListCache(store: ClawStore): void {
+  store.setState({ lastDocumentsList: null });
 }
 
 export async function resolveDocumentIdTarget(
@@ -75,10 +75,11 @@ export async function resolveDocumentIdTarget(
   return { ok: false, error: `${toolName} requires documentId or target current|last` };
 }
 
-export function clearTrackedDocumentIfDeleted(state: ClawState, deletedId: string): void {
+export function clearTrackedDocumentIfDeleted(store: ClawStore, deletedId: string): void {
+  const state = store.getState();
   const blockDoc = state.documentsByBlockSlot[state.blockSlotId];
   if (blockDoc?.documentId === deletedId) {
-    delete state.documentsByBlockSlot[state.blockSlotId];
-    syncMainDocumentForBlock(state);
+    store.setDocumentsByBlockSlot(state.blockSlotId, null);
+    store.syncMainDocumentForBlock();
   }
 }

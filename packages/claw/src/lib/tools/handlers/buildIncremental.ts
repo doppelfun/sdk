@@ -2,14 +2,14 @@ import type { ToolContext } from "../types.js";
 import { getBlockBounds } from "../../../util/blockBounds.js";
 import { buildIncremental } from "../../llm/buildLlm.js";
 import { createLlmProvider } from "../../llm/provider.js";
-import { syncMainDocumentForBlock } from "../../state/state.js";
 import { getCatalogForBuild, catalogToJson } from "../shared/catalog.js";
 import { ownerGateDenied, preCheckBalance, reportBuildUsage } from "../shared/gate.js";
 import { isDocumentIdUuid, DOCUMENT_ID_UUID_HINT } from "../shared/documents.js";
-import { parsePositionHint } from "../shared/position.js";
+import { parsePositionHint } from "../../../util/position.js";
 
 export async function handleBuildIncremental(ctx: ToolContext) {
-  const { client, state, config, args, logAction } = ctx;
+  const { client, store, config, args, logAction } = ctx;
+  const state = store.getState();
   const instruction = typeof args.instruction === "string" ? args.instruction.trim() : "";
   if (!instruction) return { ok: false, error: "build_incremental requires instruction" };
   const denied = ownerGateDenied(config, state);
@@ -20,9 +20,9 @@ export async function handleBuildIncremental(ctx: ToolContext) {
   if (positionHint) {
     const parsed = parsePositionHint(positionHint);
     if (parsed) {
-      state.movementIntent = null;
-      state.lastBuildTarget = { x: parsed.x, z: parsed.z };
-      state.movementTarget = { x: parsed.x, z: parsed.z };
+      store.setMovementIntent(null);
+      store.setLastBuildTarget({ x: parsed.x, z: parsed.z });
+      store.setMovementTarget({ x: parsed.x, z: parsed.z });
     }
   }
   const catalog = await getCatalogForBuild(config);
@@ -83,8 +83,8 @@ export async function handleBuildIncremental(ctx: ToolContext) {
 
   if (!wantAppend) {
     const { documentId: newId } = await client.createDocument(fragment);
-    state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml: fragment };
-    syncMainDocumentForBlock(state);
+    store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: newId, mml: fragment });
+    store.syncMainDocumentForBlock();
     const s1 = `built fragment as new document ${newId}`;
     logAction(s1);
     return { ok: true, summary: s1 };
@@ -93,16 +93,16 @@ export async function handleBuildIncremental(ctx: ToolContext) {
   const idToAppend = appendTargetId ?? blockDoc?.documentId ?? null;
   if (!idToAppend) {
     const { documentId: newId } = await client.createDocument(fragment);
-    state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml: fragment };
-    syncMainDocumentForBlock(state);
+    store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: newId, mml: fragment });
+    store.syncMainDocumentForBlock();
     const s2 = `built fragment as new document ${newId} (no doc to append to)`;
     logAction(s2);
     return { ok: true, summary: s2 };
   }
   const newMml = existingMml ? `${existingMml}\n${fragment}` : fragment;
   await client.appendDocument(idToAppend, fragment);
-  state.documentsByBlockSlot[state.blockSlotId] = { documentId: idToAppend, mml: newMml };
-  syncMainDocumentForBlock(state);
+  store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: idToAppend, mml: newMml });
+  store.syncMainDocumentForBlock();
   const s3 = `appended to document ${idToAppend}`;
   logAction(s3);
   return { ok: true, summary: s3 };

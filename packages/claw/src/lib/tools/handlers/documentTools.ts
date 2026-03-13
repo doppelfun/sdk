@@ -10,18 +10,18 @@ import {
 import { ownerGateDenied } from "../shared/gate.js";
 
 export async function handleListDocuments(ctx: ToolContext) {
-  const { client, state, logAction } = ctx;
+  const { client, store, logAction } = ctx;
   const ids = await client.listDocuments();
-  const { summaryForTool } = cacheDocumentsList(state, ids);
+  const { summaryForTool } = cacheDocumentsList(store, ids);
   logAction(summaryForTool);
   return { ok: true, summary: summaryForTool };
 }
 
 export async function handleGetDocumentContent(ctx: ToolContext) {
-  const { client, state, config, args, logAction } = ctx;
-  const denied = ownerGateDenied(config, state);
+  const { client, store, config, args, logAction } = ctx;
+  const denied = ownerGateDenied(config, store.getState());
   if (denied) return denied;
-  const resolved = await resolveDocumentIdTarget(args, state, client, "get_document_content");
+  const resolved = await resolveDocumentIdTarget(args, store.getState(), client, "get_document_content");
   if (!resolved.ok) return { ok: false, error: resolved.error };
   const res = await client.getDocumentContent(resolved.id);
   const preview =
@@ -36,26 +36,27 @@ export async function handleGetDocumentContent(ctx: ToolContext) {
 }
 
 export async function handleDeleteDocument(ctx: ToolContext) {
-  const { client, state, config, args, logAction } = ctx;
-  const denied = ownerGateDenied(config, state);
+  const { client, store, config, args, logAction } = ctx;
+  const denied = ownerGateDenied(config, store.getState());
   if (denied) return denied;
-  const resolved = await resolveDocumentIdTarget(args, state, client, "delete_document");
+  const resolved = await resolveDocumentIdTarget(args, store.getState(), client, "delete_document");
   if (!resolved.ok) return { ok: false, error: resolved.error };
   await client.deleteDocument(resolved.id);
-  invalidateDocumentListCache(state);
-  clearTrackedDocumentIfDeleted(state, resolved.id);
+  invalidateDocumentListCache(store);
+  clearTrackedDocumentIfDeleted(store, resolved.id);
   const summary = `deleted document ${resolved.id}`;
   logAction(summary);
   return { ok: true, summary };
 }
 
 export async function handleDeleteAllDocuments(ctx: ToolContext) {
-  const { client, state, config, logAction } = ctx;
-  const denied = ownerGateDenied(config, state);
+  const { client, store, config, logAction } = ctx;
+  const denied = ownerGateDenied(config, store.getState());
   if (denied) return denied;
   const ids = await client.listDocuments();
+  const state = store.getState();
   if (ids.length === 0) {
-    state.lastDocumentsList = "0 documents";
+    store.setLastDocumentsList("0 documents");
     logAction("no documents to delete");
     return { ok: true, summary: "no documents to delete" };
   }
@@ -70,9 +71,9 @@ export async function handleDeleteAllDocuments(ctx: ToolContext) {
     }
   }
   if (trackedId && ids.includes(trackedId)) {
-    clearTrackedDocumentIfDeleted(state, trackedId);
+    clearTrackedDocumentIfDeleted(store, trackedId);
   }
-  state.lastDocumentsList = deleted === ids.length ? "0 documents" : null;
+  store.setLastDocumentsList(deleted === ids.length ? "0 documents" : null);
   const summary = `deleted ${deleted}/${ids.length} document(s)`;
   logAction(summary);
   return { ok: true, summary };

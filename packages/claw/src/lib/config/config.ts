@@ -2,6 +2,8 @@
  * Claw config from ENV. Call loadConfig() after dotenv.
  */
 
+import { parseIntEnv, envFlag } from "../../util/env.js";
+import { normalizeUrl } from "../../util/url.js";
 import { DEFAULT_GOOGLE_MODEL } from "../llm/constants.js";
 
 export type LlmProviderId = "openrouter" | "google" | "google-vertex";
@@ -60,25 +62,6 @@ const DEFAULT_TICK_MS = 5000;
 const DEFAULT_MAX_CHAT = 20;
 const DEFAULT_MAX_OWNER = 10;
 
-function parseIntEnv(key: string, defaultVal: number, min?: number, max?: number): number {
-  const raw = process.env[key];
-  const n = raw != null ? parseInt(raw, 10) : NaN;
-  let val = Number.isFinite(n) ? n : defaultVal;
-  if (min != null && val < min) val = min;
-  if (max != null && val > max) val = max;
-  return val;
-}
-
-function trimUrl(s: string): string {
-  return s.trim().replace(/\/$/, "");
-}
-
-/** Truthy env flag (1 or true). */
-function envFlag(key: string): boolean {
-  const v = process.env[key]?.trim().toLowerCase();
-  return v === "1" || v === "true";
-}
-
 /** LLM_PROVIDER → LlmProviderId. Underscores normalized to hyphens (google_vertex → google-vertex). */
 function parseLlmProvider(): LlmProviderId {
   const raw = (process.env.LLM_PROVIDER?.trim().toLowerCase() || "google").replace(/_/g, "-");
@@ -97,9 +80,9 @@ export function loadConfig(): ClawConfig {
     throw new Error("OPENROUTER_API_KEY is required when LLM_PROVIDER is openrouter (default)");
   }
 
-  const hubUrl = trimUrl(process.env.HUB_URL?.trim() || DEFAULT_HUB);
-  const agentApiUrl = trimUrl(process.env.AGENT_API_URL?.trim() || hubUrl);
-  const engineUrl = trimUrl(process.env.ENGINE_URL?.trim() || DEFAULT_ENGINE);
+  const hubUrl = normalizeUrl(process.env.HUB_URL?.trim() || DEFAULT_HUB);
+  const agentApiUrl = normalizeUrl(process.env.AGENT_API_URL?.trim() || hubUrl);
+  const engineUrl = normalizeUrl(process.env.ENGINE_URL?.trim() || DEFAULT_ENGINE);
   // Optional fallback only: profile default_space_id (GET /api/agents/me defaultBlock) is preferred at join time.
   const blockId = process.env.BLOCK_ID?.trim() || null;
   const ownerUserId = process.env.OWNER_USER_ID?.trim() || null;

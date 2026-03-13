@@ -1,9 +1,11 @@
 import type { ToolContext } from "../types.js";
 import { buildChatSendOptions } from "../../chatSendOptions.js";
 import { canSendDmTo, onWeSentDm } from "../../conversation/index.js";
+import { truncatePreview } from "../../log.js";
 
 export async function handleChat(ctx: ToolContext) {
-  const { client, state, args, config, logAction } = ctx;
+  const { client, store, args, config, logAction } = ctx;
+  const state = store.getState();
   const text = typeof args.text === "string" ? args.text.slice(0, 500).trim() : "";
   let targetSessionId =
     typeof args.targetSessionId === "string" ? args.targetSessionId.trim() || undefined : undefined;
@@ -22,8 +24,8 @@ export async function handleChat(ctx: ToolContext) {
   }
 
   // Agent-to-agent: conversation FSM so conversations aren’t spammed and voice can finish.
-  if (text && isDm && targetSessionId && !canSendDmTo(state, targetSessionId)) {
-    state.pendingDmReply = { text, targetSessionId };
+  if (text && isDm && targetSessionId && !canSendDmTo(store, targetSessionId)) {
+    store.setState({ pendingDmReply: { text, targetSessionId } });
     return {
       ok: true,
       summary: "queued",
@@ -35,15 +37,15 @@ export async function handleChat(ctx: ToolContext) {
     const voiceId =
       (typeof args.voiceId === "string" ? args.voiceId.trim() : null) || config.voiceId || undefined;
     client.sendChat(text, buildChatSendOptions({ targetSessionId, voiceId }));
-    state.lastAgentChatMessage = text;
-    state.lastTickSentChat = true;
+    store.setLastAgentChatMessage(text);
+    store.setLastTickSentChat(true);
     if (targetSessionId) {
-      onWeSentDm(state, targetSessionId);
+      onWeSentDm(store, targetSessionId);
     } else {
-      state.lastDmPeerSessionId = null;
+      store.setState({ lastDmPeerSessionId: null });
     }
   }
   const summary = targetSessionId ? "sent DM" : "sent chat";
-  if (text) logAction(`${summary}: ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`);
+  if (text) logAction(`${summary}: ${truncatePreview(text)}`);
   return { ok: true, summary };
 }

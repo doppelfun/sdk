@@ -16,3 +16,8 @@ export function clawLog(...args: unknown[]): void {
 export function clawDebug(...args: unknown[]): void {
   if (clawVerbose()) console.log("[claw:debug]", ...args);
 }
+
+/** Truncate string for log/tick previews; append "…" when truncated. */
+export function truncatePreview(s: string, maxLen = 60): string {
+  return s.length <= maxLen ? s : s.slice(0, maxLen) + "…";
+}

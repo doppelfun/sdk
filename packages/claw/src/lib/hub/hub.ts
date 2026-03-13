@@ -27,9 +27,7 @@ export type CheckBalanceResult =
   | { ok: true; balance: number; linked: boolean }
   | { ok: false; error: string; status?: number };
 
-function normalizeHubUrl(hubUrl: string): string {
-  return hubUrl.replace(/\/$/, "");
-}
+import { normalizeUrl } from "../../util/url.js";
 
 async function hubGet(
   url: string,
@@ -70,7 +68,7 @@ export async function joinBlock(
   apiKey: string,
   blockId: string
 ): Promise<JoinBlockResult> {
-  const base = normalizeHubUrl(hubUrl);
+  const base = normalizeUrl(hubUrl);
   const res = await hubPost(`${base}/api/blocks/${encodeURIComponent(blockId)}/join`, apiKey);
   if (!res.ok) return res;
   let data: { jwt?: string; serverUrl?: string; blockId?: string; regionId?: string };
@@ -107,7 +105,7 @@ export async function createBlock(
   apiKey: string,
   options: { name: string; description?: string; maxConnections?: number }
 ): Promise<CreateBlockResult> {
-  const base = normalizeHubUrl(hubUrl);
+  const base = normalizeUrl(hubUrl);
   const body: Record<string, unknown> = {
     name: options.name,
     description: options.description ?? null,
@@ -136,7 +134,7 @@ export async function getAgentProfile(
   hubUrl: string,
   apiKey: string
 ): Promise<{ ok: true; profile: AgentProfile } | { ok: false; error: string }> {
-  const base = normalizeHubUrl(hubUrl);
+  const base = normalizeUrl(hubUrl);
   const res = await hubGet(`${base}/api/agents/me`, apiKey);
   if (!res.ok) return res;
   let data: AgentProfile;
@@ -165,7 +163,7 @@ export async function reportUsage(
     costUsd?: number;
   }
 ): Promise<ReportUsageResult> {
-  const base = normalizeHubUrl(hubUrl);
+  const base = normalizeUrl(hubUrl);
   const body: Record<string, unknown> = {
     promptTokens: options.promptTokens,
     completionTokens: options.completionTokens,
@@ -195,7 +193,7 @@ export async function checkBalance(
   hubUrl: string,
   apiKey: string
 ): Promise<CheckBalanceResult> {
-  const base = normalizeHubUrl(hubUrl);
+  const base = normalizeUrl(hubUrl);
   const res = await hubGet(`${base}/api/agents/me/credits`, apiKey);
   if (!res.ok) {
     if (res.status === 400) {

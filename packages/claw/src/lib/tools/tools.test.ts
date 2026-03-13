@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { DoppelClient } from "@doppelfun/sdk";
-import { createInitialState } from "../state/state.js";
+import { createClawStore } from "../state/index.js";
 import { executeTool } from "./index.js";
 import type { ClawConfig } from "../config/config.js";
 
@@ -39,8 +39,8 @@ describe("executeTool", () => {
   it("move with empty args coerces to 0,0 and calls sendInput", async () => {
     const sendInput = vi.fn();
     const client = { sendInput } as unknown as DoppelClient;
-    const state = createInitialState("0_0");
-    const res = await executeTool(client, state, minimalConfig(), { name: "move", args: {} });
+    const store = createClawStore("0_0");
+    const res = await executeTool(client, store, minimalConfig(), { name: "move", args: {} });
     expect(res.ok).toBe(true);
     expect(sendInput).toHaveBeenCalledWith(
       expect.objectContaining({ moveX: 0, moveZ: 0 })
@@ -49,8 +49,8 @@ describe("executeTool", () => {
 
   it("returns error for unknown tool", async () => {
     const client = {} as DoppelClient;
-    const state = createInitialState("0_0");
-    const res = await executeTool(client, state, minimalConfig(), {
+    const store = createClawStore("0_0");
+    const res = await executeTool(client, store, minimalConfig(), {
       name: "nonexistent_tool",
       args: {},
     });
@@ -61,68 +61,68 @@ describe("executeTool", () => {
   it("join_block calls sendJoin and updates state.blockSlotId", async () => {
     const sendJoin = vi.fn();
     const client = { sendJoin } as unknown as DoppelClient;
-    const state = createInitialState("0_0");
-    expect(state.blockSlotId).toBe("0_0");
-    const res = await executeTool(client, state, minimalConfig(), {
+    const store = createClawStore("0_0");
+    expect(store.getState().blockSlotId).toBe("0_0");
+    const res = await executeTool(client, store, minimalConfig(), {
       name: "join_block",
       args: { blockSlotId: "1_0" },
     });
     expect(res.ok).toBe(true);
     expect(sendJoin).toHaveBeenCalledWith("1_0");
-    expect(state.blockSlotId).toBe("1_0");
-    expect(state.lastError).toBeNull();
+    expect(store.getState().blockSlotId).toBe("1_0");
+    expect(store.getState().lastError).toBeNull();
   });
 
   it("get_occupants calls client.getOccupants and sets state.occupants", async () => {
     const occupants = [{ clientId: "s1", username: "Alice", type: "user" as const }];
     const getOccupants = vi.fn().mockResolvedValue(occupants);
     const client = { getOccupants } as unknown as DoppelClient;
-    const state = createInitialState("0_0");
-    state.mySessionId = "s1";
-    const res = await executeTool(client, state, minimalConfig(), {
+    const store = createClawStore("0_0");
+    store.setMySessionId("s1");
+    const res = await executeTool(client, store, minimalConfig(), {
       name: "get_occupants",
       args: {},
     });
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.summary).toContain("1 occupants");
     expect(getOccupants).toHaveBeenCalled();
-    expect(state.occupants).toEqual(occupants);
+    expect(store.getState().occupants).toEqual(occupants);
   });
 
   it("chat calls sendChat and sets lastTickSentChat", async () => {
     const sendChat = vi.fn();
     const sendSpeak = vi.fn();
     const client = { sendChat, sendSpeak } as unknown as DoppelClient;
-    const state = createInitialState("0_0");
-    const res = await executeTool(client, state, minimalConfig(), {
+    const store = createClawStore("0_0");
+    const res = await executeTool(client, store, minimalConfig(), {
       name: "chat",
       args: { text: "hello world" },
     });
     expect(res.ok).toBe(true);
     expect(sendChat).toHaveBeenCalledWith("hello world", undefined);
-    expect(state.lastTickSentChat).toBe(true);
-    expect(state.lastAgentChatMessage).toBe("hello world");
+    expect(store.getState().lastTickSentChat).toBe(true);
+    expect(store.getState().lastAgentChatMessage).toBe("hello world");
   });
 
   it("chat with targetSessionId passes options to sendChat", async () => {
     const sendChat = vi.fn();
     const sendSpeak = vi.fn();
     const client = { sendChat, sendSpeak } as unknown as DoppelClient;
-    const state = createInitialState("0_0");
-    const res = await executeTool(client, state, minimalConfig(), {
+    const store = createClawStore("0_0");
+    const res = await executeTool(client, store, minimalConfig(), {
       name: "chat",
       args: { text: "dm reply", targetSessionId: "peer-session" },
     });
     expect(res.ok).toBe(true);
     expect(sendChat).toHaveBeenCalledWith("dm reply", { targetSessionId: "peer-session" });
-    expect(state.lastDmPeerSessionId).toBe("peer-session");
+    expect(store.getState().lastDmPeerSessionId).toBe("peer-session");
   });
 
   it("emote calls sendEmote with emoteId when provided", async () => {
     const sendEmote = vi.fn();
     const client = { sendEmote } as unknown as DoppelClient;
-    const state = createInitialState("0_0");
-    const res = await executeTool(client, state, minimalConfig(), {
+    const store = createClawStore("0_0");
+    const res = await executeTool(client, store, minimalConfig(), {
       name: "emote",
       args: { emoteId: "wave" },
     });

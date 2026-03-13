@@ -7,11 +7,13 @@
 
 import type { DoppelClient } from "@doppelfun/sdk";
 import type { ClawConfig } from "../config/config.js";
-import { isInConversationWithAgentInRoom, type ClawState } from "../state/state.js";
+import { isInConversationWithAgentInRoom } from "../state/state.js";
+import type { ClawStore } from "../state/index.js";
 import { isInConversation } from "../conversation/index.js";
 import { clawLog } from "../log.js";
 import { isOwnerNearby } from "./ownerProximity.js";
 import { getBlockBounds } from "../../util/blockBounds.js";
+import { normalizeAngle, lerpAngle, randomRange } from "../../util/math.js";
 
 /** When idle, probability per “idle tick” to try seeking another agent (vs wander/emote). */
 const SEEK_AGENT_PROBABILITY = 0.2;
@@ -41,22 +43,6 @@ type BotState = {
   nextSpeedRetargetAt: number;
 };
 
-function normalizeAngle(angle: number): number {
-  let out = angle;
-  while (out > Math.PI) out -= Math.PI * 2;
-  while (out < -Math.PI) out += Math.PI * 2;
-  return out;
-}
-
-function lerpAngle(current: number, target: number, t: number): number {
-  const delta = normalizeAngle(target - current);
-  return normalizeAngle(current + delta * t);
-}
-
-function randomRange(min: number, max: number): number {
-  return min + Math.random() * (max - min);
-}
-
 function randomWeightedSpeed(): number {
   const r = Math.random();
   if (r < 0.25) return 0;
@@ -84,14 +70,15 @@ export class AutonomousManager {
    * (seek other agents, wander, emote). When owner is configured and nearby, clear state and return.
    * When movementTarget is set, movement driver owns input.
    */
-  tick(client: DoppelClient, state: ClawState, config: ClawConfig): void {
+  tick(client: DoppelClient, store: ClawStore, config: ClawConfig): void {
     const now = Date.now();
+    const state = store.getState();
 
     if (config.ownerUserId && state.myPosition && isOwnerNearby(state, config)) {
-      state.movementIntent = null;
-      state.autonomousEmoteStandStillUntil = 0;
-      state.pendingGoTalkToAgent = null;
-      state.autonomousSeekCooldownUntil = 0;
+      store.setMovementIntent(null);
+      store.setAutonomousEmoteStandStillUntil(0);
+      store.setPendingGoTalkToAgent(null);
+      store.setAutonomousSeekCooldownUntil(0);
       return;
     }
 
@@ -100,18 +87,18 @@ export class AutonomousManager {
     if (state.autonomousEmoteStandStillUntil > 0 && now < state.autonomousEmoteStandStillUntil) {
       return;
     }
-    state.autonomousEmoteStandStillUntil = 0;
+    store.setAutonomousEmoteStandStillUntil(0);
 
     const my = state.myPosition;
     if (!my) return;
 
     // In conversation with another agent here: don’t wander or seek others — stay put (optional in-place emote only).
     if (isInConversationWithAgentInRoom(state)) {
-      state.movementIntent = null;
+      store.setMovementIntent(null);
       if (Math.random() < EMOTE_PROBABILITY && EMOTES.length > 0) {
         const emote = EMOTES[Math.floor(Math.random() * EMOTES.length)]!;
         client.sendEmote(emote);
-        state.autonomousEmoteStandStillUntil = now + EMOTE_STAND_STILL_MS;
+        store.setAutonomousEmoteStandStillUntil(now + EMOTE_STAND_STILL_MS);
         clawLog("agent", `autonomous emote ${emote} (in conversation)`);
       }
       return;
@@ -125,12 +112,12 @@ export class AutonomousManager {
     if (mayConsiderSeek) {
       const intervalMs =
         SEEK_INTERVAL_MS.min + Math.random() * (SEEK_INTERVAL_MS.max - SEEK_INTERVAL_MS.min);
-      state.nextSeekConsiderAt = now + intervalMs;
+      store.setNextSeekConsiderAt(now + intervalMs);
     }
     if (
       mayConsiderSeek &&
       !inCooldown &&
-      !isInConversation(state) &&
+      !isInConversation(store) &&
       Math.random() < SEEK_AGENT_PROBABILITY
     ) {
       const others = state.occupants.filter(
@@ -143,10 +130,10 @@ export class AutonomousManager {
         const occ = others[Math.floor(Math.random() * others.length)]!;
         const openingMessage =
           OPENING_GREETINGS[Math.floor(Math.random() * OPENING_GREETINGS.length)]!;
-        state.movementIntent = null;
-        state.movementTarget = { x: occ.position!.x, z: occ.position!.z };
-        state.movementSprint = true;
-        state.pendingGoTalkToAgent = { targetSessionId: occ.clientId, openingMessage };
+        store.setMovementIntent(null);
+        store.setMovementTarget({ x: occ.position!.x, z: occ.position!.z });
+        store.setMovementSprint(true);
+        store.setPendingGoTalkToAgent({ targetSessionId: occ.clientId, openingMessage });
         client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
         clawLog("agent", `autonomous seek ${occ.username ?? occ.clientId} — will say "${openingMessage}" when close`);
         return;
@@ -178,12 +165,12 @@ export class AutonomousManager {
     if (my.z <= zMin && moveZ < 0) moveZ = 0;
     if (my.z >= zMax && moveZ > 0) moveZ = 0;
 
-    state.movementIntent = { moveX, moveZ, sprint: false };
+    store.setMovementIntent({ moveX, moveZ, sprint: false });
 
     if (Math.random() < EMOTE_PROBABILITY && EMOTES.length > 0) {
       const emote = EMOTES[Math.floor(Math.random() * EMOTES.length)]!;
       client.sendEmote(emote);
-      state.autonomousEmoteStandStillUntil = now + EMOTE_STAND_STILL_MS;
+      store.setAutonomousEmoteStandStillUntil(now + EMOTE_STAND_STILL_MS);
       clawLog("agent", `autonomous emote ${emote}`);
     }
   }

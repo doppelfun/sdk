@@ -1,13 +1,13 @@
 import { runProceduralMml, catalogEntriesToSeedBuildings } from "@doppelfun/gen";
 import type { ToolContext } from "../types.js";
-import { syncMainDocumentForBlock } from "../../state/state.js";
 import { clawLog } from "../../log.js";
 import { loadCatalogEntries } from "../shared/catalog.js";
 import { ownerGateDenied } from "../shared/gate.js";
 import { isDocumentIdUuid, DOCUMENT_ID_UUID_HINT } from "../shared/documents.js";
 
 export async function handleGenerateProcedural(ctx: ToolContext) {
-  const { client, state, config, args, logAction } = ctx;
+  const { client, store, config, args, logAction } = ctx;
+  const state = store.getState();
   const denied = ownerGateDenied(config, state);
   if (denied) return denied;
   const kind = typeof args.kind === "string" ? args.kind.trim() : "";
@@ -87,7 +87,8 @@ export async function handleGenerateProcedural(ctx: ToolContext) {
   }
 
   const applyMml = async (mmlInner: string, baseSummary: string) => {
-    const blockDoc = state.documentsByBlockSlot[state.blockSlotId];
+    const s = store.getState();
+    const blockDoc = s.documentsByBlockSlot[s.blockSlotId];
     const targetId =
       proceduralDocumentId && isDocumentIdUuid(proceduralDocumentId)
         ? proceduralDocumentId
@@ -95,8 +96,8 @@ export async function handleGenerateProcedural(ctx: ToolContext) {
 
     if (documentMode === "new") {
       const { documentId: newId } = await client.createDocument(mmlInner);
-      state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml: mmlInner };
-      syncMainDocumentForBlock(state);
+      store.mergeDocumentsByBlockSlot(s.blockSlotId, { documentId: newId, mml: mmlInner });
+      store.syncMainDocumentForBlock();
       return { ok: true as const, summary: `${baseSummary} (new document ${newId})` };
     }
 
@@ -113,23 +114,23 @@ export async function handleGenerateProcedural(ctx: ToolContext) {
         }
         await client.appendDocument(targetId, mmlInner);
         const newMml = priorMml ? `${priorMml}\n${mmlInner}` : mmlInner;
-        state.documentsByBlockSlot[state.blockSlotId] = { documentId: targetId, mml: newMml };
+        store.mergeDocumentsByBlockSlot(s.blockSlotId, { documentId: targetId, mml: newMml });
       } else {
         const { documentId: newId } = await client.createDocument(mmlInner);
-        state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml: mmlInner };
+        store.mergeDocumentsByBlockSlot(s.blockSlotId, { documentId: newId, mml: mmlInner });
       }
-      syncMainDocumentForBlock(state);
+      store.syncMainDocumentForBlock();
       return { ok: true as const, summary: `${baseSummary} (appended)` };
     }
 
     if (targetId) {
       await client.updateDocument(targetId, mmlInner);
-      state.documentsByBlockSlot[state.blockSlotId] = { documentId: targetId, mml: mmlInner };
+      store.mergeDocumentsByBlockSlot(s.blockSlotId, { documentId: targetId, mml: mmlInner });
     } else {
       const { documentId: newId } = await client.createDocument(mmlInner);
-      state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml: mmlInner };
+      store.mergeDocumentsByBlockSlot(s.blockSlotId, { documentId: newId, mml: mmlInner });
     }
-    syncMainDocumentForBlock(state);
+    store.syncMainDocumentForBlock();
     return { ok: true as const, summary: `${baseSummary} (replaced)` };
   };
 

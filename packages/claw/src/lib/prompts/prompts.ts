@@ -5,6 +5,7 @@
 
 import type { ClawConfig } from "../config/config.js";
 import type { ChatEntry, ClawState } from "../state/state.js";
+import type { ClawStoreApi } from "../state/store.js";
 import { isDmChannel } from "../../util/dm.js";
 import { isOwnerNearby } from "../movement/ownerProximity.js";
 
@@ -118,8 +119,10 @@ function pushCurrentAndEarlier<T>(
 /**
  * Build the user message for one tick: current block slot, occupants, errors, chat, owner messages.
  * Used by the Chat LLM each tick to decide which tools to call.
+ * When build target is reached, clears it via store.setState.
  */
-export function buildUserMessage(state: ClawState, config: ClawConfig): string {
+export function buildUserMessage(store: ClawStoreApi, config: ClawConfig): string {
+  const state = store.getState();
   const parts: string[] = [];
 
   // DM wake: model must call chat — Gemini often returns text only unless told emphatically
@@ -188,7 +191,7 @@ export function buildUserMessage(state: ClawState, config: ClawConfig): string {
         state.lastBuildTarget.z - state.myPosition.z
       ) < stopDistance;
     if (reached) {
-      state.lastBuildTarget = null;
+      store.setState({ lastBuildTarget: null });
       parts.push("Build target reached (within 2 m); do not move further toward it.");
     } else {
       parts.push(

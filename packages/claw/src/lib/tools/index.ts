@@ -6,7 +6,7 @@
 import type { DoppelClient } from "@doppelfun/sdk";
 import { clawLog, clawDebug } from "../log.js";
 import type { ClawConfig } from "../config/config.js";
-import type { ClawState } from "../state/state.js";
+import type { ClawStore } from "../state/index.js";
 import type { ToolInvocation, ExecuteToolResult, ToolContext } from "./types.js";
 import { TOOL_HANDLERS } from "./handlers/index.js";
 import { isDocumentIdUuid } from "./shared/documents.js";
@@ -16,11 +16,11 @@ export type { CatalogEntry } from "./shared/catalog.js";
 export { isDocumentIdUuid } from "./shared/documents.js";
 
 /**
- * Execute one tool by name with structured args. Mutates state (occupants, chat, documents, etc.).
+ * Execute one tool by name with structured args. Updates state via store (occupants, chat, documents, etc.).
  */
 export async function executeTool(
   client: DoppelClient,
-  state: ClawState,
+  store: ClawStore,
   config: ClawConfig,
   tool: ToolInvocation
 ): Promise<ExecuteToolResult> {
@@ -31,7 +31,7 @@ export async function executeTool(
   clawDebug("tool args payload:", JSON.stringify(args).slice(0, 500));
 
   const logAction = (msg: string) => clawLog("agent", msg);
-  const ctx: ToolContext = { client, state, config, args, logAction };
+  const ctx: ToolContext = { client, store, config, args, logAction };
 
   const handler = TOOL_HANDLERS[tool.name];
   if (handler) {

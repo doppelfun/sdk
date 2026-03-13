@@ -3,17 +3,17 @@
  */
 
 import type { DoppelClient } from "@doppelfun/sdk";
-import type { ClawState } from "../../state/state.js";
-import { syncMainDocumentForBlock } from "../../state/state.js";
+import type { ClawStore } from "../../state/store.js";
 import { isDocumentIdUuid, DOCUMENT_ID_UUID_HINT } from "./documents.js";
 import type { ExecuteToolResult } from "../types.js";
 
 export async function persistFullBuildMml(
   client: DoppelClient,
-  state: ClawState,
+  store: ClawStore,
   mml: string,
   args: Record<string, unknown>
 ): Promise<ExecuteToolResult> {
+  const state = store.getState();
   const targetRaw =
     typeof args.documentTarget === "string" ? args.documentTarget.trim().toLowerCase() : "";
   const wantReplace =
@@ -21,8 +21,8 @@ export async function persistFullBuildMml(
 
   if (!wantReplace) {
     const { documentId: newId } = await client.createDocument(mml);
-    state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml };
-    syncMainDocumentForBlock(state);
+    store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: newId, mml });
+    store.syncMainDocumentForBlock();
     return { ok: true, summary: `built full scene (new document ${newId})` };
   }
 
@@ -33,19 +33,19 @@ export async function persistFullBuildMml(
       return { ok: false, error: `build_full replace/update: ${DOCUMENT_ID_UUID_HINT}` };
     }
     await client.updateDocument(explicitId, mml);
-    state.documentsByBlockSlot[state.blockSlotId] = { documentId: explicitId, mml };
-    syncMainDocumentForBlock(state);
+    store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: explicitId, mml });
+    store.syncMainDocumentForBlock();
     return { ok: true, summary: `built full scene (updated ${explicitId})` };
   }
 
   const blockDoc = state.documentsByBlockSlot[state.blockSlotId];
   if (blockDoc) {
     await client.updateDocument(blockDoc.documentId, mml);
-    state.documentsByBlockSlot[state.blockSlotId] = { documentId: blockDoc.documentId, mml };
+    store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: blockDoc.documentId, mml });
   } else {
     const { documentId: newId } = await client.createDocument(mml);
-    state.documentsByBlockSlot[state.blockSlotId] = { documentId: newId, mml };
+    store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: newId, mml });
   }
-  syncMainDocumentForBlock(state);
+  store.syncMainDocumentForBlock();
   return { ok: true, summary: "built full scene (replaced current)" };
 }

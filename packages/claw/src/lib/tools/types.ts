@@ -4,7 +4,7 @@
 
 import type { DoppelClient } from "@doppelfun/sdk";
 import type { ClawConfig } from "../config/config.js";
-import type { ClawState } from "../state/state.js";
+import type { ClawStore } from "../state/index.js";
 
 export type ToolInvocation = { name: string; args: Record<string, unknown> };
 
@@ -14,7 +14,7 @@ export type ExecuteToolResult =
 
 export type ToolContext = {
   client: DoppelClient;
-  state: ClawState;
+  store: ClawStore;
   config: ClawConfig;
   args: Record<string, unknown>;
   logAction: (msg: string) => void;

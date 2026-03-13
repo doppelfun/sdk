@@ -1,9 +1,10 @@
 /**
  * Agent-to-agent conversation FSM: turn-taking, receive delay, and break conditions.
- * All conversation state lives on ClawState; this module is the single place that mutates it.
+ * All conversation state lives on ClawState; this module updates it via the store (getState/setState).
  */
 
-import type { ConversationStateSlice, CheckBreakOptions } from "./types.js";
+import type { ClawStoreApi } from "../state/store.js";
+import type { CheckBreakOptions } from "./types.js";
 
 /** After this long in waiting_for_reply with no response, transition to idle. */
 export const CONVERSATION_TIMEOUT_MS = 50_000;
@@ -20,10 +21,7 @@ export const TTS_CHARS_PER_SECOND = 14;
 /** After a conversation ends, don't start seeking another agent for this long (ms). */
 export const CONVERSATION_END_SEEK_COOLDOWN_MS = 3 * 60 * 1000;
 
-/**
- * Current time in ms.
- * Separate function so tests can override via fake timers.
- */
+/** Current time in ms; separate function so tests can override via fake timers. */
 function getNow(): number {
   return Date.now();
 }
@@ -34,16 +32,17 @@ function getNow(): number {
  * - can_reply: only to current peer, and only after receiveDelayUntil has passed.
  * - waiting_for_reply: not allowed (must wait for their reply).
  *
- * @param state - Conversation state slice (phase, peer, receiveDelayUntil).
+ * @param store - Claw store (read via getState()).
  * @param sessionId - Target session we want to send a DM to.
  * @param now - Current time (ms); defaults to getNow() for tests.
  * @returns True when sending a DM to sessionId is allowed.
  */
 export function canSendDmTo(
-  state: ConversationStateSlice,
+  store: ClawStoreApi,
   sessionId: string,
   now = getNow()
 ): boolean {
+  const state = store.getState();
   const phase = state.conversationPhase;
   if (phase === "idle") return true;
   if (phase === "waiting_for_reply") return false;
@@ -58,56 +57,62 @@ export function canSendDmTo(
  * Call after we send a DM to targetSessionId.
  * Transitions to waiting_for_reply and records peer + timestamp.
  *
- * @param state - Conversation state slice to mutate.
+ * @param store - Claw store (write via setState()).
  * @param targetSessionId - Session we just sent the DM to.
  * @param now - Current time (ms); defaults to getNow().
  */
-export function onWeSentDm(state: ConversationStateSlice, targetSessionId: string, now = getNow()): void {
-  state.conversationPhase = "waiting_for_reply";
-  state.conversationPeerSessionId = targetSessionId;
-  state.lastDmPeerSessionId = targetSessionId;
-  state.waitingForReplySince = now;
-  state.receiveDelayUntil = 0;
+export function onWeSentDm(store: ClawStoreApi, targetSessionId: string, now = getNow()): void {
+  store.setState({
+    conversationPhase: "waiting_for_reply",
+    conversationPeerSessionId: targetSessionId,
+    lastDmPeerSessionId: targetSessionId,
+    waitingForReplySince: now,
+    receiveDelayUntil: 0,
+  });
 }
 
 /**
  * Call when we receive a DM from fromSessionId.
  * Transitions to can_reply and sets receiveDelayUntil (TTS finish + min delay).
  *
- * @param state - Conversation state slice to mutate.
+ * @param store - Claw store (read + write via getState/setState).
  * @param fromSessionId - Session that sent the DM.
  * @param options - Optional audioDurationMs (from engine) or messageLength for delay estimate.
  * @param now - Current time (ms); defaults to getNow().
  */
 export function onWeReceivedDm(
-  state: ConversationStateSlice,
+  store: ClawStoreApi,
   fromSessionId: string,
   options: { audioDurationMs?: number; messageLength?: number } = {},
   now = getNow()
 ): void {
+  const state = store.getState();
   const { audioDurationMs, messageLength = 0 } = options;
   const delayMs =
     audioDurationMs != null
       ? RECEIVE_REPLY_DELAY_MIN_MS + audioDurationMs
       : RECEIVE_REPLY_DELAY_MIN_MS + Math.round((messageLength / TTS_CHARS_PER_SECOND) * 1000);
   const wasSamePeer = state.conversationPeerSessionId === fromSessionId;
-  state.conversationPhase = "can_reply";
-  state.conversationPeerSessionId = fromSessionId;
-  state.lastDmPeerSessionId = fromSessionId;
-  state.receiveDelayUntil = now + delayMs;
-  state.waitingForReplySince = 0;
-  state.conversationRoundCount = wasSamePeer ? state.conversationRoundCount + 1 : 1;
+  store.setState({
+    conversationPhase: "can_reply",
+    conversationPeerSessionId: fromSessionId,
+    lastDmPeerSessionId: fromSessionId,
+    receiveDelayUntil: now + delayMs,
+    waitingForReplySince: 0,
+    conversationRoundCount: wasSamePeer ? state.conversationRoundCount + 1 : 1,
+  });
 }
 
 /**
  * Check break conditions: timeout, peer left, owner spoke, round limit.
- * Mutates state to idle (via clearConversation) when any condition triggers.
+ * Updates store to idle (via clearConversation) when any condition triggers.
  *
- * @param state - Conversation state slice to mutate.
+ * @param store - Claw store (read + write).
  * @param now - Current time (ms).
  * @param options - Occupants (for peer presence), ownerUserId, lastTriggerUserId, maxRounds.
  */
-export function checkBreak(state: ConversationStateSlice, now: number, options: CheckBreakOptions): void {
+export function checkBreak(store: ClawStoreApi, now: number, options: CheckBreakOptions): void {
+  const state = store.getState();
   const phase = state.conversationPhase;
   if (phase === "idle") return;
   const peer = state.conversationPeerSessionId;
@@ -118,24 +123,24 @@ export function checkBreak(state: ConversationStateSlice, now: number, options: 
   if (phase === "waiting_for_reply") {
     const elapsed = now - state.waitingForReplySince;
     if (elapsed >= CONVERSATION_TIMEOUT_MS) {
-      clearConversation(state);
+      clearConversation(store);
       return;
     }
   }
 
   const peerInRoom = occupants.some((o) => o.clientId === peer);
   if (!peerInRoom) {
-    clearConversation(state);
+    clearConversation(store);
     return;
   }
 
   if (ownerUserId && lastTriggerUserId === ownerUserId) {
-    clearConversation(state);
+    clearConversation(store);
     return;
   }
 
   if (maxRounds != null && state.conversationRoundCount >= maxRounds) {
-    clearConversation(state);
+    clearConversation(store);
     return;
   }
 }
@@ -146,45 +151,46 @@ export function checkBreak(state: ConversationStateSlice, now: number, options: 
  * When skipSeekCooldown is false (default), sets conversationEndedSeekCooldownUntil
  * so the agent won't seek again for several minutes.
  *
- * @param state - Conversation state slice to mutate.
+ * @param store - Claw store (write via setState()).
  * @param options - skipSeekCooldown: when true, do not set conversationEndedSeekCooldownUntil (e.g. on join_block).
  */
 export function clearConversation(
-  state: ConversationStateSlice,
+  store: ClawStoreApi,
   options?: { skipSeekCooldown?: boolean }
 ): void {
-  state.conversationPhase = "idle";
-  state.conversationPeerSessionId = null;
-  state.lastDmPeerSessionId = null;
-  state.receiveDelayUntil = 0;
-  state.waitingForReplySince = 0;
-  state.pendingDmReply = null;
-  state.conversationRoundCount = 0;
-  if (options?.skipSeekCooldown) {
-    state.conversationEndedSeekCooldownUntil = 0;
-  } else {
-    state.conversationEndedSeekCooldownUntil = getNow() + CONVERSATION_END_SEEK_COOLDOWN_MS;
-  }
+  store.setState({
+    conversationPhase: "idle",
+    conversationPeerSessionId: null,
+    lastDmPeerSessionId: null,
+    receiveDelayUntil: 0,
+    waitingForReplySince: 0,
+    pendingDmReply: null,
+    conversationRoundCount: 0,
+    conversationEndedSeekCooldownUntil: options?.skipSeekCooldown
+      ? 0
+      : getNow() + CONVERSATION_END_SEEK_COOLDOWN_MS,
+  });
 }
 
 /**
  * If we have a queued reply and we're now allowed to send (receive delay passed, still in can_reply),
  * return it and clear the queue.
  *
- * @param state - Conversation state slice (pendingDmReply, phase, receiveDelayUntil).
+ * @param store - Claw store (read + write).
  * @param now - Current time (ms); defaults to getNow().
  * @returns The pending reply (text + targetSessionId) or null if none or not yet allowed.
  */
 export function drainPendingReply(
-  state: ConversationStateSlice,
+  store: ClawStoreApi,
   now = getNow()
 ): { text: string; targetSessionId: string } | null {
+  const state = store.getState();
   const pending = state.pendingDmReply;
   if (!pending) return null;
   if (state.conversationPhase !== "can_reply") return null;
   if (state.conversationPeerSessionId !== pending.targetSessionId) return null;
   if (state.receiveDelayUntil > 0 && now < state.receiveDelayUntil) return null;
-  state.pendingDmReply = null;
+  store.setState({ pendingDmReply: null });
   return pending;
 }
 
@@ -192,20 +198,21 @@ export function drainPendingReply(
  * Return current conversation peer session id.
  * Used for prompts and as reply target when sending a DM.
  *
- * @param state - Conversation state slice.
+ * @param store - Claw store (read via getState()).
  * @returns Peer session id or null when idle / no peer.
  */
-export function getConversationPeer(state: ConversationStateSlice): string | null {
-  return state.conversationPeerSessionId;
+export function getConversationPeer(store: ClawStoreApi): string | null {
+  return store.getState().conversationPeerSessionId;
 }
 
 /**
  * True when we're in an active conversation (can_reply or waiting_for_reply).
  * Used to avoid seeking a new agent while already in a conversation.
  *
- * @param state - Conversation state slice.
+ * @param store - Claw store (read via getState()).
  * @returns True when phase is can_reply or waiting_for_reply.
  */
-export function isInConversation(state: ConversationStateSlice): boolean {
-  return state.conversationPhase === "can_reply" || state.conversationPhase === "waiting_for_reply";
+export function isInConversation(store: ClawStoreApi): boolean {
+  const phase = store.getState().conversationPhase;
+  return phase === "can_reply" || phase === "waiting_for_reply";
 }

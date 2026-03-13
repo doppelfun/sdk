@@ -9,7 +9,8 @@
 import type { DoppelClient } from "@doppelfun/sdk";
 import { buildChatSendOptions } from "../chatSendOptions.js";
 import { canSendDmTo, onWeSentDm } from "../conversation/index.js";
-import { type ClawState, getFacingTowardNearestOccupant } from "../state/state.js";
+import { getFacingTowardNearestOccupant } from "../state/state.js";
+import type { ClawStore } from "../state/index.js";
 import { getBlockBounds } from "../../util/blockBounds.js";
 
 /** Match NpcDriver INPUT_INTERVAL_MS so agent motion feels similar. */
@@ -35,9 +36,10 @@ export type MovementDriverOptions = { voiceId?: string | null };
  */
 export function movementDriverTick(
   client: DoppelClient,
-  state: ClawState,
+  store: ClawStore,
   options?: MovementDriverOptions
 ): boolean {
+  const state = store.getState();
   const target = state.movementTarget;
 
   // --- AutonomousManager emote stand-still: send 0,0 until timestamp expires; face nearby if any ---
@@ -98,23 +100,23 @@ export function movementDriverTick(
   if (dist < stopDist) {
     const rotY = getFacingTowardNearestOccupant(state);
     client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false, ...(rotY != null && { rotY }) });
-    state.movementTarget = null;
+    store.setMovementTarget(null);
     const pending = state.pendingGoTalkToAgent;
-    if (pending && canSendDmTo(state, pending.targetSessionId)) {
+    if (pending && canSendDmTo(store, pending.targetSessionId)) {
       client.sendChat(
         pending.openingMessage,
         buildChatSendOptions({ targetSessionId: pending.targetSessionId, voiceId: options?.voiceId })
       );
-      state.lastAgentChatMessage = pending.openingMessage;
-      onWeSentDm(state, pending.targetSessionId);
-      state.pendingGoTalkToAgent = null;
-      state.autonomousSeekCooldownUntil = Date.now() + 5000;
+      store.setLastAgentChatMessage(pending.openingMessage);
+      onWeSentDm(store, pending.targetSessionId);
+      store.setPendingGoTalkToAgent(null);
+      store.setAutonomousSeekCooldownUntil(Date.now() + 5000);
     }
     if (
       state.lastBuildTarget &&
       Math.hypot(state.lastBuildTarget.x - my.x, state.lastBuildTarget.z - my.z) < stopDist
     ) {
-      state.lastBuildTarget = null;
+      store.setLastBuildTarget(null);
     }
     return true;
   }

@@ -3,8 +3,8 @@ import type { ToolContext } from "../types.js";
 import { clearConversation } from "../../conversation/index.js";
 
 export async function handleEndConversation(ctx: ToolContext) {
-  const { state, logAction } = ctx;
-  clearConversation(state);
+  const { store, logAction } = ctx;
+  clearConversation(store);
   logAction("end_conversation: left conversation");
   return { ok: true, summary: "conversation ended" };
 }

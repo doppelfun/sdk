@@ -15,11 +15,12 @@ import { createOpenAI } from "@ai-sdk/openai";
 import type { DoppelClient } from "@doppelfun/sdk";
 import { CLAW_TOOL_REGISTRY, getToolSchema } from "../tools/toolsZod.js";
 import { executeTool, type ExecuteToolResult } from "../tools/index.js";
-import type { ClawState } from "../state/state.js";
+import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/config.js";
 import { createLlmProvider } from "./provider.js";
 import { usageFromAiSdk, type Usage } from "./usage.js";
 import { clawLog, clawDebug } from "../log.js";
+import { delay } from "../../util/delay.js";
 
 /**
  * Wrap one registry entry as an AI SDK tool: Zod → JSON Schema for the model;
@@ -30,7 +31,7 @@ function clawTool(
   description: string,
   schema: (typeof CLAW_TOOL_REGISTRY)[number]["schema"],
   client: DoppelClient,
-  state: ClawState,
+  store: ClawStore,
   config: ClawConfig,
   onResult?: (name: string, args: string, result: ExecuteToolResult) => void
 ) {
@@ -57,7 +58,7 @@ function clawTool(
       const argsJson = JSON.stringify(payload);
       let result: ExecuteToolResult;
       try {
-        result = await executeTool(client, state, config, { name, args: payload });
+        result = await executeTool(client, store, config, { name, args: payload });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         result = { ok: false, error: msg };
@@ -88,7 +89,7 @@ export const MUST_ACT_BUILD_TOOL_NAMES = [
  */
 export function buildClawToolSet(
   client: DoppelClient,
-  state: ClawState,
+  store: ClawStore,
   config: ClawConfig,
   options: {
     omitChat?: boolean;
@@ -110,7 +111,7 @@ export function buildClawToolSet(
       t.description,
       t.schema,
       client,
-      state,
+      store,
       config,
       options.onToolResult
     );
@@ -134,10 +135,6 @@ export type RunTickLlmResult =
 
 /** Minimum time (ms) thinking stays true so UIs can show indicator before flash disappears. */
 const MIN_THINKING_MS = 700;
-
-function delay(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 export type RunTickWithAiSdkOptions = {
   omitChat?: boolean;
@@ -173,7 +170,7 @@ function resolveTickLanguageModel(config: ClawConfig): LanguageModel | null {
  */
 export async function runTickWithAiSdk(
   client: DoppelClient,
-  state: ClawState,
+  store: ClawStore,
   config: ClawConfig,
   systemContent: string,
   userContent: string,
@@ -183,8 +180,9 @@ export async function runTickWithAiSdk(
   const model = resolveTickLanguageModel(config);
   if (!model) return { ok: false, error: NO_CHAT_MODEL_ERROR };
 
+  const state = store.getState();
   const omitChat = sdkOptions?.omitChat ?? state.lastTickSentChat;
-  const tools = buildClawToolSet(client, state, config, {
+  const tools = buildClawToolSet(client, store, config, {
     omitChat,
     allowOnlyTools: sdkOptions?.allowOnlyTools,
     onToolResult,

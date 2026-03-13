@@ -6,7 +6,7 @@ const COMPACT_MAX_ENTRIES = 35;
 const MAX_SUMMARY = 8000;
 
 export async function handleListCatalog(ctx: ToolContext) {
-  const { state, config, args, logAction } = ctx;
+  const { store, config, args, logAction } = ctx;
   let catalog: CatalogEntry[];
   try {
     catalog = await loadCatalogEntries(config);
@@ -41,7 +41,7 @@ export async function handleListCatalog(ctx: ToolContext) {
   if (compact.length > COMPACT_MAX_CHARS) {
     compact = compact.slice(0, COMPACT_MAX_CHARS) + "… (truncated)";
   }
-  state.lastCatalogContext = compact;
+  ctx.store.setLastCatalogContext(compact);
   logAction(summary);
   return { ok: true, summary };
 }

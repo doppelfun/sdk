@@ -62,7 +62,7 @@ describe("movementDriverTick", () => {
     expect(state.movementTarget).toBeNull();
   });
 
-  it("on arrive with pendingGoTalkToAgent sends chat and speak then clears pending", () => {
+  it("on arrive with pendingGoTalkToAgent sends chat then clears pending", () => {
     const sendInput = vi.fn();
     const sendChat = vi.fn();
     const sendSpeak = vi.fn();
@@ -77,11 +77,11 @@ describe("movementDriverTick", () => {
       expect.objectContaining({ moveX: 0, moveZ: 0 })
     );
     expect(sendChat).toHaveBeenCalledWith("Hi!", { targetSessionId: "other-session" });
-    expect(sendSpeak).toHaveBeenCalledWith("Hi!");
     expect(state.movementTarget).toBeNull();
     expect(state.pendingGoTalkToAgent).toBeNull();
     expect(state.autonomousSeekCooldownUntil).toBeGreaterThan(Date.now());
-    expect(state.agentChatCooldownUntil).toBeGreaterThan(Date.now());
+    expect(state.conversationPhase).toBe("waiting_for_reply");
+    expect(state.conversationPeerSessionId).toBe("other-session");
   });
 
   it("sends non-zero input when far from target", () => {

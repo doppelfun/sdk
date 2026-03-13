@@ -1,5 +1,5 @@
 import type { ToolContext } from "../types.js";
-import { isAgentChatCooldownActive, setAgentChatCooldown } from "../../state/state.js";
+import { canSendDmTo, onWeSentDm } from "../../conversation/index.js";
 
 export async function handleChat(ctx: ToolContext) {
   const { client, state, args, logAction } = ctx;
@@ -20,10 +20,9 @@ export async function handleChat(ctx: ToolContext) {
     };
   }
 
-  // Agent-to-agent: enforce cooldown so conversations aren’t spammed and voice can finish.
-  // If in cooldown (e.g. receive delay), queue reply and send when cooldown expires so we don't talk over each other.
-  if (text && isDm && isAgentChatCooldownActive(state)) {
-    state.pendingDmReply = { text, targetSessionId: targetSessionId! };
+  // Agent-to-agent: conversation FSM so conversations aren’t spammed and voice can finish.
+  if (text && isDm && targetSessionId && !canSendDmTo(state, targetSessionId)) {
+    state.pendingDmReply = { text, targetSessionId };
     return {
       ok: true,
       summary: "queued",
@@ -31,19 +30,15 @@ export async function handleChat(ctx: ToolContext) {
     };
   }
 
-  const voiceId =
-    typeof args.voiceId === "string" && args.voiceId.trim() ? args.voiceId.trim() : undefined;
   if (text) {
     client.sendChat(text, targetSessionId ? { targetSessionId } : undefined);
     state.lastAgentChatMessage = text;
     state.lastTickSentChat = true;
     if (targetSessionId) {
-      state.lastDmPeerSessionId = targetSessionId;
-      setAgentChatCooldown(state);
+      onWeSentDm(state, targetSessionId);
     } else {
       state.lastDmPeerSessionId = null;
     }
-    client.sendSpeak(text, voiceId ? { voiceId } : undefined);
   }
   const summary = targetSessionId ? "sent DM" : "sent chat";
   if (text) logAction(`${summary}: ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`);

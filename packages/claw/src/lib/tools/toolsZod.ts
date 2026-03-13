@@ -60,6 +60,9 @@ export const joinBlockSchema = z.object({
     .describe('Target block slot id (e.g. "0_0", "1_0")'),
 });
 
+/** No args; call when the agent decides to end the current DM conversation (e.g. after saying goodbye). */
+export const endConversationSchema = z.object({});
+
 export const getOccupantsSchema = z.object({});
 
 export const getChatHistorySchema = z.object({
@@ -222,6 +225,12 @@ export const CLAW_TOOL_REGISTRY: Array<{
     description:
       "Switch to another block slot (e.g. when you get a boundary error with a slot id). Engine join payload uses the same id string.",
     schema: joinBlockSchema,
+  },
+  {
+    name: "end_conversation",
+    description:
+      "End the current DM conversation with another agent. Call after you say goodbye or when the conversation is over so you can wander or talk to others. Prevents endless back-and-forth.",
+    schema: endConversationSchema,
   },
   {
     name: "get_occupants",

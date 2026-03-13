@@ -1,0 +1,16 @@
+/** Agent-to-agent conversation FSM: turn-taking, receive delay, break conditions. */
+export {
+  canSendDmTo,
+  onWeSentDm,
+  onWeReceivedDm,
+  checkBreak,
+  clearConversation,
+  drainPendingReply,
+  getConversationPeer,
+  isInConversation,
+  CONVERSATION_TIMEOUT_MS,
+  CONVERSATION_MAX_ROUNDS,
+  RECEIVE_REPLY_DELAY_MIN_MS,
+  TTS_CHARS_PER_SECOND,
+} from "./conversation.js";
+export type { ConversationPhase, ConversationStateSlice, CheckBreakOptions } from "./types.js";

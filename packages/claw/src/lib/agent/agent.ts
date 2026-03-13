@@ -10,15 +10,21 @@ import { loadConfig, type ClawConfig } from "../config/config.js";
 import {
   clearLastError,
   createInitialState,
-  isAgentChatCooldownActive,
   pushChat,
   pushOwnerMessage,
-  setAgentChatCooldown,
   setLastError,
-  setReceiveReplyDelay,
   syncMainDocumentForBlock,
   type ClawState,
 } from "../state/state.js";
+import {
+  canSendDmTo,
+  checkBreak,
+  clearConversation,
+  CONVERSATION_MAX_ROUNDS,
+  drainPendingReply,
+  onWeReceivedDm,
+  onWeSentDm,
+} from "../conversation/index.js";
 import { buildSystemContent, buildUserMessage } from "../prompts/prompts.js";
 import type { ClawConfigPrompt } from "../prompts/prompts.js";
 import type { Usage } from "../llm/usage.js";
@@ -138,6 +144,8 @@ type ChatPayload = {
   channelId?: string;
   /** When set (agent-to-agent broadcast), this message was directed at this session. */
   targetSessionId?: string;
+  /** Actual TTS duration (ms) when engine ran TTS for this message; used for receive delay. */
+  audioDurationMs?: number;
 };
 
 /** Payload shape for WebSocket "error" messages. */
@@ -245,6 +253,19 @@ function clearMustActBuild(state: ClawState): void {
   state.tickPhase = "idle";
   state.pendingBuildKind = null;
   state.pendingBuildTicks = 0;
+}
+
+/** Send a DM and update conversation state (used by fallbacks and 50ms drain). */
+function sendDmAndTransition(
+  client: DoppelClient,
+  state: ClawState,
+  text: string,
+  targetSessionId: string
+): void {
+  client.sendChat(text, { targetSessionId });
+  state.lastAgentChatMessage = text;
+  state.lastTickSentChat = true;
+  onWeSentDm(state, targetSessionId);
 }
 
 /**
@@ -373,15 +394,11 @@ async function runTick(
       result.replyText && result.replyText.length > 0
         ? result.replyText
         : "Hey — I'm here.";
-    if (isAgentChatCooldownActive(state)) {
+    if (peer && !canSendDmTo(state, peer)) {
       state.pendingDmReply = { text, targetSessionId: peer };
-    } else {
-      client.sendChat(text, { targetSessionId: peer });
-      state.lastAgentChatMessage = text;
-      state.lastTickSentChat = true;
+    } else if (peer) {
+      sendDmAndTransition(client, state, text, peer);
       state.lastToolRun = "chat";
-      setAgentChatCooldown(state);
-      client.sendSpeak(text);
       options.onTick?.(`dm fallback chat: ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`);
     }
   } else if (!result.hadToolCalls) {
@@ -400,20 +417,18 @@ async function runTick(
         ? result.replyText.trim().slice(0, 500)
         : "Something went wrong on the server. If it keeps happening, try again in a moment.";
     const dmTarget = state.lastDmPeerSessionId;
-    const blockedByCooldown = dmTarget != null && isAgentChatCooldownActive(state);
-    if (blockedByCooldown && dmTarget) {
+    const blocked = dmTarget != null && !canSendDmTo(state, dmTarget);
+    if (blocked && dmTarget) {
       state.pendingDmReply = { text, targetSessionId: dmTarget };
-    } else if (!blockedByCooldown) {
+    } else if (!blocked) {
       if (dmTarget) {
-        client.sendChat(text, { targetSessionId: dmTarget });
-        setAgentChatCooldown(state);
+        sendDmAndTransition(client, state, text, dmTarget);
       } else {
         client.sendChat(text);
+        state.lastAgentChatMessage = text;
+        state.lastTickSentChat = true;
       }
-      state.lastAgentChatMessage = text;
-      state.lastTickSentChat = true;
       state.lastToolRun = "chat";
-      client.sendSpeak(text);
       options.onTick?.(`error-reply fallback chat: ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`);
     }
   }
@@ -645,13 +660,15 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
       sessionId !== state.mySessionId &&
       (isDmChannel(p.channelId) || directedAtMe);
     const fromOwner = config.ownerUserId && userId === config.ownerUserId && message;
-    if ((dmFromOther || directedAtMe) && sessionId) {
-      state.lastDmPeerSessionId = sessionId;
-      // Wait before we're allowed to reply — gives sender's TTS time to play so we don't talk over each other.
-      setReceiveReplyDelay(state);
+    if (fromOwner) {
+      clearConversation(state);
+    } else if ((dmFromOther || directedAtMe) && sessionId) {
+      const audioDurationMs = typeof (p as { audioDurationMs?: number }).audioDurationMs === "number"
+        ? (p as { audioDurationMs: number }).audioDurationMs
+        : undefined;
+      onWeReceivedDm(state, sessionId, { audioDurationMs, messageLength: message.length });
     } else if (p.channelId === "global") {
-      state.lastDmPeerSessionId = null;
-      state.pendingDmReply = null;
+      clearConversation(state);
     }
     const shouldWake = fromOwner || dmFromOther;
     if (shouldWake) {
@@ -696,7 +713,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     if (typeof p.regionId === "string") {
       state.blockSlotId = p.regionId;
       clearLastError(state);
-      state.lastDmPeerSessionId = null;
+      clearConversation(state);
       syncMainDocumentForBlock(state);
     }
   });
@@ -742,17 +759,17 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   const autonomousManager = new AutonomousManager();
   const movementInterval = setInterval(() => {
     try {
+      checkBreak(state, Date.now(), {
+        occupants: state.occupants,
+        ownerUserId: config.ownerUserId,
+        lastTriggerUserId: state.lastTriggerUserId,
+        maxRounds: CONVERSATION_MAX_ROUNDS,
+      });
       autonomousManager.tick(client, state, config);
       movementDriverTick(client, state);
-      // Drain queued DM reply when receive delay has elapsed (turn-taking: don't talk over each other).
-      const pending = state.pendingDmReply;
-      if (pending && !isAgentChatCooldownActive(state)) {
-        client.sendChat(pending.text, { targetSessionId: pending.targetSessionId });
-        client.sendSpeak(pending.text);
-        state.lastAgentChatMessage = pending.text;
-        state.lastTickSentChat = true;
-        setAgentChatCooldown(state);
-        state.pendingDmReply = null;
+      const pending = drainPendingReply(state);
+      if (pending) {
+        sendDmAndTransition(client, state, pending.text, pending.targetSessionId);
       }
     } catch {
       // ignore

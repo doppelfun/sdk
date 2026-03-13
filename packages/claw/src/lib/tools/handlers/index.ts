@@ -15,11 +15,13 @@ import {
   handleDeleteAllDocuments,
 } from "./documentTools.js";
 import { handleGenerateProcedural } from "./generateProcedural.js";
+import { handleEndConversation } from "./endConversation.js";
 
 export const TOOL_HANDLERS = {
   move: handleMove,
   chat: handleChat,
   emote: handleEmote,
+  end_conversation: handleEndConversation,
   join_block: handleJoinBlock,
   get_occupants: handleGetOccupants,
   get_chat_history: handleGetChatHistory,

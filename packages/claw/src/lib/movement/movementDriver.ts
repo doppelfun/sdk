@@ -7,12 +7,8 @@
  */
 
 import type { DoppelClient } from "@doppelfun/sdk";
-import {
-  type ClawState,
-  getFacingTowardNearestOccupant,
-  isAgentChatCooldownActive,
-  setAgentChatCooldown,
-} from "../state/state.js";
+import { type ClawState, getFacingTowardNearestOccupant } from "../state/state.js";
+import { canSendDmTo, onWeSentDm } from "../conversation/index.js";
 import { getBlockBounds } from "../../util/blockBounds.js";
 
 /** Match NpcDriver INPUT_INTERVAL_MS so agent motion feels similar. */
@@ -96,17 +92,12 @@ export function movementDriverTick(client: DoppelClient, state: ClawState): bool
     client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false, ...(rotY != null && { rotY }) });
     state.movementTarget = null;
     const pending = state.pendingGoTalkToAgent;
-    if (pending) {
-      // Wait for agent chat cooldown so we don’t spam; will send on a later tick when expired.
-      if (!isAgentChatCooldownActive(state)) {
-        client.sendChat(pending.openingMessage, { targetSessionId: pending.targetSessionId });
-        client.sendSpeak(pending.openingMessage);
-        state.lastAgentChatMessage = pending.openingMessage;
-        state.lastDmPeerSessionId = pending.targetSessionId;
-        setAgentChatCooldown(state);
-        state.pendingGoTalkToAgent = null;
-        state.autonomousSeekCooldownUntil = Date.now() + 5000;
-      }
+    if (pending && canSendDmTo(state, pending.targetSessionId)) {
+      client.sendChat(pending.openingMessage, { targetSessionId: pending.targetSessionId });
+      state.lastAgentChatMessage = pending.openingMessage;
+      onWeSentDm(state, pending.targetSessionId);
+      state.pendingGoTalkToAgent = null;
+      state.autonomousSeekCooldownUntil = Date.now() + 5000;
     }
     if (
       state.lastBuildTarget &&

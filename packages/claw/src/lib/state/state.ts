@@ -92,17 +92,20 @@ export type ClawState = {
   lastToolRun: string | null;
   /** Tool names invoked this tick (for follow-up when chat-only promised a build). Cleared at tick start. */
   lastTickToolNames: string[] | null;
-  /** When set, last inbound was a DM from this session id — use as targetSessionId when replying. */
+  /** When set, last inbound was a DM from this session id — use as targetSessionId when replying. Kept in sync with conversation module. */
   lastDmPeerSessionId: string | null;
-  /**
-   * When > 0 and now < this timestamp, agent-to-agent chat is in cooldown (don't send DM / autonomous greeting).
-   * Set after sending to slow conversations and allow voice to finish; also set when receiving a DM so we wait before replying (turn-taking).
-   */
-  agentChatCooldownUntil: number;
-  /**
-   * Queued DM reply when we tried to send but were in cooldown (e.g. receive delay). Drained in the 50ms loop when cooldown expires.
-   */
+  /** Conversation FSM phase (idle | can_reply | waiting_for_reply). Updated only via conversation module. */
+  conversationPhase: "idle" | "can_reply" | "waiting_for_reply";
+  /** Current DM peer session id when in a conversation. */
+  conversationPeerSessionId: string | null;
+  /** Timestamp until we're allowed to send (receive delay so TTS can finish). 0 = no delay. */
+  receiveDelayUntil: number;
+  /** When we entered waiting_for_reply (for timeout break). */
+  waitingForReplySince: number;
+  /** Queued DM reply when we tried to send but were in receive delay. Drained in the 50ms loop. */
   pendingDmReply: { text: string; targetSessionId: string } | null;
+  /** Number of full exchanges with current peer; used for CONVERSATION_MAX_ROUNDS break. */
+  conversationRoundCount: number;
   /** idle = normal tick; must_act_build = run build tool before chat (deterministic or build-only LLM). */
   tickPhase: TickPhase;
   /** When set with must_act_build, executeTool(generate_procedural) runs without LLM. */
@@ -146,33 +149,6 @@ export type ClawState = {
    */
   lastOccupantsSummary: string | null;
 };
-
-/** Cooldown (ms) after sending agent-to-agent chat before next send — allows voice to finish; keep short so they respond once per turn. */
-export const AGENT_CHAT_COOLDOWN_MS = 5_000;
-/** After receiving a DM from another agent, wait this long before we're allowed to send a reply — gives their TTS time to play so we don't talk over each other. */
-export const RECEIVE_REPLY_DELAY_MS = 4_000;
-
-/** Set cooldown so we can't send a reply until RECEIVE_REPLY_DELAY_MS from now (call when we receive a DM from another agent). */
-export function setReceiveReplyDelay(state: ClawState, now = Date.now()): void {
-  const until = now + RECEIVE_REPLY_DELAY_MS;
-  if (state.agentChatCooldownUntil < until) state.agentChatCooldownUntil = until;
-}
-
-/** True if agent-to-agent chat is currently in cooldown (used before sending DM or autonomous greeting). */
-export function isAgentChatCooldownActive(state: ClawState, now = Date.now()): boolean {
-  return state.agentChatCooldownUntil > 0 && now < state.agentChatCooldownUntil;
-}
-
-/** Set agent chat cooldown; call after sending a DM or autonomous greeting. */
-export function setAgentChatCooldown(state: ClawState, now = Date.now()): void {
-  state.agentChatCooldownUntil = now + AGENT_CHAT_COOLDOWN_MS;
-}
-
-/** Remaining cooldown in ms (0 if not active). Used for tool-result message. */
-export function getAgentChatCooldownRemainingMs(state: ClawState, now = Date.now()): number {
-  if (state.agentChatCooldownUntil <= 0 || now >= state.agentChatCooldownUntil) return 0;
-  return state.agentChatCooldownUntil - now;
-}
 
 /** True if we have a DM peer and that peer is an agent with position in the current block (so we stay put). */
 export function isInConversationWithAgentInRoom(state: ClawState): boolean {
@@ -235,8 +211,12 @@ export function createInitialState(blockSlotId: string): ClawState {
     lastToolRun: null,
     lastTickToolNames: null,
     lastDmPeerSessionId: null,
-    agentChatCooldownUntil: 0,
+    conversationPhase: "idle",
+    conversationPeerSessionId: null,
+    receiveDelayUntil: 0,
+    waitingForReplySince: 0,
     pendingDmReply: null,
+    conversationRoundCount: 0,
     tickPhase: "idle",
     pendingBuildKind: null,
     pendingBuildTicks: 0,

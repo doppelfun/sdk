@@ -8,6 +8,7 @@
 import type { DoppelClient } from "@doppelfun/sdk";
 import type { ClawConfig } from "../config/config.js";
 import { isInConversationWithAgentInRoom, type ClawState } from "../state/state.js";
+import { isInConversation } from "../conversation/index.js";
 import { clawLog } from "../log.js";
 import { isOwnerNearby } from "./ownerProximity.js";
 import { getBlockBounds } from "../../util/blockBounds.js";
@@ -114,9 +115,9 @@ export class AutonomousManager {
       return;
     }
 
-    // Prefer seeking another agent when not in cooldown and we have other agents in block
+    // Prefer seeking another agent when not in cooldown, not already in a conversation, and we have other agents in block
     const inCooldown = state.autonomousSeekCooldownUntil > 0 && now < state.autonomousSeekCooldownUntil;
-    if (!inCooldown && Math.random() < SEEK_AGENT_PROBABILITY) {
+    if (!inCooldown && !isInConversation(state) && Math.random() < SEEK_AGENT_PROBABILITY) {
       const others = state.occupants.filter(
         (o) =>
           o.type === "agent" &&

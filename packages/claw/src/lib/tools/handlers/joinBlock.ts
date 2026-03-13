@@ -1,5 +1,6 @@
 import type { ToolContext } from "../types.js";
 import { syncMainDocumentForBlock } from "../../state/state.js";
+import { clearConversation } from "../../conversation/index.js";
 
 export async function handleJoinBlock(ctx: ToolContext) {
   const { client, state, args, logAction } = ctx;
@@ -14,10 +15,8 @@ export async function handleJoinBlock(ctx: ToolContext) {
     state.movementIntent = null;
     state.pendingGoTalkToAgent = null;
     state.autonomousSeekCooldownUntil = 0;
-    state.agentChatCooldownUntil = 0;
-    state.pendingDmReply = null;
+    clearConversation(state);
     state.lastToolRun = null;
-    state.lastDmPeerSessionId = null;
     state.lastCatalogContext = null;
     state.lastDocumentsList = null;
     state.lastOccupantsSummary = null;

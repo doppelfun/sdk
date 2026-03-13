@@ -87,9 +87,4 @@ Same approach as doppel-engine `analyze-model-dimensions`: glTF-Transform traver
 - **Origin offsets:** `dimensionsToOriginOffsets(dims)` → `{ originOffsetX, originOffsetZ }` for `DEFAULT_SEED_BUILDING_DIMENSIONS`-style tables.
 - **CLI:** `pnpm run analyze-model-dimensions` (from `packages/gen`) — fetches each `SEED_BUILDINGS` URL, prints JSON to stdout; pass URLs as args to analyse arbitrary GLBs.
 
-## Dependencies
-
-- **Pyramid** — no engine runtime; only shared PRNG/helpers.
-- **City** — uses `src/city/layout/` (layout generator, seed buildings, `BLOCK_SIZE_M`) — vendored so `@doppelfun/gen` publishes without `@doppel-engine`.
-
 **Hub catalog:** `catalogEntriesToSeedBuildings(entries)` maps hub/engine `CatalogEntry[]` into a building pool (category `Buildings` or known seed ids; otherwise any `.glb` with fallback dims). `generateCityMml(cfg, { buildings })` uses that pool. Claw `generate_procedural` city prefetches the block catalog and passes `params.buildings` automatically when the catalog returns entries.

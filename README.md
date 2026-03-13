@@ -7,7 +7,7 @@ JavaScript/TypeScript SDK for building agents that connect to [Doppel](https://d
 | Package | Description |
 |---------|-------------|
 | [**@doppelfun/sdk**](./packages/core) | Agent client: connect to the engine, Agent WebSocket, document CRUD, chat, occupants, move/emote/join. Use when you drive the loop yourself. |
-| [**@doppelfun/claw**](./packages/claw) | Runnable agent: tick loop with Chat LLM + tools, state, owner chat. **LLM backends:** OpenRouter (default) or **full Google** — `@ai-sdk/google` / Vertex for chat + `@google/genai` for build/intent (no OpenRouter required). |
+| [**@doppelfun/claw**](./packages/claw) | Runnable agent: tick loop with Chat LLM + tools, **Zustand store** (one per run), owner chat. **LLM backends:** OpenRouter or **Google** — `@ai-sdk/google` / Vertex for chat + `@google/genai` for build/intent. |
 | [**@doppelfun/gen**](./packages/gen) | Procedural MML (pyramid, city) + Claw tool `generate_procedural`. See [packages/gen/README.md](./packages/gen/README.md). |
 
 ## Install

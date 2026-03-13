@@ -10,9 +10,88 @@ LLM-driven agent runtime for Doppel. Connects to the hub and engine via [@doppel
 - **Wake intent** (`must_act_build`): same provider as build; OpenRouter uses `generateObject`, Google uses `generateContent` + JSON parse.
 - Tool schemas: **`lib/tools/toolsZod.ts`**; execution: **`lib/tools/tools.ts`**.
 
-**Layout:** `src/lib/llm/constants.ts`, `src/lib/llm/providers/`, `src/util/` (`dm.ts`, `blockBounds.ts`). Entry: `cli.ts`, `index.ts`.
+**Layout:** `src/lib/state/` (types + `createInitialState` in `state.ts`, **Zustand store** in `store.ts` — one store per run via `createClawStore(blockSlotId)`), `src/lib/llm/`, `src/lib/agent/`, `src/lib/tools/`, `src/lib/conversation/`, `src/lib/movement/`, `src/util/` (blockBounds, dm, delay, env, math, position, url, uuid). Entry: `cli.ts`, `index.ts`. Tick/idle/tools flow is documented below.
 
 Use this package when you want a full agent that thinks and acts in a Doppel block with minimal code.
+
+## Tick, idle state, and tools (flow)
+
+The agent runs a **tick loop** (one LLM turn + tool runs) and a **50 ms interval** (movement, conversation checks, autonomous behavior). When **idle** and `CLAW_NPC_STYLE=1` (default), no LLM runs until a **wake** (DM, owner message, or soul tick when owner away). The diagram below shows how ticks are scheduled, how `runTick` uses the store and tools, and how the 50 ms loop and conversation FSM interact.
+
+```mermaid
+flowchart TB
+  subgraph Wake["Wakes (schedule next tick)"]
+    DM[DM received]
+    Owner[Owner message]
+    Err[WS error]
+    Soul[Autonomous soul tick\nowner away]
+    DM --> Request[requestWakeTick]
+    Owner --> Request
+    Err --> Request
+    Soul --> Request
+  end
+
+  subgraph Scheduler["After each tick"]
+    Need[Need follow-up?]
+    Need -->|wakeAfterTick| Next0[Next tick in 0 ms]
+    Need -->|must_act_build| Next0
+    Need -->|lastError| NextT[Next in TICK_INTERVAL_MS]
+    Need -->|npcStyleIdle + idle| NextSoul{Owner away?}
+    NextSoul -->|yes| NextS[Next in AUTONOMOUS_SOUL_TICK_MS]
+    NextSoul -->|no| Idle[No tick scheduled\nwake on DM/owner]
+    Need -->|!npcStyleIdle| NextT
+  end
+
+  subgraph RunTick["runTick (one LLM turn)"]
+    RT[runTick]
+    RT --> Boundary[region_boundary?]
+    Boundary -->|yes| Join[sendJoin + clearError]
+    Boundary -->|no| Phase{tickPhase?}
+    Phase -->|must_act_build| Build[Build-only LLM\nor deterministic procedural]
+    Phase -->|idle| WakeCheck{llmWakePending\nor lastError\nor soulTick?}
+    WakeCheck -->|no| Skip[Skip LLM\nidle, no wake]
+    WakeCheck -->|yes| User[buildUserMessage]
+    User --> LLM[runTickWithAiSdk\ngenerateText + tools]
+    LLM --> Tools[executeTool per call]
+    Tools --> Store[(Store)]
+    LLM --> Fallback[DM/error fallback\nif no tool calls]
+    Build --> Store
+    Fallback --> Store
+  end
+
+  subgraph FiftyMs["50 ms interval"]
+    MVT[movementDriverTick]
+    Auto[AutonomousManager.tick]
+    Break[checkBreak\nconversation timeout/rounds]
+    Drain[drainPendingReply\nsend queued DM]
+    MVT --> Store
+    Auto --> Store
+    Break --> Store
+    Drain --> Store
+  end
+
+  subgraph Conv["Conversation FSM (store)"]
+    IdleP[idle]
+    CanReply[can_reply]
+    Waiting[waiting_for_reply]
+    IdleP <-->|received DM| CanReply
+    CanReply -->|we send DM| Waiting
+    Waiting -->|they reply / break| CanReply
+    CanReply -->|break| IdleP
+    Waiting -->|break| IdleP
+  end
+
+  Request -.-> RunTick
+  RunTick -.-> Scheduler
+  Store -.-> FiftyMs
+  Store -.-> Conv
+```
+
+- **Wakes:** DM, owner chat, or WS error sets `llmWakePending` (or similar) and calls `requestWakeTick`. That either runs `runTick` soon (debounced) or, if a tick is already running, sets `wakeAfterTick` so the next tick runs immediately after.
+- **runTick:** If `region_boundary` error, auto-join that block. If `tickPhase === "must_act_build"`, run build-only tools (or deterministic `generate_procedural`); otherwise, if idle and no wake, skip the LLM. Else build the user message from store, call `runTickWithAiSdk` (Vercel AI SDK `generateText` with claw tools). Each tool call runs `executeTool`; tools read/update the store. If the model doesn’t call a tool and a DM or error reply is pending, a fallback message is sent.
+- **After tick:** Next run is scheduled: 0 ms if follow-up or must_act_build; else if `npcStyleIdle` and no wake, either next soul tick (owner away) or no schedule (wake on DM/owner); else next in `TICK_INTERVAL_MS`.
+- **50 ms loop:** `movementDriverTick` (approach target or stick input), `AutonomousManager.tick` (wander/seek/emote when owner away), `checkBreak` (conversation timeout or round limit → idle), `drainPendingReply` (send any queued DM). All read/update the same store.
+- **Conversation FSM:** `idle` → `can_reply` when we receive a DM; `can_reply` → `waiting_for_reply` when we send a DM; breaks (timeout, owner message, join, etc.) and `end_conversation` tool reset to `idle`. Used to gate whether we may send a DM and to show “waiting for reply” state.
 
 ## Install
 
@@ -111,12 +190,13 @@ Configuration is read from environment variables (and optionally overridden by t
 
 ## API
 
-- **`runAgent(options?)`** — Starts the agent.
+- **`runAgent(options?)`** — Starts the agent (creates one Zustand store per run internally).
 - **`AgentRunner`** — Class wrapper around `runAgent`.
 - **`loadConfig()`** — Load `ClawConfig` from env.
 - **`createLlmProvider(config)`** — Returns `LlmProvider` (OpenRouter or Google) for build/intent.
+- **`createClawStore(blockSlotId)`** — Create the Zustand store for one agent run; used internally by `runAgent`.
 - **`HubClient`**, **`joinBlock`**, **`createBlock`** — Hub helpers.
-- **`createInitialState`**, **`executeTool`** — State and low-level tool execution.
+- **`createInitialState`**, **`executeTool`** — State shape and low-level tool execution.
 
 ## Requirements
 

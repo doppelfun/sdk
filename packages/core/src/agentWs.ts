@@ -61,13 +61,24 @@ export type AgentWsThinkingMessage = {
   thinking: boolean;
 };
 
+/** Request pathfinding waypoints from (fromX, fromZ) to (x, z). Server replies with goto_result. */
+export type AgentWsGotoMessage = {
+  type: "goto";
+  x: number;
+  z: number;
+  /** Optional; omit to use server-side position from room state. */
+  fromX?: number;
+  fromZ?: number;
+};
+
 /** All outbound Agent WebSocket message types. Send as JSON after receiving `authenticated`. */
 export type AgentWsClientMessage =
   | AgentWsInputMessage
   | AgentWsChatMessage
   | AgentWsJoinMessage
   | AgentWsEmoteMessage
-  | AgentWsThinkingMessage;
+  | AgentWsThinkingMessage
+  | AgentWsGotoMessage;
 
 // --- Inbound (server → client) ---
 
@@ -113,6 +124,15 @@ export type AgentWsChatServerMessage = {
   mentions?: Array<{ sessionId?: string; userId?: string; username?: string }>;
 };
 
+/** Pathfinding result: waypoints in world (x,z), or error when no path. */
+export type AgentWsGotoResultMessage = {
+  type: "goto_result";
+  waypoints?: Array<{ x: number; z: number }>;
+  error?: string;
+  from?: { x: number; z: number };
+  to?: { x: number; z: number };
+};
+
 /** All inbound Agent WebSocket message types. Parse JSON from the socket. */
 export type AgentWsServerMessage =
   | AgentWsAuthenticatedMessage
@@ -120,7 +140,8 @@ export type AgentWsServerMessage =
   | AgentWsErrorMessage
   | AgentWsHeartbeatMessage
   | AgentWsThinkingServerMessage
-  | AgentWsChatServerMessage;
+  | AgentWsChatServerMessage
+  | AgentWsGotoResultMessage;
 
 export function isAgentWsAuthenticated(msg: AgentWsServerMessage): msg is AgentWsAuthenticatedMessage {
   return msg.type === "authenticated";

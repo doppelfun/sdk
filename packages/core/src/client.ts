@@ -4,6 +4,28 @@
  */
 
 import { fetchJson, normalizeBaseUrl } from "./utils.js";
+
+/** World entity from GET /api/snapshot (subset of engine CachedEntity). */
+export type SnapshotEntity = {
+  id: string;
+  entityType: string;
+  x: number;
+  y: number;
+  z: number;
+  width?: number;
+  height?: number;
+  depth?: number;
+  catalogId?: string;
+  [key: string]: unknown;
+};
+
+/** Response from GET /api/snapshot. No auth. */
+export type WorldSnapshot = {
+  worldVersion: number;
+  entities: SnapshotEntity[];
+  worldTimeMs?: number;
+  blockOrigin?: { x: number; z: number };
+};
 import { getAgentWsUrl, AGENT_WS_DEFAULT_PATH } from "./agentWs.js";
 import type {
   AgentWsInputMessage,
@@ -11,6 +33,7 @@ import type {
   AgentWsThinkingMessage,
   AgentWsJoinMessage,
   AgentWsEmoteMessage,
+  AgentWsGotoMessage,
 } from "./agentWs.js";
 import type { ChatHistoryMessage, GetChatHistoryOptions, GetChatHistoryResult } from "./chat.js";
 
@@ -316,6 +339,22 @@ export class DoppelClient {
   }
 
   /**
+   * Request pathfinding waypoints from current (or fromX, fromZ) to (x, z).
+   * Server replies with a "goto_result" message (waypoints or error). Register via onMessage("goto_result", ...).
+   * No-op if not connected.
+   */
+  sendGoto(x: number, z: number, from?: { x: number; z: number }): void {
+    if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
+    const msg: AgentWsGotoMessage = {
+      type: "goto",
+      x,
+      z,
+      ...(from && Number.isFinite(from.x) && Number.isFinite(from.z) && { fromX: from.x, fromZ: from.z }),
+    };
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  /**
    * Close the current WebSocket and immediately open a new one using the latest
    * JWT from getJwt() (e.g. after hub joinBlock refresh). Waits for `authenticated`
    * again. Does not set disconnectRequested — reconnect policy remains active.
@@ -480,6 +519,19 @@ export class DoppelClient {
       "GET /api/occupants"
     );
     return data.occupants ?? [];
+  }
+
+  /**
+   * Fetch world snapshot (GET /api/snapshot). No auth. Returns entities (cubes, models, grass, etc.) with id, entityType, x, y, z, width, depth for "move to this object".
+   */
+  async getSnapshot(): Promise<WorldSnapshot> {
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (this.apiKey) headers["x-api-key"] = this.apiKey;
+    return fetchJson<WorldSnapshot>(
+      `${this.base}/api/snapshot`,
+      { method: "GET", headers },
+      "GET /api/snapshot"
+    );
   }
 
   /**

@@ -64,4 +64,18 @@ describe("movementDriverTick", () => {
     expect(Math.abs(arg.moveZ)).toBeGreaterThan(0);
     expect(state.movementTarget).not.toBeNull();
   });
+
+  it("steers toward first waypoint when movementWaypoints is set", () => {
+    const sendInput = vi.fn();
+    const client = { sendInput } as unknown as DoppelClient;
+    const state = createInitialState("0_0");
+    state.movementTarget = { x: 50, z: 50 };
+    state.movementWaypoints = [{ x: 10, z: 10 }, { x: 50, z: 50 }];
+    state.myPosition = { x: 0, y: 0, z: 0 };
+    expect(movementDriverTick(client, state)).toBe(true);
+    const arg = sendInput.mock.calls[0]![0] as { moveX: number; moveZ: number };
+    expect(Math.abs(arg.moveX)).toBeGreaterThan(0);
+    expect(Math.abs(arg.moveZ)).toBeGreaterThan(0);
+    expect(state.movementWaypoints).toHaveLength(2);
+  });
 });

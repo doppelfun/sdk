@@ -63,6 +63,11 @@ export type ClawState = {
    * until within movementStopDistanceM—NPC-style continuous motion without LLM spam.
    */
   movementTarget: { x: number; z: number } | null;
+  /**
+   * Pathfinding waypoints from engine goto_result. When set, driver steers toward waypoints[0],
+   * then advances; when empty, steers toward movementTarget. Null = no path (fallback to straight line).
+   */
+  movementWaypoints: { x: number; z: number }[] | null;
   /** Stop distance for movementTarget (default 2 m). */
   movementStopDistanceM: number;
   /** Sprint while auto-approaching. */
@@ -120,6 +125,10 @@ export type ClawState = {
    * this flags that a fetch happened so prompts can say not to re-call unnecessarily.
    */
   lastOccupantsSummary: string | null;
+  /**
+   * Cached entities from last get_world_entities (snapshot). move_to_entity uses this to resolve entityId to position.
+   */
+  lastWorldEntities: Array<{ id: string; entityType: string; x: number; z: number; width?: number; depth?: number }> | null;
 };
 
 /** Create initial state for a block slot id (e.g. "0_0"). */
@@ -140,6 +149,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     myPosition: null,
     lastBuildTarget: null,
     movementTarget: null,
+    movementWaypoints: null,
     movementStopDistanceM: 2,
     movementSprint: false,
     movementIntent: null,
@@ -156,6 +166,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     lastCatalogContext: null,
     lastDocumentsList: null,
     lastOccupantsSummary: null,
+    lastWorldEntities: null,
   };
 }
 

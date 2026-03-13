@@ -10,6 +10,8 @@ export {
   type DoppelClientOptions,
   type Occupant,
   type OccupantType,
+  type SnapshotEntity,
+  type WorldSnapshot,
 } from "./client.js";
 
 export { createAgentClient, type AgentClientOptions } from "./agentClient.js";

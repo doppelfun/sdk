@@ -2,7 +2,7 @@
  * Tool execution for Claw. Schemas live in toolsZod.ts; AI SDK calls via toolsAi → executeTool.
  */
 
-import type { DoppelClient } from "@doppelfun/sdk";
+import type { DoppelClient, WorldSnapshot } from "@doppelfun/sdk";
 import { getBlockCatalog, getEngineCatalog, type CatalogEntry as SdkCatalogEntry } from "@doppelfun/sdk";
 import { runProceduralMml, catalogEntriesToSeedBuildings } from "@doppelfun/gen";
 import type { Usage } from "../llm/usage.js";
@@ -322,17 +322,33 @@ export async function executeTool(
       const approachPosition =
         typeof args.approachPosition === "string" ? args.approachPosition.trim() : "";
       if (approachSessionId) {
-        const occ = state.occupants.find((o) => o.clientId === approachSessionId);
+        const byClientId = (o: { clientId: string }) => o.clientId === approachSessionId;
+        const byUserId = (o: { userId?: string }) => o.userId === approachSessionId;
+        let occ = state.occupants.find((o) => byClientId(o) && o.position);
+        if (!occ) {
+          occ = state.occupants.find((o) => byUserId(o) && o.position);
+        }
+        if (!occ) {
+          const occupants = await client.getOccupants();
+          state.occupants = occupants;
+          const self = state.mySessionId
+            ? occupants.find((o) => o.clientId === state.mySessionId && o.position)
+            : null;
+          if (self?.position) state.myPosition = self.position;
+          occ = occupants.find((o) => byClientId(o) && o.position) ?? occupants.find((o) => byUserId(o) && o.position);
+        }
         if (!occ?.position) {
           return {
             ok: false,
             error:
-              "approachSessionId requires occupant with position—call get_occupants first and use clientId from context.",
+              `approachSessionId: no occupant with clientId or userId "${approachSessionId}" (with position). Call get_occupants and use clientId from the list, or approachPosition "x,z".`,
           };
         }
         state.movementIntent = null;
         state.movementTarget = { x: occ.position.x, z: occ.position.z };
-        state.movementSprint = sprint;
+        state.movementWaypoints = null;
+        state.movementSprint = sprint !== false;
+        client.sendGoto(occ.position.x, occ.position.z, state.myPosition ? { x: state.myPosition.x, z: state.myPosition.z } : undefined);
         client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
         return {
           ok: true,
@@ -346,8 +362,10 @@ export async function executeTool(
         }
         state.movementIntent = null;
         state.movementTarget = { x: parsed.x, z: parsed.z };
+        state.movementWaypoints = null;
         state.lastBuildTarget = { x: parsed.x, z: parsed.z };
-        state.movementSprint = sprint;
+        state.movementSprint = sprint !== false;
+        client.sendGoto(parsed.x, parsed.z, state.myPosition ? { x: state.myPosition.x, z: state.myPosition.z } : undefined);
         client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
         return {
           ok: true,
@@ -358,6 +376,7 @@ export async function executeTool(
       // Explicit stop clears auto-approach and held stick intent
       if (rawX === 0 && rawZ === 0) {
         state.movementTarget = null;
+        state.movementWaypoints = null;
         state.movementIntent = null;
         state.movementSprint = false;
         client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump });
@@ -406,17 +425,138 @@ export async function executeTool(
         state.myPosition = null;
         state.lastBuildTarget = null;
         state.movementTarget = null;
+        state.movementWaypoints = null;
         state.movementIntent = null;
         state.lastToolRun = null;
         state.lastDmPeerSessionId = null;
         state.lastCatalogContext = null;
         state.lastDocumentsList = null;
         state.lastOccupantsSummary = null;
+        state.lastWorldEntities = null;
         syncMainDocumentForBlock(state);
       }
       return { ok: true, summary: `join block ${blockSlotId}` };
     }
     // --- Context fetch ---
+    case "get_world_entities": {
+      const limit = typeof args.limit === "number" && args.limit > 0 ? Math.min(200, Math.floor(args.limit)) : 80;
+      let snapshot: WorldSnapshot;
+      try {
+        snapshot = await client.getSnapshot();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return { ok: false, error: `get_world_entities (snapshot) failed: ${msg}` };
+      }
+      const bounds = getBlockBounds(state.blockSlotId);
+      const inBounds = (cx: number, cz: number) =>
+        cx >= bounds.xMin && cx < bounds.xMax && cz >= bounds.zMin && cz < bounds.zMax;
+      const raw = (snapshot.entities ?? []).map((e) => {
+        const w = e.width ?? 0;
+        const d = e.depth ?? 0;
+        const centerX = e.x + (w > 0 ? w / 2 : 0);
+        const centerZ = e.z + (d > 0 ? d / 2 : 0);
+        return {
+          id: e.id,
+          entityType: e.entityType ?? "unknown",
+          x: e.x,
+          z: e.z,
+          centerX,
+          centerZ,
+          width: w || undefined,
+          depth: d || undefined,
+        };
+      });
+      const entities = raw.filter((e) => inBounds(e.centerX, e.centerZ)).slice(0, limit);
+      state.lastWorldEntities = (snapshot.entities ?? [])
+        .filter((e) => inBounds(e.x + ((e.width ?? 0) > 0 ? (e.width ?? 0) / 2 : 0), e.z + ((e.depth ?? 0) > 0 ? (e.depth ?? 0) / 2 : 0)))
+        .slice(0, limit)
+        .map((e) => ({
+          id: e.id,
+          entityType: e.entityType ?? "unknown",
+          x: e.x,
+          z: e.z,
+          width: e.width,
+          depth: e.depth,
+        }));
+      const lines = entities.map((e) => `${e.id} (${e.entityType}) center ${e.centerX.toFixed(1)},${e.centerZ.toFixed(1)}`).join("\n");
+      const summary = `${entities.length} world entities in this block (use move_to_entity with id):\n${lines}`;
+      return { ok: true, summary };
+    }
+    case "move_to_entity": {
+      const entityId = typeof args.entityId === "string" ? args.entityId.trim() : "";
+      if (!entityId) return { ok: false, error: "move_to_entity requires entityId from get_world_entities" };
+      if (!state.myPosition) {
+        const occupants = await client.getOccupants();
+        state.occupants = occupants;
+        const self = state.mySessionId
+          ? occupants.find((o) => o.clientId === state.mySessionId && o.position)
+          : null;
+        state.myPosition = self?.position ?? null;
+        if (!state.myPosition) {
+          return { ok: false, error: "move_to_entity: your position is unknown (call get_occupants first)." };
+        }
+      }
+      let centerX: number;
+      let centerZ: number;
+      const cached = state.lastWorldEntities?.find((e) => e.id === entityId);
+      if (cached) {
+        const w = cached.width ?? 0;
+        const d = cached.depth ?? 0;
+        centerX = cached.x + (w > 0 ? w / 2 : 0);
+        centerZ = cached.z + (d > 0 ? d / 2 : 0);
+      } else {
+        let snapshot: WorldSnapshot;
+        try {
+          snapshot = await client.getSnapshot();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          return { ok: false, error: `move_to_entity (snapshot) failed: ${msg}` };
+        }
+        const e = (snapshot.entities ?? []).find((ent) => ent.id === entityId);
+        if (!e) {
+          return { ok: false, error: `move_to_entity: no entity with id "${entityId}". Call get_world_entities first.` };
+        }
+        const w = e.width ?? 0;
+        const d = e.depth ?? 0;
+        centerX = e.x + (w > 0 ? w / 2 : 0);
+        centerZ = e.z + (d > 0 ? d / 2 : 0);
+      }
+      const bounds = getBlockBounds(state.blockSlotId);
+      if (centerX < bounds.xMin || centerX >= bounds.xMax || centerZ < bounds.zMin || centerZ >= bounds.zMax) {
+        return {
+          ok: false,
+          error: `Entity at (${centerX.toFixed(0)}, ${centerZ.toFixed(0)}) is outside this block (${state.blockSlotId}). Use join_block to switch blocks first.`,
+        };
+      }
+      clawLog(
+        "[move_to_entity] blockSlotId=",
+        state.blockSlotId,
+        "myPosition=(",
+        state.myPosition.x.toFixed(1),
+        ",",
+        state.myPosition.z.toFixed(1),
+        ") target=(",
+        centerX.toFixed(1),
+        ",",
+        centerZ.toFixed(1),
+        ") bounds x=[",
+        bounds.xMin,
+        "-",
+        bounds.xMax,
+        "] z=[",
+        bounds.zMin,
+        "-",
+        bounds.zMax,
+        "]"
+      );
+      state.movementIntent = null;
+      state.movementTarget = { x: centerX, z: centerZ };
+      state.movementWaypoints = null;
+      state.movementSprint = true;
+      client.sendGoto(centerX, centerZ, { x: state.myPosition.x, z: state.myPosition.z });
+      client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
+      return { ok: true, summary: `moving to entity ${entityId} at (${centerX.toFixed(1)}, ${centerZ.toFixed(1)})` };
+    }
     case "get_occupants": {
       const occupants = await client.getOccupants();
       state.occupants = occupants;
@@ -553,6 +693,8 @@ export async function executeTool(
           state.movementIntent = null;
           state.lastBuildTarget = { x: parsed.x, z: parsed.z };
           state.movementTarget = { x: parsed.x, z: parsed.z };
+          state.movementWaypoints = null;
+          client.sendGoto(parsed.x, parsed.z, state.myPosition ? { x: state.myPosition.x, z: state.myPosition.z } : undefined);
         }
       }
       const catalog = await getCatalogForBuild(config);

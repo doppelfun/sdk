@@ -589,10 +589,11 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
 
   // --- WebSocket message handlers (chat, error, joined, authenticated) ---
   client.onMessage("authenticated", async (payload: unknown) => {
-    const p = payload as { regionId?: string; sessionId?: string };
-    if (typeof p.regionId === "string") {
-      state.blockSlotId = p.regionId;
-      blockSlotId = p.regionId;
+    const p = payload as { regionId?: string; blockId?: string; sessionId?: string };
+    const slot = typeof p.blockId === "string" ? p.blockId : p.regionId;
+    if (typeof slot === "string") {
+      state.blockSlotId = slot;
+      blockSlotId = slot;
       syncMainDocumentForBlock(state);
     }
     if (typeof p.sessionId === "string") state.mySessionId = p.sessionId;
@@ -658,12 +659,40 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
   });
 
   client.onMessage("joined", (payload: unknown) => {
-    const p = payload as { regionId?: string };
-    if (typeof p.regionId === "string") {
-      state.blockSlotId = p.regionId;
+    const p = payload as { regionId?: string; blockId?: string };
+    const slot = typeof p.blockId === "string" ? p.blockId : p.regionId;
+    if (typeof slot === "string") {
+      state.blockSlotId = slot;
       clearLastError(state);
       state.lastDmPeerSessionId = null;
       syncMainDocumentForBlock(state);
+    }
+  });
+
+  client.onMessage("goto_result", (payload: unknown) => {
+    const p = payload as {
+      waypoints?: Array<{ x: number; z: number }>;
+      error?: string;
+      from?: { x: number; z: number };
+      to?: { x: number; z: number };
+    };
+    if (Array.isArray(p.waypoints) && p.waypoints.length > 0) {
+      state.movementWaypoints = p.waypoints;
+      clawLog(
+        "[goto_result] waypoints=",
+        p.waypoints.length,
+        "from=",
+        p.from,
+        "to=",
+        p.to,
+        "first=",
+        p.waypoints[0],
+        "last=",
+        p.waypoints[p.waypoints.length - 1]
+      );
+    } else {
+      state.movementWaypoints = null;
+      clawLog("[goto_result] no path", p.error ?? "no waypoints", "from=", p.from, "to=", p.to);
     }
   });
 

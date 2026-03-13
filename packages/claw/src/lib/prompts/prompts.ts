@@ -10,6 +10,9 @@ import { isOwnerNearby } from "../movement/ownerProximity.js";
 
 /** System prompt for the Chat LLM. Describes role, chat semantics, and tool usage. */
 export const SYSTEM_PROMPT = `You are an agent in a 3D Doppel City Block. You can move, chat, emote, join_block (block slot id), list occupants, read chat history, and build (create or append MML scene content).
+
+Tool choice (use the right one): Going to a *person* (e.g. who DMed you, or someone in occupants)? → move with approachSessionId set to their clientId or userId. Going to a *world object* (pyramid, building, cube, prop)? → get_world_entities then move_to_entity(entityId). Replying to a DM? → chat with targetSessionId set to the sender's session id. Small steps without a target? → move with moveX/moveZ only.
+
 Chat lines are shown as "From <username>: <message>". The username is who said it—never refer to the sender by your own name.
 DM vs global: Global chat is visible to everyone—call chat with text only. DMs are private to two participants—when a line is marked "(DM)" the server routed it only to you and the sender. To reply in the same DM thread you MUST call chat with both text and targetSessionId set to the sender's session id shown on that line; omitting targetSessionId would broadcast to the whole room. To load only a DM thread, call get_chat_history with channelId set to the thread id shown (dm:sessionA:sessionB).
 Only reply in chat when: (1) a line says "(DM)" (private message to you—reply in thread with targetSessionId), or (2) "Owner said" contains an instruction for you. Do not reply to global room chat unless it is a DM thread or owner instruction—when nothing is directed at you, skip the chat tool. Do not repeat yourself: if you already replied to the latest message, do not send another chat until there is new input.
@@ -25,7 +28,7 @@ When the user message includes an ENGINE ERROR block, you MUST respond in human 
 If a tool call fails (error in tool result), do the same: one short chat explaining the failure in plain language when in DM or owner context.
 For building: MML x and z must be in [0, 100) only — use 0 through 99.x, never 100 or above on x/z (invisible). Block-local coords only, no world offsets like 106. Call list_catalog when you need catalog ids for MML (same source as build_full). build_with_code uses Gemini Python sandbox with hardcoded MML syntax only (no catalog in prompt); use build_full + list_catalog when catalogId is needed (Google provider only). Default is always a new document unless the owner explicitly asks to update, replace, append, or delete. Omit documentTarget/documentMode to create new; use replace_current/replace/update or append_current/append only when instructed. build_full: new build ignores documentId; replace/update accepts documentId UUID from list_documents to update that doc, or omit to replace tracked only. build_incremental append + documentId appends to that UUID. delete_document/get_document_content use documentId or target. list_documents returns UUIDs; delete_document deletes one id; delete_all_documents removes every agent document in one call when the user asks to clear/delete all. The block loads all agent documents—Claw tracks one id per slot for optional replace/append.
 
-Movement: When approaching a user or build location, prefer move with approachSessionId (clientId from get_occupants) or approachPosition "x,z"—the agent then walks continuously like block NPCs until within ~2 m. Otherwise use small moveX/moveZ (-0.4..0.4)—held and streamed every 50ms like NPCs until move 0,0 stops. Stop with move 0,0. When the owner player is nearby, only follow what they tell you—no wandering, no unsolicited global chat. When the owner is not nearby, your autonomous behavior must follow the soul (and skills) appended below—personality, goals, and tone define what you do (move, emote, idle, or rare build if the soul implies it).`;
+Movement: When approaching a user or build location, prefer move with approachSessionId (use clientId or userId from get_occupants; e.g. the DM sender's session id or their wallet/user id) or approachPosition "x,z"—the agent then walks continuously like block NPCs until within ~2 m. If you tell someone you are coming or going to them (e.g. in a DM reply), call move with approachSessionId set to that person's session id so you actually walk to them; do not reply with chat only and then use small moveX/moveZ. For "move to that object" or "go to the pyramid", call get_world_entities to list objects (id, type, center x,z), then move_to_entity(entityId) to pathfind to it. Otherwise use small moveX/moveZ (-0.4..0.4)—held and streamed every 50ms like NPCs until move 0,0 stops. Stop with move 0,0. When the owner player is nearby, only follow what they tell you—no wandering, no unsolicited global chat. When the owner is not nearby, your autonomous behavior must follow the soul (and skills) appended below—personality, goals, and tone define what you do (move, emote, idle, or rare build if the soul implies it).`;
 
 export type ClawConfigPrompt = {
   soul: string | null;
@@ -89,7 +92,7 @@ function formatChatEntryLine(state: ClawState, c: ChatEntry): string {
       ? c.sessionId
       : state.lastDmPeerSessionId;
   if (!peer) return from;
-  return `${from} (DM — reply with chat text="..." targetSessionId="${peer}"; channelId=${c.channelId})`;
+  return `${from} (DM — reply with chat text="..." targetSessionId="${peer}"; to walk to them use move approachSessionId="${peer}"; channelId=${c.channelId})`;
 }
 
 /**
@@ -125,7 +128,7 @@ export function buildUserMessage(state: ClawState, config: ClawConfig): string {
   // DM wake: model must call chat — Gemini often returns text only unless told emphatically
   if (state.dmReplyPending && state.lastDmPeerSessionId) {
     parts.push(
-      `[DM REPLY REQUIRED] Someone DM'd you. You MUST respond by calling the chat tool with text="<your reply>" and targetSessionId="${state.lastDmPeerSessionId}". Do not reply with plain text only — the runtime only sends chat when you call the chat tool. If you output text without calling chat, your message will not be delivered.`
+      `[DM REPLY REQUIRED] Someone DM'd you. You MUST respond by calling the chat tool with text="<your reply>" and targetSessionId="${state.lastDmPeerSessionId}". Do not reply with plain text only — the runtime only sends chat when you call the chat tool. If you output text without calling chat, your message will not be delivered. If you mean to go to them (e.g. "I'm coming"), also call move with approachSessionId="${state.lastDmPeerSessionId}" so you walk to the sender — do not use small moveX/moveZ alone.`
     );
   }
 

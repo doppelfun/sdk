@@ -21,7 +21,7 @@ export const moveSchema = z.object({
     .string()
     .optional()
     .describe(
-      "Optional. Occupant clientId to walk toward; sets continuous movement until within ~2 m (like NPCs). Requires get_occupants first so position is known."
+      "Optional. Occupant clientId or userId to walk toward; sets continuous movement until within ~2 m (like NPCs). If not in cache, occupants are refreshed automatically."
     ),
   approachPosition: z
     .string()
@@ -117,6 +117,22 @@ export const listCatalogSchema = z.object({
 
 export const listDocumentsSchema = z.object({});
 
+export const getWorldEntitiesSchema = z.object({
+  limit: z
+    .number()
+    .optional()
+    .describe("Max entities to return (default 80). Use to avoid huge lists."),
+});
+
+export const moveToEntitySchema = z.object({
+  entityId: z
+    .string()
+    .min(1)
+    .describe(
+      "Entity id from get_world_entities (e.g. pyr-0, doc:uuid:entity-id). Agent will pathfind to the entity center."
+    ),
+});
+
 export const getDocumentContentSchema = z.object({
   documentId: documentIdUuidOptional.describe("UUID from list_documents only; omit with target current to read tracked doc."),
   target: z
@@ -196,7 +212,7 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "move",
     description:
-      "Move toward a target. Prefer approachSessionId or approachPosition for auto-walk to a world point (50ms stream until close). Or moveX/moveZ -0.4..0.4—held and streamed every 50ms like NPCs until move 0,0 stops; 0,0 also clears auto-approach.",
+      "Walk to a *person* (use approachSessionId = their clientId or userId from occupants) or to raw x,z (use approachPosition). Use this for 'come here', 'go to the player who DMed you', or approaching someone in the occupants list. For world objects (pyramid, building, cube) use get_world_entities then move_to_entity instead. Or small steps: moveX/moveZ -0.4..0.4 only; 0,0 stops.",
     schema: moveSchema,
   },
   {
@@ -219,8 +235,21 @@ export const CLAW_TOOL_REGISTRY: Array<{
   },
   {
     name: "get_occupants",
-    description: "List everyone currently in the block (observers, users, agents).",
+    description:
+      "List everyone in the block (observers, users, agents) with clientId, userId, position. Call when you need to approach someone and don't have their id—then use move(approachSessionId=clientId or userId).",
     schema: getOccupantsSchema,
+  },
+  {
+    name: "get_world_entities",
+    description:
+      "List *world objects* (cubes, models, buildings, props) in this block with id and position. Call this when the user says 'go to the pyramid', 'move to that building', or 'go to that object'—then call move_to_entity(entityId). Do not use for people; for walking to a person use move(approachSessionId).",
+    schema: getWorldEntitiesSchema,
+  },
+  {
+    name: "move_to_entity",
+    description:
+      "Walk to a *world object* by entity id from get_world_entities. Use for pyramids, buildings, cubes, props. Call get_world_entities first to get the id. For walking to a *person* use move(approachSessionId) instead.",
+    schema: moveToEntitySchema,
   },
   {
     name: "get_chat_history",

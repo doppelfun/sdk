@@ -127,4 +127,55 @@ describe("executeTool", () => {
     expect(res.ok).toBe(true);
     expect(sendEmote).toHaveBeenCalledWith("wave");
   });
+
+  it("get_world_entities calls getSnapshot and returns summary with entity list", async () => {
+    const entities = [
+      { id: "pyr-0", entityType: "cube", x: 10, y: 0, z: 5, width: 2, depth: 2 },
+      { id: "grass-1", entityType: "grass", x: 50, z: 50 },
+    ];
+    const getSnapshot = vi.fn().mockResolvedValue({ worldVersion: 1, entities });
+    const client = { getSnapshot } as unknown as DoppelClient;
+    const state = createInitialState("0_0");
+    const res = await executeTool(client, state, minimalConfig(), {
+      name: "get_world_entities",
+      args: {},
+    });
+    expect(res.ok).toBe(true);
+    expect(getSnapshot).toHaveBeenCalled();
+    expect(state.lastWorldEntities).toHaveLength(2);
+    expect(state.lastWorldEntities?.[0]?.id).toBe("pyr-0");
+    expect(typeof (res as { summary: string }).summary).toBe("string");
+    expect((res as { summary: string }).summary).toContain("pyr-0");
+  });
+
+  it("move_to_entity uses cached lastWorldEntities and calls sendGoto", async () => {
+    const sendGoto = vi.fn();
+    const sendInput = vi.fn();
+    const client = { sendGoto, sendInput } as unknown as DoppelClient;
+    const state = createInitialState("0_0");
+    state.lastWorldEntities = [
+      { id: "pyr-0", entityType: "cube", x: 10, z: 5, width: 2, depth: 2 },
+    ];
+    state.myPosition = { x: 0, y: 0, z: 0 };
+    const res = await executeTool(client, state, minimalConfig(), {
+      name: "move_to_entity",
+      args: { entityId: "pyr-0" },
+    });
+    expect(res.ok).toBe(true);
+    expect(state.movementTarget).toEqual({ x: 11, z: 6 });
+    expect(sendGoto).toHaveBeenCalledWith(11, 6, { x: 0, z: 0 });
+  });
+
+  it("move_to_entity returns error when entityId not in cache and getSnapshot has no match", async () => {
+    const getSnapshot = vi.fn().mockResolvedValue({ worldVersion: 1, entities: [] });
+    const client = { getSnapshot } as unknown as DoppelClient;
+    const state = createInitialState("0_0");
+    state.myPosition = { x: 50, y: 0, z: 50 };
+    const res = await executeTool(client, state, minimalConfig(), {
+      name: "move_to_entity",
+      args: { entityId: "nonexistent" },
+    });
+    expect(res.ok).toBe(false);
+    expect((res as { error: string }).error).toContain("no entity");
+  });
 });

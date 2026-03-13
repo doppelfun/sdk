@@ -9,6 +9,7 @@
 import type { DoppelClient } from "@doppelfun/sdk";
 import {
   type ClawState,
+  getFacingTowardNearestOccupant,
   isAgentChatCooldownActive,
   setAgentChatCooldown,
 } from "../state/state.js";
@@ -35,12 +36,13 @@ const MAX_MOVE = 0.4;
 export function movementDriverTick(client: DoppelClient, state: ClawState): boolean {
   const target = state.movementTarget;
 
-  // --- AutonomousManager emote stand-still: send 0,0 until timestamp expires ---
+  // --- AutonomousManager emote stand-still: send 0,0 until timestamp expires; face nearby if any ---
   if (
     state.autonomousEmoteStandStillUntil > 0 &&
     Date.now() < state.autonomousEmoteStandStillUntil
   ) {
-    client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
+    const rotY = getFacingTowardNearestOccupant(state);
+    client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false, ...(rotY != null && { rotY }) });
     return true;
   }
 
@@ -70,7 +72,7 @@ export function movementDriverTick(client: DoppelClient, state: ClawState): bool
   const my = state.myPosition;
   if (!my) return false;
 
-  // Optional: stand still if any non-agent occupant is very close (encounter-style)
+  // Optional: stand still if any non-agent occupant is very close (encounter-style); face them
   for (const o of state.occupants) {
     if (o.clientId === state.mySessionId) continue;
     if (o.type === "agent") continue;
@@ -78,7 +80,8 @@ export function movementDriverTick(client: DoppelClient, state: ClawState): bool
     const dx = o.position.x - my.x;
     const dz = o.position.z - my.z;
     if (dx * dx + dz * dz < ENCOUNTER_RADIUS2) {
-      client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
+      const rotY = Math.atan2(dx, dz);
+      client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false, ...{ rotY } });
       return true;
     }
   }
@@ -89,7 +92,8 @@ export function movementDriverTick(client: DoppelClient, state: ClawState): bool
   const stopDist = state.movementStopDistanceM ?? DEFAULT_STOP_DISTANCE_M;
 
   if (dist < stopDist) {
-    client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
+    const rotY = getFacingTowardNearestOccupant(state);
+    client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false, ...(rotY != null && { rotY }) });
     state.movementTarget = null;
     const pending = state.pendingGoTalkToAgent;
     if (pending) {

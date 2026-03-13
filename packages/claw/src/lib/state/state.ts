@@ -96,9 +96,13 @@ export type ClawState = {
   lastDmPeerSessionId: string | null;
   /**
    * When > 0 and now < this timestamp, agent-to-agent chat is in cooldown (don't send DM / autonomous greeting).
-   * Set after sending to slow conversations and allow voice to finish.
+   * Set after sending to slow conversations and allow voice to finish; also set when receiving a DM so we wait before replying (turn-taking).
    */
   agentChatCooldownUntil: number;
+  /**
+   * Queued DM reply when we tried to send but were in cooldown (e.g. receive delay). Drained in the 50ms loop when cooldown expires.
+   */
+  pendingDmReply: { text: string; targetSessionId: string } | null;
   /** idle = normal tick; must_act_build = run build tool before chat (deterministic or build-only LLM). */
   tickPhase: TickPhase;
   /** When set with must_act_build, executeTool(generate_procedural) runs without LLM. */
@@ -143,8 +147,16 @@ export type ClawState = {
   lastOccupantsSummary: string | null;
 };
 
-/** Cooldown (ms) after sending agent-to-agent chat before next send — allows voice to finish. */
-export const AGENT_CHAT_COOLDOWN_MS = 10_000;
+/** Cooldown (ms) after sending agent-to-agent chat before next send — allows voice to finish; keep short so they respond once per turn. */
+export const AGENT_CHAT_COOLDOWN_MS = 5_000;
+/** After receiving a DM from another agent, wait this long before we're allowed to send a reply — gives their TTS time to play so we don't talk over each other. */
+export const RECEIVE_REPLY_DELAY_MS = 4_000;
+
+/** Set cooldown so we can't send a reply until RECEIVE_REPLY_DELAY_MS from now (call when we receive a DM from another agent). */
+export function setReceiveReplyDelay(state: ClawState, now = Date.now()): void {
+  const until = now + RECEIVE_REPLY_DELAY_MS;
+  if (state.agentChatCooldownUntil < until) state.agentChatCooldownUntil = until;
+}
 
 /** True if agent-to-agent chat is currently in cooldown (used before sending DM or autonomous greeting). */
 export function isAgentChatCooldownActive(state: ClawState, now = Date.now()): boolean {
@@ -171,6 +183,29 @@ export function isInConversationWithAgentInRoom(state: ClawState): boolean {
       o.clientId === state.lastDmPeerSessionId &&
       o.position != null
   );
+}
+
+/** Max distance (m) to consider for facing toward a nearby occupant. */
+const FACE_NEARBY_RADIUS_M = 12;
+
+/** Y rotation (radians) to face the nearest occupant (player or agent) with position, or undefined if none in range. */
+export function getFacingTowardNearestOccupant(state: ClawState): number | undefined {
+  const my = state.myPosition;
+  if (!my) return undefined;
+  let nearestDist2 = FACE_NEARBY_RADIUS_M * FACE_NEARBY_RADIUS_M;
+  let nearest: { x: number; z: number } | null = null;
+  for (const o of state.occupants) {
+    if (o.clientId === state.mySessionId || !o.position) continue;
+    const dx = o.position.x - my.x;
+    const dz = o.position.z - my.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < nearestDist2 && d2 > 0.01) {
+      nearestDist2 = d2;
+      nearest = { x: o.position.x, z: o.position.z };
+    }
+  }
+  if (!nearest) return undefined;
+  return Math.atan2(nearest.x - my.x, nearest.z - my.z);
 }
 
 /** Create initial state for a block slot id (e.g. "0_0"). */
@@ -201,6 +236,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     lastTickToolNames: null,
     lastDmPeerSessionId: null,
     agentChatCooldownUntil: 0,
+    pendingDmReply: null,
     tickPhase: "idle",
     pendingBuildKind: null,
     pendingBuildTicks: 0,

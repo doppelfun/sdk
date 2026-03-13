@@ -1,9 +1,5 @@
 import type { ToolContext } from "../types.js";
-import {
-  getAgentChatCooldownRemainingMs,
-  isAgentChatCooldownActive,
-  setAgentChatCooldown,
-} from "../../state/state.js";
+import { isAgentChatCooldownActive, setAgentChatCooldown } from "../../state/state.js";
 
 export async function handleChat(ctx: ToolContext) {
   const { client, state, args, logAction } = ctx;
@@ -15,15 +11,23 @@ export async function handleChat(ctx: ToolContext) {
   }
   const isDm = Boolean(targetSessionId);
 
-  // Agent-to-agent: enforce cooldown so conversations aren’t spammed and voice can finish.
-  if (text && isDm && isAgentChatCooldownActive(state)) {
-    const remainingMs = getAgentChatCooldownRemainingMs(state);
-    const waitSec = Math.ceil(remainingMs / 1000);
+  // Only one chat send per tick — avoid double reply when model returns multiple tool calls.
+  if (text && state.lastTickSentChat) {
     return {
       ok: false,
-      summary: "chat cooldown",
-      cooldownSeconds: waitSec,
-      message: `Agent chat cooldown active; wait ${waitSec}s before sending again (lets voice finish).`,
+      summary: "already responded",
+      message: "Already sent a message this turn; wait for the other person to respond.",
+    };
+  }
+
+  // Agent-to-agent: enforce cooldown so conversations aren’t spammed and voice can finish.
+  // If in cooldown (e.g. receive delay), queue reply and send when cooldown expires so we don't talk over each other.
+  if (text && isDm && isAgentChatCooldownActive(state)) {
+    state.pendingDmReply = { text, targetSessionId: targetSessionId! };
+    return {
+      ok: true,
+      summary: "queued",
+      message: "Reply will be sent after a short delay (turn-taking).",
     };
   }
 

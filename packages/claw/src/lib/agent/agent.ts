@@ -15,6 +15,7 @@ import {
   pushOwnerMessage,
   setAgentChatCooldown,
   setLastError,
+  setReceiveReplyDelay,
   syncMainDocumentForBlock,
   type ClawState,
 } from "../state/state.js";
@@ -372,7 +373,9 @@ async function runTick(
       result.replyText && result.replyText.length > 0
         ? result.replyText
         : "Hey — I'm here.";
-    if (!isAgentChatCooldownActive(state)) {
+    if (isAgentChatCooldownActive(state)) {
+      state.pendingDmReply = { text, targetSessionId: peer };
+    } else {
       client.sendChat(text, { targetSessionId: peer });
       state.lastAgentChatMessage = text;
       state.lastTickSentChat = true;
@@ -396,11 +399,13 @@ async function runTick(
       result.replyText && result.replyText.trim().length > 0
         ? result.replyText.trim().slice(0, 500)
         : "Something went wrong on the server. If it keeps happening, try again in a moment.";
-    const blockedByCooldown =
-      state.lastDmPeerSessionId != null && isAgentChatCooldownActive(state);
-    if (!blockedByCooldown) {
-      if (state.lastDmPeerSessionId) {
-        client.sendChat(text, { targetSessionId: state.lastDmPeerSessionId });
+    const dmTarget = state.lastDmPeerSessionId;
+    const blockedByCooldown = dmTarget != null && isAgentChatCooldownActive(state);
+    if (blockedByCooldown && dmTarget) {
+      state.pendingDmReply = { text, targetSessionId: dmTarget };
+    } else if (!blockedByCooldown) {
+      if (dmTarget) {
+        client.sendChat(text, { targetSessionId: dmTarget });
         setAgentChatCooldown(state);
       } else {
         client.sendChat(text);
@@ -642,8 +647,11 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     const fromOwner = config.ownerUserId && userId === config.ownerUserId && message;
     if ((dmFromOther || directedAtMe) && sessionId) {
       state.lastDmPeerSessionId = sessionId;
+      // Wait before we're allowed to reply — gives sender's TTS time to play so we don't talk over each other.
+      setReceiveReplyDelay(state);
     } else if (p.channelId === "global") {
       state.lastDmPeerSessionId = null;
+      state.pendingDmReply = null;
     }
     const shouldWake = fromOwner || dmFromOther;
     if (shouldWake) {
@@ -736,6 +744,16 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     try {
       autonomousManager.tick(client, state, config);
       movementDriverTick(client, state);
+      // Drain queued DM reply when receive delay has elapsed (turn-taking: don't talk over each other).
+      const pending = state.pendingDmReply;
+      if (pending && !isAgentChatCooldownActive(state)) {
+        client.sendChat(pending.text, { targetSessionId: pending.targetSessionId });
+        client.sendSpeak(pending.text);
+        state.lastAgentChatMessage = pending.text;
+        state.lastTickSentChat = true;
+        setAgentChatCooldown(state);
+        state.pendingDmReply = null;
+      }
     } catch {
       // ignore
     }

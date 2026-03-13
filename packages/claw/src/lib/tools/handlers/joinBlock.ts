@@ -14,6 +14,8 @@ export async function handleJoinBlock(ctx: ToolContext) {
     state.movementIntent = null;
     state.pendingGoTalkToAgent = null;
     state.autonomousSeekCooldownUntil = 0;
+    state.agentChatCooldownUntil = 0;
+    state.pendingDmReply = null;
     state.lastToolRun = null;
     state.lastDmPeerSessionId = null;
     state.lastCatalogContext = null;

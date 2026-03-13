@@ -265,8 +265,8 @@ export class DoppelClient {
     });
   }
 
-  /** Send movement (input) over the connected WebSocket. No-op if not connected. */
-  sendInput(params: { moveX?: number; moveZ?: number; sprint?: boolean; jump?: boolean }): void {
+  /** Send movement (input) over the connected WebSocket. No-op if not connected. rotY: optional facing (radians) when stationary. */
+  sendInput(params: { moveX?: number; moveZ?: number; sprint?: boolean; jump?: boolean; rotY?: number }): void {
     if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
     const msg: AgentWsInputMessage = {
       type: "input",
@@ -274,6 +274,7 @@ export class DoppelClient {
       moveZ: params.moveZ ?? 0,
       sprint: params.sprint ?? false,
       jump: params.jump ?? false,
+      ...(typeof params.rotY === "number" && { rotY: params.rotY }),
     };
     this.ws.send(JSON.stringify(msg));
   }

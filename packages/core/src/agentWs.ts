@@ -31,6 +31,8 @@ export type AgentWsInputMessage = {
   moveZ?: number;
   sprint?: boolean;
   jump?: boolean;
+  /** When stationary (moveX/moveZ zero), optional facing in radians (Y rotation). */
+  rotY?: number;
 };
 
 export type AgentWsChatMessage = {

@@ -47,6 +47,11 @@ export type ClawConfig = {
    * Default 20 minutes. Set 0 to disable.
    */
   sessionRefreshIntervalMs: number;
+  /**
+   * Optional TTS voice id for this agent (e.g. ElevenLabs voice_id).
+   * Set via CLAW_VOICE_ID in .env or process env so each agent process can have a unique voice.
+   */
+  voiceId: string | null;
 };
 
 const DEFAULT_HUB = "http://localhost:4000";
@@ -138,6 +143,8 @@ export function loadConfig(): ClawConfig {
     0,
     24 * 60 * 60 * 1000
   );
+  // Per-agent TTS voice (e.g. ElevenLabs voice_id); used when sending chat so each agent sounds distinct.
+  const voiceId = process.env.CLAW_VOICE_ID?.trim() || null;
 
   const gemini = llmProvider === "google" || llmProvider === "google-vertex";
   const defaultModel = gemini ? DEFAULT_GOOGLE_MODEL : "openrouter/auto";
@@ -169,5 +176,6 @@ export function loadConfig(): ClawConfig {
     ownerNearbyRadiusM,
     autonomousSoulTickMs,
     sessionRefreshIntervalMs,
+    voiceId,
   };
 }

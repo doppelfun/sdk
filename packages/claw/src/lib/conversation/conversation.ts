@@ -3,29 +3,41 @@
  * All conversation state lives on ClawState; this module is the single place that mutates it.
  */
 
-import type { ConversationPhase, ConversationStateSlice, CheckBreakOptions } from "./types.js";
+import type { ConversationStateSlice, CheckBreakOptions } from "./types.js";
 
 /** After this long in waiting_for_reply with no response, transition to idle. */
 export const CONVERSATION_TIMEOUT_MS = 50_000;
+
 /** Max full exchanges with same peer before forcing break (safety net). */
 export const CONVERSATION_MAX_ROUNDS = 8;
+
 /** Minimum delay (ms) after receiving a DM before we can reply (TTS finish). */
 export const RECEIVE_REPLY_DELAY_MIN_MS = 3_000;
+
 /** Chars per second for estimating TTS duration when audioDurationMs not in payload. */
 export const TTS_CHARS_PER_SECOND = 14;
-/** After a conversation ends, don't start seeking another agent for this long (ms). */
-export const CONVERSATION_END_SEEK_COOLDOWN_MS = 3 * 60 * 1000; // 3 minutes
 
-/** Current time; separate function so tests can override via fake timers. */
+/** After a conversation ends, don't start seeking another agent for this long (ms). */
+export const CONVERSATION_END_SEEK_COOLDOWN_MS = 3 * 60 * 1000;
+
+/**
+ * Current time in ms.
+ * Separate function so tests can override via fake timers.
+ */
 function getNow(): number {
   return Date.now();
 }
 
 /**
- * True if we're allowed to send a DM to sessionId:
+ * True if we're allowed to send a DM to sessionId.
  * - idle: new conversation, allowed.
  * - can_reply: only to current peer, and only after receiveDelayUntil has passed.
  * - waiting_for_reply: not allowed (must wait for their reply).
+ *
+ * @param state - Conversation state slice (phase, peer, receiveDelayUntil).
+ * @param sessionId - Target session we want to send a DM to.
+ * @param now - Current time (ms); defaults to getNow() for tests.
+ * @returns True when sending a DM to sessionId is allowed.
  */
 export function canSendDmTo(
   state: ConversationStateSlice,
@@ -43,7 +55,12 @@ export function canSendDmTo(
 }
 
 /**
- * Call after we send a DM to targetSessionId. Transition to waiting_for_reply.
+ * Call after we send a DM to targetSessionId.
+ * Transitions to waiting_for_reply and records peer + timestamp.
+ *
+ * @param state - Conversation state slice to mutate.
+ * @param targetSessionId - Session we just sent the DM to.
+ * @param now - Current time (ms); defaults to getNow().
  */
 export function onWeSentDm(state: ConversationStateSlice, targetSessionId: string, now = getNow()): void {
   state.conversationPhase = "waiting_for_reply";
@@ -54,7 +71,13 @@ export function onWeSentDm(state: ConversationStateSlice, targetSessionId: strin
 }
 
 /**
- * Call when we receive a DM from fromSessionId. Transition to can_reply and set receive delay.
+ * Call when we receive a DM from fromSessionId.
+ * Transitions to can_reply and sets receiveDelayUntil (TTS finish + min delay).
+ *
+ * @param state - Conversation state slice to mutate.
+ * @param fromSessionId - Session that sent the DM.
+ * @param options - Optional audioDurationMs (from engine) or messageLength for delay estimate.
+ * @param now - Current time (ms); defaults to getNow().
  */
 export function onWeReceivedDm(
   state: ConversationStateSlice,
@@ -77,7 +100,12 @@ export function onWeReceivedDm(
 }
 
 /**
- * Check break conditions (timeout, peer left, owner spoke, round limit). Mutates state to idle when any trigger.
+ * Check break conditions: timeout, peer left, owner spoke, round limit.
+ * Mutates state to idle (via clearConversation) when any condition triggers.
+ *
+ * @param state - Conversation state slice to mutate.
+ * @param now - Current time (ms).
+ * @param options - Occupants (for peer presence), ownerUserId, lastTriggerUserId, maxRounds.
  */
 export function checkBreak(state: ConversationStateSlice, now: number, options: CheckBreakOptions): void {
   const phase = state.conversationPhase;
@@ -113,8 +141,13 @@ export function checkBreak(state: ConversationStateSlice, now: number, options: 
 }
 
 /**
- * Force transition to idle; clear peer and timers. Call on join_block, from break logic, and from end_conversation tool.
- * When skipSeekCooldown is false (default), sets conversationEndedSeekCooldownUntil so the agent won't seek again for several minutes.
+ * Force transition to idle; clear peer, timers, and pending reply.
+ * Call on join_block, from break logic, and from end_conversation tool.
+ * When skipSeekCooldown is false (default), sets conversationEndedSeekCooldownUntil
+ * so the agent won't seek again for several minutes.
+ *
+ * @param state - Conversation state slice to mutate.
+ * @param options - skipSeekCooldown: when true, do not set conversationEndedSeekCooldownUntil (e.g. on join_block).
  */
 export function clearConversation(
   state: ConversationStateSlice,
@@ -135,7 +168,12 @@ export function clearConversation(
 }
 
 /**
- * If we have a queued reply and we're now allowed to send (receive delay passed, still in can_reply), return it and clear queue.
+ * If we have a queued reply and we're now allowed to send (receive delay passed, still in can_reply),
+ * return it and clear the queue.
+ *
+ * @param state - Conversation state slice (pendingDmReply, phase, receiveDelayUntil).
+ * @param now - Current time (ms); defaults to getNow().
+ * @returns The pending reply (text + targetSessionId) or null if none or not yet allowed.
  */
 export function drainPendingReply(
   state: ConversationStateSlice,
@@ -151,14 +189,22 @@ export function drainPendingReply(
 }
 
 /**
- * Return current conversation peer session id (for prompts and reply target).
+ * Return current conversation peer session id.
+ * Used for prompts and as reply target when sending a DM.
+ *
+ * @param state - Conversation state slice.
+ * @returns Peer session id or null when idle / no peer.
  */
 export function getConversationPeer(state: ConversationStateSlice): string | null {
   return state.conversationPeerSessionId;
 }
 
 /**
- * True when we're in an active conversation (can_reply or waiting_for_reply). Used to avoid seeking a new agent.
+ * True when we're in an active conversation (can_reply or waiting_for_reply).
+ * Used to avoid seeking a new agent while already in a conversation.
+ *
+ * @param state - Conversation state slice.
+ * @returns True when phase is can_reply or waiting_for_reply.
  */
 export function isInConversation(state: ConversationStateSlice): boolean {
   return state.conversationPhase === "can_reply" || state.conversationPhase === "waiting_for_reply";

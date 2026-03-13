@@ -40,6 +40,8 @@ export type AgentWsChatMessage = {
   text: string;
   /** When set, message is sent only to this session (DM). Omit for global/region chat. */
   targetSessionId?: string;
+  /** Optional TTS voice id (e.g. ElevenLabs voice_id). Set via CLAW_VOICE_ID so each agent has a unique voice. */
+  voiceId?: string;
 };
 
 export type AgentWsJoinMessage = {

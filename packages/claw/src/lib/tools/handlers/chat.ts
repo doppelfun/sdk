@@ -1,8 +1,9 @@
 import type { ToolContext } from "../types.js";
+import { buildChatSendOptions } from "../../chatSendOptions.js";
 import { canSendDmTo, onWeSentDm } from "../../conversation/index.js";
 
 export async function handleChat(ctx: ToolContext) {
-  const { client, state, args, logAction } = ctx;
+  const { client, state, args, config, logAction } = ctx;
   const text = typeof args.text === "string" ? args.text.slice(0, 500).trim() : "";
   let targetSessionId =
     typeof args.targetSessionId === "string" ? args.targetSessionId.trim() || undefined : undefined;
@@ -31,7 +32,9 @@ export async function handleChat(ctx: ToolContext) {
   }
 
   if (text) {
-    client.sendChat(text, targetSessionId ? { targetSessionId } : undefined);
+    const voiceId =
+      (typeof args.voiceId === "string" ? args.voiceId.trim() : null) || config.voiceId || undefined;
+    client.sendChat(text, buildChatSendOptions({ targetSessionId, voiceId }));
     state.lastAgentChatMessage = text;
     state.lastTickSentChat = true;
     if (targetSessionId) {

@@ -7,8 +7,9 @@
  */
 
 import type { DoppelClient } from "@doppelfun/sdk";
-import { type ClawState, getFacingTowardNearestOccupant } from "../state/state.js";
+import { buildChatSendOptions } from "../chatSendOptions.js";
 import { canSendDmTo, onWeSentDm } from "../conversation/index.js";
+import { type ClawState, getFacingTowardNearestOccupant } from "../state/state.js";
 import { getBlockBounds } from "../../util/blockBounds.js";
 
 /** Match NpcDriver INPUT_INTERVAL_MS so agent motion feels similar. */
@@ -25,11 +26,18 @@ const DIRECTION_SPEED = 0.35;
 /** Max |moveX|/|moveZ| sent to engine (Claw move tool cap). */
 const MAX_MOVE = 0.4;
 
+/** Options for movement driver. voiceId is passed to sendChat when sending autonomous greeting (from CLAW_VOICE_ID). */
+export type MovementDriverOptions = { voiceId?: string | null };
+
 /**
  * One driver tick: if movementTarget is set and myPosition known, send sendInput
  * toward target; clear target when within stopDistance. Returns true if input was sent.
  */
-export function movementDriverTick(client: DoppelClient, state: ClawState): boolean {
+export function movementDriverTick(
+  client: DoppelClient,
+  state: ClawState,
+  options?: MovementDriverOptions
+): boolean {
   const target = state.movementTarget;
 
   // --- AutonomousManager emote stand-still: send 0,0 until timestamp expires; face nearby if any ---
@@ -93,7 +101,10 @@ export function movementDriverTick(client: DoppelClient, state: ClawState): bool
     state.movementTarget = null;
     const pending = state.pendingGoTalkToAgent;
     if (pending && canSendDmTo(state, pending.targetSessionId)) {
-      client.sendChat(pending.openingMessage, { targetSessionId: pending.targetSessionId });
+      client.sendChat(
+        pending.openingMessage,
+        buildChatSendOptions({ targetSessionId: pending.targetSessionId, voiceId: options?.voiceId })
+      );
       state.lastAgentChatMessage = pending.openingMessage;
       onWeSentDm(state, pending.targetSessionId);
       state.pendingGoTalkToAgent = null;

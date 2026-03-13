@@ -88,6 +88,16 @@ export type ClawState = {
    * immediately re-targeting after we just said something. Set when we fire chat/speak on arrive.
    */
   autonomousSeekCooldownUntil: number;
+  /**
+   * When > 0 and now < this timestamp, do not start a new seek (set when a conversation ends).
+   * Several-minute cooldown so agents don't immediately start another conversation.
+   */
+  conversationEndedSeekCooldownUntil: number;
+  /**
+   * Next time we're allowed to consider seeking another agent (throttle + random desync).
+   * Set after we consider (whether we seek or not) to now + random(SEEK_INTERVAL_MIN_MS, SEEK_INTERVAL_MAX_MS).
+   */
+  nextSeekConsiderAt: number;
   /** Last tool name that was run. */
   lastToolRun: string | null;
   /** Tool names invoked this tick (for follow-up when chat-only promised a build). Cleared at tick start. */
@@ -208,6 +218,8 @@ export function createInitialState(blockSlotId: string): ClawState {
     autonomousEmoteStandStillUntil: 0,
     pendingGoTalkToAgent: null,
     autonomousSeekCooldownUntil: 0,
+    conversationEndedSeekCooldownUntil: 0,
+    nextSeekConsiderAt: 0,
     lastToolRun: null,
     lastTickToolNames: null,
     lastDmPeerSessionId: null,

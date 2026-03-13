@@ -15,7 +15,7 @@ export async function handleJoinBlock(ctx: ToolContext) {
     state.movementIntent = null;
     state.pendingGoTalkToAgent = null;
     state.autonomousSeekCooldownUntil = 0;
-    clearConversation(state);
+    clearConversation(state, { skipSeekCooldown: true });
     state.lastToolRun = null;
     state.lastCatalogContext = null;
     state.lastDocumentsList = null;

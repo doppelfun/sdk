@@ -13,6 +13,8 @@ export const CONVERSATION_MAX_ROUNDS = 8;
 export const RECEIVE_REPLY_DELAY_MIN_MS = 3_000;
 /** Chars per second for estimating TTS duration when audioDurationMs not in payload. */
 export const TTS_CHARS_PER_SECOND = 14;
+/** After a conversation ends, don't start seeking another agent for this long (ms). */
+export const CONVERSATION_END_SEEK_COOLDOWN_MS = 3 * 60 * 1000; // 3 minutes
 
 /** Current time; separate function so tests can override via fake timers. */
 function getNow(): number {
@@ -112,8 +114,12 @@ export function checkBreak(state: ConversationStateSlice, now: number, options: 
 
 /**
  * Force transition to idle; clear peer and timers. Call on join_block, from break logic, and from end_conversation tool.
+ * When skipSeekCooldown is false (default), sets conversationEndedSeekCooldownUntil so the agent won't seek again for several minutes.
  */
-export function clearConversation(state: ConversationStateSlice): void {
+export function clearConversation(
+  state: ConversationStateSlice,
+  options?: { skipSeekCooldown?: boolean }
+): void {
   state.conversationPhase = "idle";
   state.conversationPeerSessionId = null;
   state.lastDmPeerSessionId = null;
@@ -121,6 +127,11 @@ export function clearConversation(state: ConversationStateSlice): void {
   state.waitingForReplySince = 0;
   state.pendingDmReply = null;
   state.conversationRoundCount = 0;
+  if (options?.skipSeekCooldown) {
+    state.conversationEndedSeekCooldownUntil = 0;
+  } else {
+    state.conversationEndedSeekCooldownUntil = getNow() + CONVERSATION_END_SEEK_COOLDOWN_MS;
+  }
 }
 
 /**

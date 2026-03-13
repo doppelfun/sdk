@@ -14,7 +14,9 @@ import { isOwnerNearby } from "./ownerProximity.js";
 import { getBlockBounds } from "../../util/blockBounds.js";
 
 /** When idle, probability per “idle tick” to try seeking another agent (vs wander/emote). */
-const SEEK_AGENT_PROBABILITY = 0.8;
+const SEEK_AGENT_PROBABILITY = 0.2;
+/** Min/max interval (ms) between consider-seeking moments; random per agent to desync. */
+const SEEK_INTERVAL_MS = { min: 30_000, max: 90_000 };
 /** Short greetings when autonomously approaching another agent. */
 const OPENING_GREETINGS = ["Hi!", "Hey there!", "Hello!", "What's up?", "Hi there!"] as const;
 
@@ -115,9 +117,22 @@ export class AutonomousManager {
       return;
     }
 
-    // Prefer seeking another agent when not in cooldown, not already in a conversation, and we have other agents in block
-    const inCooldown = state.autonomousSeekCooldownUntil > 0 && now < state.autonomousSeekCooldownUntil;
-    if (!inCooldown && !isInConversation(state) && Math.random() < SEEK_AGENT_PROBABILITY) {
+    // Consider seeking at most every SEEK_INTERVAL_MS (random range); then roll SEEK_AGENT_PROBABILITY so agents don't sync.
+    const inCooldown =
+      (state.autonomousSeekCooldownUntil > 0 && now < state.autonomousSeekCooldownUntil) ||
+      (state.conversationEndedSeekCooldownUntil > 0 && now < state.conversationEndedSeekCooldownUntil);
+    const mayConsiderSeek = now >= (state.nextSeekConsiderAt ?? 0);
+    if (mayConsiderSeek) {
+      const intervalMs =
+        SEEK_INTERVAL_MS.min + Math.random() * (SEEK_INTERVAL_MS.max - SEEK_INTERVAL_MS.min);
+      state.nextSeekConsiderAt = now + intervalMs;
+    }
+    if (
+      mayConsiderSeek &&
+      !inCooldown &&
+      !isInConversation(state) &&
+      Math.random() < SEEK_AGENT_PROBABILITY
+    ) {
       const others = state.occupants.filter(
         (o) =>
           o.type === "agent" &&

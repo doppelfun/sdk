@@ -713,7 +713,7 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     if (typeof p.regionId === "string") {
       state.blockSlotId = p.regionId;
       clearLastError(state);
-      clearConversation(state);
+      clearConversation(state, { skipSeekCooldown: true });
       syncMainDocumentForBlock(state);
     }
   });

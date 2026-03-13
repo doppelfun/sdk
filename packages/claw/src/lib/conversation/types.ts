@@ -15,6 +15,8 @@ export type ConversationStateSlice = {
   conversationRoundCount: number;
   /** Kept in sync with conversationPeerSessionId for prompts and isInConversationWithAgentInRoom. */
   lastDmPeerSessionId: string | null;
+  /** When > 0 and now < this, autonomous manager will not seek (set when conversation ends). */
+  conversationEndedSeekCooldownUntil: number;
 };
 
 export type CheckBreakOptions = {

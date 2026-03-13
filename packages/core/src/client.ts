@@ -11,6 +11,7 @@ import type {
   AgentWsThinkingMessage,
   AgentWsJoinMessage,
   AgentWsEmoteMessage,
+  AgentWsSpeakMessage,
 } from "./agentWs.js";
 import type { ChatHistoryMessage, GetChatHistoryOptions, GetChatHistoryResult } from "./chat.js";
 
@@ -312,6 +313,16 @@ export class DoppelClient {
   sendEmote(emoteId: string): void {
     if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
     const msg: AgentWsEmoteMessage = { type: "emote", emoteId: emoteId.trim() };
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  /**
+   * Request voice (TTS) for this text. Engine runs TTS and publishes to LiveKit when someone is nearby.
+   * No-op if not connected.
+   */
+  sendSpeak(text: string): void {
+    if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
+    const msg: AgentWsSpeakMessage = { type: "speak", text: text.trim().slice(0, 500) };
     this.ws.send(JSON.stringify(msg));
   }
 

@@ -371,6 +371,7 @@ async function runTick(
     state.lastAgentChatMessage = text;
     state.lastTickSentChat = true;
     state.lastToolRun = "chat";
+    client.sendSpeak(text);
     options.onTick?.(`dm fallback chat: ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`);
   } else if (!result.hadToolCalls) {
     options.onTick?.("no tool calls");
@@ -395,6 +396,7 @@ async function runTick(
     state.lastAgentChatMessage = text;
     state.lastTickSentChat = true;
     state.lastToolRun = "chat";
+    client.sendSpeak(text);
     options.onTick?.(`error-reply fallback chat: ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`);
   }
 
@@ -589,10 +591,16 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
 
   // --- WebSocket message handlers (chat, error, joined, authenticated) ---
   client.onMessage("authenticated", async (payload: unknown) => {
-    const p = payload as { regionId?: string; sessionId?: string };
-    if (typeof p.regionId === "string") {
-      state.blockSlotId = p.regionId;
-      blockSlotId = p.regionId;
+    const p = payload as {
+      regionId?: string;
+      blockId?: string;
+      sessionId?: string;
+      voice?: { wsUrl: string; token: string };
+    };
+    const slot = typeof p.blockId === "string" ? p.blockId : p.regionId;
+    if (typeof slot === "string") {
+      state.blockSlotId = slot;
+      blockSlotId = slot;
       syncMainDocumentForBlock(state);
     }
     if (typeof p.sessionId === "string") state.mySessionId = p.sessionId;

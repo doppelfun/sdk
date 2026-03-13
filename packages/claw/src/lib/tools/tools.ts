@@ -388,6 +388,7 @@ export async function executeTool(
         state.lastTickSentChat = true;
         if (targetSessionId) state.lastDmPeerSessionId = targetSessionId;
         else state.lastDmPeerSessionId = null;
+        client.sendSpeak(text);
       }
       return { ok: true, summary: targetSessionId ? "sent DM" : "sent chat" };
     }

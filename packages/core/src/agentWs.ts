@@ -61,13 +61,20 @@ export type AgentWsThinkingMessage = {
   thinking: boolean;
 };
 
+/** Request TTS for this text. Engine runs TTS and publishes to LiveKit when someone is nearby. */
+export type AgentWsSpeakMessage = {
+  type: "speak";
+  text: string;
+};
+
 /** All outbound Agent WebSocket message types. Send as JSON after receiving `authenticated`. */
 export type AgentWsClientMessage =
   | AgentWsInputMessage
   | AgentWsChatMessage
   | AgentWsJoinMessage
   | AgentWsEmoteMessage
-  | AgentWsThinkingMessage;
+  | AgentWsThinkingMessage
+  | AgentWsSpeakMessage;
 
 // --- Inbound (server → client) ---
 

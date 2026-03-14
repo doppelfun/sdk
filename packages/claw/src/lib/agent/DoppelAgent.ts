@@ -381,7 +381,10 @@ export class DoppelAgent {
             const lastEntry = state.chat.length > 0 ? state.chat[state.chat.length - 1] : undefined;
             const targetSessionId = lastEntry?.sessionId?.trim();
             const reply = "Only the owner can ask me to build.";
-            this.client.sendChat(reply, buildChatSendOptions({ targetSessionId }) ?? undefined);
+            this.client.sendChat(
+              reply,
+              buildChatSendOptions({ targetSessionId, voiceId: this.config.voiceId }) ?? undefined
+            );
             this.store.setLlmWakePending(false);
             this.store.setDmReplyPending(false);
             clawLog("agent", "build request from non-owner — replied without LLM");

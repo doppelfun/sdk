@@ -16,6 +16,8 @@ import { createLlmProvider } from "../llm/index.js";
 import { MOVEMENT_INPUT_INTERVAL_MS, AutonomousManager } from "../movement/index.js";
 import { clawLog, clawDebug, clawVerbose } from "../log.js";
 import { runTick, ownerBuildBlocked } from "./tickRunner.js";
+import { looksLikeBuildRequest } from "../tools/shared/gate.js";
+import { buildChatSendOptions } from "../chatSendOptions.js";
 import { getNextTickDelay, createTickScheduler, type TickScheduler } from "./scheduling.js";
 import { createFastTickHandlers } from "./fastTick.js";
 import {
@@ -372,7 +374,20 @@ export class DoppelAgent {
         this.scheduler.cancelNextTick();
         options.onTick?.(`wake tick (${reason})`);
         void (async () => {
-          if (msg && !ownerBuildBlocked(this.config, this.store.getState())) {
+          const state = this.store.getState();
+          const blocked = ownerBuildBlocked(this.config, state);
+          // When a non-owner asks to build, fail fast (no LLM) and tell them only the owner can trigger builds.
+          if (msg && blocked && looksLikeBuildRequest(msg)) {
+            const lastEntry = state.chat.length > 0 ? state.chat[state.chat.length - 1] : undefined;
+            const targetSessionId = lastEntry?.sessionId?.trim();
+            const reply = "Only the owner can ask me to build.";
+            this.client.sendChat(reply, buildChatSendOptions({ targetSessionId }) ?? undefined);
+            this.store.setLlmWakePending(false);
+            this.store.setDmReplyPending(false);
+            clawLog("agent", "build request from non-owner — replied without LLM");
+            return;
+          }
+          if (msg && !blocked) {
             try {
               this.client.sendThinking(true);
               let intent;

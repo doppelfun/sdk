@@ -27,6 +27,9 @@ export type ClawStoreApi = {
   ) => void;
 };
 
+/** Max recent messages we sent to keep for repeat detection. */
+const RECENT_AGENT_CHAT_MESSAGES_MAX = 10;
+
 function createClawStore(blockSlotId: string) {
   const vanillaStore = createStore<ClawState>(() => createInitialState(blockSlotId));
   const getState = vanillaStore.getState;
@@ -154,7 +157,13 @@ function createClawStore(blockSlotId: string) {
 
     // --- Chat/DM display (last message, sent flag) ---
     setLastAgentChatMessage(text: string | null) {
-      setState({ lastAgentChatMessage: text });
+      if (text != null && text.trim()) {
+        const s = getState();
+        const next = [...(s.recentAgentChatMessages || []), text.trim()].slice(-RECENT_AGENT_CHAT_MESSAGES_MAX);
+        setState({ lastAgentChatMessage: text, recentAgentChatMessages: next });
+      } else {
+        setState({ lastAgentChatMessage: text, recentAgentChatMessages: [] });
+      }
     },
 
     setLastTickSentChat(value: boolean) {

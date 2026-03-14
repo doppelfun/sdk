@@ -42,7 +42,7 @@ export const MAX_INJECT_CATALOG_CHARS = 3200;
  */
 export function hintAlreadyReplied(lastMessage: string | null): string {
   if (lastMessage) {
-    return `Your last reply was: "${lastMessage}". Do not send the same or another chat message until there is a *new* DM or owner message.`;
+    return `Your last reply was: "${lastMessage}". Do not repeat yourself: do not send the same or nearly the same message again. Only reply when there is a *new* DM or owner message, and say something different (e.g. answer the question, add new info, or wrap up).`;
   }
-  return "You already replied in chat last tick. Do not repeat—only reply again if there is a *new* DM or owner message.";
+  return "You already replied in chat last tick. Do not repeat—only reply again if there is a *new* DM or owner message, and say something different.";
 }

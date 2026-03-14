@@ -8,6 +8,19 @@ import { createLlmProvider } from "../../llm/index.js";
 import type { Usage } from "../../llm/usage.js";
 import { checkBalance, reportUsage as hubReportUsage } from "../../hub/index.js";
 
+/**
+ * Cheap heuristic: does the message look like a build request?
+ * Used to fail fast (no LLM) when a non-owner asks to build and we can reply with owner-gate message.
+ */
+export function looksLikeBuildRequest(message: string): boolean {
+  const m = message.trim();
+  if (m.length < 4) return false;
+  return (
+    /^\s*(build|create|make|construct|generate)\b/i.test(m) ||
+    /\b(build|create|make|construct|generate)\s+(a|an|the)?\s*(pyramid|city|house|tower|building|structure|something)\b/i.test(m)
+  );
+}
+
 export function checkOwnerGate(config: ClawConfig, state: ClawState): string | null {
   if (!config.hosted) return null;
   if (!config.ownerUserId) return null;

@@ -52,6 +52,8 @@ export type ClawState = {
   lastTickSentChat: boolean;
   /** Last chat message we sent; used to show in prompt and avoid repeating. */
   lastAgentChatMessage: string | null;
+  /** Recent messages we sent (bounded); used to block repeating any of them. */
+  recentAgentChatMessages: string[];
   /** UserId of whoever last spoke in a DM to you or as owner; used for owner-gating builds. */
   lastTriggerUserId: string | null;
   /** Agent's block-local position 0–100 when in same block (set from get_occupants when self has position). */
@@ -212,6 +214,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     mainDocumentMml: "",
     lastTickSentChat: false,
     lastAgentChatMessage: null,
+    recentAgentChatMessages: [],
     lastTriggerUserId: null,
     myPosition: null,
     lastBuildTarget: null,

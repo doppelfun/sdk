@@ -23,6 +23,31 @@ export async function handleChat(ctx: ToolContext) {
     };
   }
 
+  // Do not repeat any message we've already sent (use recent history, not just last).
+  if (text) {
+    const norm = (s: string) => s.toLowerCase().trim();
+    const normalized = norm(text);
+    const recentOurs = state.recentAgentChatMessages ?? [];
+    if (recentOurs.some((prev) => norm(prev) === normalized)) {
+      return {
+        ok: false,
+        summary: "repeat blocked",
+        message:
+          "You already said that in this conversation. Send something different or skip chat (e.g. use a different phrase, answer the question, or say goodbye).",
+      };
+    }
+    // Do not repeat what someone else just said (avoids multiple agents saying the same thing).
+    const recentTheirs = state.chat ?? [];
+    if (recentTheirs.some((e) => norm(e.message) === normalized)) {
+      return {
+        ok: false,
+        summary: "repeat blocked",
+        message:
+          "Someone else already said that. Say something different so you don't echo others.",
+      };
+    }
+  }
+
   // Agent-to-agent: conversation FSM so conversations aren’t spammed and voice can finish.
   if (text && isDm && targetSessionId && !canSendDmTo(store, targetSessionId)) {
     store.setState({ pendingDmReply: { text, targetSessionId } });

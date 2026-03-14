@@ -10,7 +10,7 @@
 
 export const CLAW_VERSION = "0.1.0";
 
-export { runAgent, Agent, type AgentRunOptions, type ToolCallResult } from "./lib/agent/index.js";
+export { runAgent, DoppelAgent, type AgentRunOptions, type ToolCallResult } from "./lib/agent/index.js";
 export { AgentRunner } from "./lib/agent/AgentRunner.js";
 export { loadConfig, type ClawConfig, type LlmProviderId } from "./lib/config/index.js";
 export { joinBlock, createBlock, HubClient } from "./lib/hub/index.js";

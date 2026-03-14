@@ -1,17 +1,17 @@
 /**
- * Wrapper that holds an Agent instance so you can run() and later stop().
+ * Wrapper that holds a DoppelAgent instance so you can run() and later stop().
  * For one-off run without stop, use runAgent() from agent.js.
  */
 
-import { Agent } from "./Agent.js";
+import { DoppelAgent } from "./DoppelAgent.js";
 import type { AgentRunOptions } from "./index.js";
 
 export class AgentRunner {
-  private agent: Agent | null = null;
+  private agent: DoppelAgent | null = null;
 
   /** Start the agent; same behavior as runAgent(). Resolves when connected. */
   async run(options: AgentRunOptions = {}): Promise<void> {
-    this.agent = new Agent();
+    this.agent = new DoppelAgent();
     await this.agent.run(options);
   }
 

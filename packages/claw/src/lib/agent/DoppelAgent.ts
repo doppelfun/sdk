@@ -34,7 +34,7 @@ const OCCUPANTS_REFRESH_MS = 8000;
 /**
  * One agent instance: run() starts the loop and connect; stop() clears timers and disconnects.
  */
-export class Agent {
+export class DoppelAgent {
   private config!: ClawConfig;
   private client!: DoppelClient;
   private store!: ClawStore;

@@ -69,7 +69,25 @@ function cityHandler(raw: Record<string, unknown>): string {
     pyramidCol: typeof c.pyramidCol === "number" ? c.pyramidCol : undefined,
     noPyramid,
   });
-  return generateCityMml(cfg, buildingsFromParams ? { buildings: buildingsFromParams } : undefined);
+  const vehicleIds =
+    Array.isArray(c.vehicleCatalogIds) && c.vehicleCatalogIds.every((id): id is string => typeof id === "string")
+      ? c.vehicleCatalogIds
+      : Array.isArray(c.vehicle_catalog_ids) && c.vehicle_catalog_ids.every((id): id is string => typeof id === "string")
+        ? c.vehicle_catalog_ids
+        : undefined;
+  const trafficLightIds =
+    Array.isArray(c.trafficLightCatalogIds) &&
+    c.trafficLightCatalogIds.every((id): id is string => typeof id === "string")
+      ? c.trafficLightCatalogIds
+      : Array.isArray(c.traffic_light_catalog_ids) &&
+          c.traffic_light_catalog_ids.every((id): id is string => typeof id === "string")
+        ? c.traffic_light_catalog_ids
+        : undefined;
+  const options: Parameters<typeof generateCityMml>[1] = {};
+  if (buildingsFromParams?.length) options.buildings = buildingsFromParams;
+  if (vehicleIds?.length) options.vehicleCatalogIds = vehicleIds;
+  if (trafficLightIds?.length) options.trafficLightCatalogIds = trafficLightIds;
+  return generateCityMml(cfg, Object.keys(options).length > 0 ? options : undefined);
 }
 
 function grassHandler(raw: Record<string, unknown>): string {

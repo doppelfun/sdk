@@ -37,6 +37,11 @@ const FALLBACK = { width: 5, depth: 3, height: 5 } as const;
 /** Category substrings that mark an entry as a building (case-insensitive). */
 const DEFAULT_BUILDING_CATEGORY_HINTS = ["building", "buildings"];
 
+/** Category name for vehicles (must match hub catalog, e.g. seed-catalog "Vehicles"). */
+export const CATEGORY_VEHICLES = "Vehicles";
+/** Category name for buildings (must match hub catalog, e.g. seed-catalog "Buildings"). */
+export const CATEGORY_BUILDINGS = "Buildings";
+
 // --- Helpers -----------------------------------------------------------------
 
 /** Build a SeedBuildingEntry from id + partial fields; uses FALLBACK for missing dimensions. */
@@ -117,6 +122,51 @@ export function catalogEntriesToSeedBuildings(
 }
 
 /**
+ * Return catalog IDs for entries whose category matches (case-insensitive).
+ * Use for Vehicles, Buildings, etc. when generating city by category.
+ */
+export function getCatalogIdsByCategory(entries: CatalogLike[], category: string): string[] {
+  const want = category.trim().toLowerCase();
+  if (!want) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const e of entries) {
+    const cat = (e.category ?? "").toLowerCase();
+    const id = (e.id ?? "").trim();
+    if (!id || !cat.includes(want) || seen.has(id)) continue;
+    if (e.url && /\.glb(\?|$)/i.test(e.url)) {
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+/**
+ * Return catalog IDs for traffic-light-style props (e.g. category Props and id/name contains "traffic").
+ * Use when no dedicated StreetFurniture category exists in the hub.
+ */
+export function getTrafficLightCatalogIds(entries: CatalogLike[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const traffic = "traffic";
+  for (const e of entries) {
+    const id = (e.id ?? "").trim();
+    const name = (e.name ?? "").toLowerCase();
+    const cat = (e.category ?? "").toLowerCase();
+    if (!id || seen.has(id)) continue;
+    if (!(e.url && /\.glb(\?|$)/i.test(e.url))) continue;
+    const looksLikeTrafficLight =
+      (cat.includes("prop") && (id.toLowerCase().includes(traffic) || name.includes(traffic)));
+    if (looksLikeTrafficLight) {
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+/**
  * Fetch block catalog from hub and return building pool for city layout.
  * Dimensions come from API when present; otherwise FALLBACK (5×3×5 m).
  */
@@ -128,6 +178,30 @@ export async function fetchBuildingsFromCatalog(
   const { getBlockCatalog } = await import("@doppelfun/sdk");
   const entries = await getBlockCatalog(hubUrl, blockId, apiKey);
   return catalogEntriesToSeedBuildings(entries);
+}
+
+/** Result of fetching catalog for city gen: buildings by category Buildings, vehicle and traffic-light IDs by category. */
+export type CityCatalogFromHub = {
+  buildings: SeedBuildingEntry[];
+  vehicleCatalogIds: string[];
+  trafficLightCatalogIds: string[];
+};
+
+/**
+ * Fetch block catalog from hub and return building pool plus vehicle and traffic-light IDs by category.
+ * Use for generateCityMml so no catalog IDs are hardcoded (target by category: Vehicles, Buildings).
+ */
+export async function fetchCityCatalogFromHub(
+  hubUrl: string,
+  blockId: string,
+  apiKey?: string
+): Promise<CityCatalogFromHub> {
+  const { getBlockCatalog } = await import("@doppelfun/sdk");
+  const entries = await getBlockCatalog(hubUrl, blockId, apiKey);
+  const buildings = catalogEntriesToSeedBuildings(entries);
+  const vehicleCatalogIds = getCatalogIdsByCategory(entries, CATEGORY_VEHICLES);
+  const trafficLightCatalogIds = getTrafficLightCatalogIds(entries);
+  return { buildings, vehicleCatalogIds, trafficLightCatalogIds };
 }
 
 /**

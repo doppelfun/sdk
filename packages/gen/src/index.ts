@@ -20,8 +20,14 @@ export {
 export {
   catalogEntriesToSeedBuildings,
   fetchBuildingsFromCatalog,
+  fetchCityCatalogFromHub,
+  getCatalogIdsByCategory,
+  getTrafficLightCatalogIds,
+  CATEGORY_VEHICLES,
+  CATEGORY_BUILDINGS,
   normalizeBuildingsParam,
   type CatalogLike,
+  type CityCatalogFromHub,
 } from "./city/layout/catalog-bridge.js";
 export {
   type CityGenConfig,

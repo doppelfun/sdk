@@ -4,7 +4,7 @@
  */
 import {
   BLOCK_SIZE_M,
-  fetchBuildingsFromCatalog,
+  fetchCityCatalogFromHub,
   generateCityLayout,
   type BuildingPlacement,
   type StreetSegment,
@@ -23,6 +23,9 @@ function pick<T>(arr: readonly T[], rng: () => number): T {
 
 // --- Building attachments (windows, antennas) --------------------------------
 
+/** Building catalog IDs that receive window cubes (only these get emitWindows when no antenna). */
+const BUILDING_CATALOG_IDS_WITH_WINDOWS = new Set<string>(["Building2"]);
+
 const ANTENNA_HEIGHT_THRESHOLD = 8;
 const ANTENNA_CHANCE = 0.4;
 const ANTENNA_COLORS = [
@@ -32,6 +35,7 @@ const ANTENNA_COLORS = [
 const WINDOW_COLORS = ["#ff0040", "#00ff88", "#00aaff", "#ff6600", "#cc00ff"];
 const WINS_PER_FACE_MIN = 2;
 const WINS_PER_FACE_MAX = 4;
+
 const WIN_W = 0.35;
 const WIN_H = 0.45;
 const WIN_INTENSITY = 3.0;
@@ -253,27 +257,46 @@ function emitPyramid(
   emitPyramidParticles(parts, cx, cz, baseWidth, grassColor);
 }
 
-function emitAntenna(parts: string[], idx: number, b: BuildingPlacement, bx: number, bz: number, rng: () => number): void {
+/** Antenna on roof; buildingScale matches building m-model sx,sy,sz so position aligns. */
+function emitAntenna(
+  parts: string[],
+  idx: number,
+  b: BuildingPlacement,
+  bx: number,
+  bz: number,
+  rng: () => number,
+  buildingScale: number,
+): void {
   const poleH = 0.8 + rng() * 1.2;
   const poleW = 0.08 + rng() * 0.06;
   const tipSize = 0.15 + rng() * 0.15;
   const color = pick(ANTENNA_COLORS, rng);
   const intensity = 3 + rng() * 7;
-  const localX = (rng() - 0.5) * b.width * 0.4;
-  const localZ = (rng() - 0.5) * b.depth * 0.4;
+  const roofY = b.height * buildingScale;
+  const localX = (rng() - 0.5) * b.width * 0.4 * buildingScale;
+  const localZ = (rng() - 0.5) * b.depth * 0.4 * buildingScale;
   const cosR = Math.cos(b.rotation);
   const sinR = Math.sin(b.rotation);
   const wx = bx + localX * cosR - localZ * sinR;
   const wz = bz + localX * sinR + localZ * cosR;
-  const poleY = b.height + poleH / 2;
-  const tipY = b.height + poleH + tipSize / 2;
+  const poleY = roofY + poleH / 2;
+  const tipY = roofY + poleH + tipSize / 2;
   parts.push(
     `  <m-cube id="ant-pole-${idx}" x="${r2(wx)}" y="${r2(poleY)}" z="${r2(wz)}" width="${r2(poleW)}" height="${r2(poleH)}" depth="${r2(poleW)}" color="#666666" />`,
     `  <m-cube id="ant-tip-${idx}" x="${r2(wx)}" y="${r2(tipY)}" z="${r2(wz)}" width="${r2(tipSize)}" height="${r2(tipSize)}" depth="${r2(tipSize)}" color="${color}" emission="${color}" emission-intensity="${r2(intensity)}" />`,
   );
 }
 
-function emitWindows(parts: string[], idx: number, b: BuildingPlacement, bx: number, bz: number, rng: () => number): void {
+/** Scale windows to match scaled building (sx,sy,sz). */
+function emitWindows(
+  parts: string[],
+  idx: number,
+  b: BuildingPlacement,
+  bx: number,
+  bz: number,
+  rng: () => number,
+  buildingScale: number,
+): void {
   const θ = b.rotation;
   const cosR = Math.cos(θ);
   const sinR = Math.sin(θ);
@@ -281,13 +304,16 @@ function emitWindows(parts: string[], idx: number, b: BuildingPlacement, bx: num
   const geoCZ = bz;
   const wColor = pick(WINDOW_COLORS, rng);
   let winIdx = 0;
-  const hw = b.width / 2;
-  const hd = b.depth / 2;
+  const hw = (b.width / 2) * buildingScale;
+  const hd = (b.depth / 2) * buildingScale;
+  const spanW = b.width * buildingScale;
+  const spanD = b.depth * buildingScale;
+  const faceHeight = b.height * buildingScale;
   const faces = [
-    { nx: 0, nz: 1, dist: hd, span: b.width, winRy: θ },
-    { nx: 0, nz: -1, dist: hd, span: b.width, winRy: θ + Math.PI },
-    { nx: -1, nz: 0, dist: hw, span: b.depth, winRy: θ - Math.PI / 2 },
-    { nx: 1, nz: 0, dist: hw, span: b.depth, winRy: θ + Math.PI / 2 },
+    { nx: 0, nz: 1, dist: hd, span: spanW, winRy: θ },
+    { nx: 0, nz: -1, dist: hd, span: spanW, winRy: θ + Math.PI },
+    { nx: -1, nz: 0, dist: hw, span: spanD, winRy: θ - Math.PI / 2 },
+    { nx: 1, nz: 0, dist: hw, span: spanD, winRy: θ + Math.PI / 2 },
   ];
   for (const face of faces) {
     const perFace = WINS_PER_FACE_MIN + Math.floor(rng() * (WINS_PER_FACE_MAX - WINS_PER_FACE_MIN + 1));
@@ -295,7 +321,7 @@ function emitWindows(parts: string[], idx: number, b: BuildingPlacement, bx: num
     const PAD = 0.05;
     let attempts = 0;
     for (let w = 0; w < perFace && attempts < perFace * 4; ) {
-      const wy = b.height * (0.1 + rng() * 0.8);
+      const wy = faceHeight * (0.1 + rng() * 0.8);
       const lateral = (rng() - 0.5) * 0.7 * face.span;
       attempts++;
       const overlaps = placed.some((p) => Math.abs(p.lat - lateral) < WIN_W + PAD && Math.abs(p.y - wy) < WIN_H + PAD);
@@ -317,6 +343,15 @@ function emitWindows(parts: string[], idx: number, b: BuildingPlacement, bx: num
 
 // --- Street furniture (lights, vehicles, traffic lights) ----------------------
 
+/** Center line: smaller so intersections look cleaner. Color from pyramid GLOW_COLORS (passed in). */
+const CENTER_LINE_SEG_LEN = 0.8;
+const CENTER_LINE_GAP = 0.6;
+const CENTER_LINE_WIDTH = 0.04;
+const CENTER_LINE_THICKNESS = 0.018;
+const CENTER_LINE_EMISSION_INTENSITY = 1.0;
+/** Road center line color (yellow). */
+const CENTER_LINE_COLOR = "#ffdd00";
+
 const LIGHT_SPACING = 14;
 const LIGHT_POLE_H = 3.2;
 const LIGHT_POLE_W = 0.12;
@@ -325,17 +360,65 @@ const LIGHT_COLOR = "#ffeeaa";
 const LIGHT_INTENSITY = 4;
 const LIGHT_SETBACK = 0.4;
 
-/** Catalog vehicle models (moving traffic). */
-const VEHICLE_CATALOG_IDS = ["SportsCar", "PoliceCar", "Motorcycle"] as const;
-/** Minimum segment length to spawn a moving vehicle (m). */
-const VEHICLE_MIN_LEN = 8;
+/**
+ * Emit dashed glowing center line along the middle of a street segment.
+ * Color from pyramid palette (GLOW_COLORS); small so intersections stay clean. No collision.
+ */
+function emitCenterLine(
+  parts: string[],
+  streetIdx: number,
+  s: StreetSegment,
+  len: number,
+  _streetWidth: number,
+  roadY: number,
+  roadThickness: number,
+  offsetX: number,
+  offsetZ: number,
+  lineColor: string,
+): void {
+  const segLen = CENTER_LINE_SEG_LEN;
+  const gap = CENTER_LINE_GAP;
+  const cycle = segLen + gap;
+  const lineY = roadY + roadThickness / 2 + CENTER_LINE_THICKNESS / 2;
+  let segIdx = 0;
+  for (let t = 0; t < len; t += cycle) {
+    const segEnd = Math.min(t + segLen, len);
+    if (segEnd <= t) break;
+    const tMid = (t + segEnd) / 2;
+    const segLength = segEnd - t;
+    if (s.alongX) {
+      const xWorld = s.startX + (s.endX - s.startX) * (tMid / len) + offsetX;
+      const zWorld = s.startZ + offsetZ;
+      const w = segLength;
+      const d = CENTER_LINE_WIDTH;
+      parts.push(
+        `  <m-cube id="center-${streetIdx}-${segIdx}" x="${r2(xWorld)}" y="${r2(lineY)}" z="${r2(zWorld)}" width="${r2(w)}" height="${r2(CENTER_LINE_THICKNESS)}" depth="${r2(d)}" color="${lineColor}" emission="${lineColor}" emission-intensity="${CENTER_LINE_EMISSION_INTENSITY}" collide="false" />`,
+      );
+    } else {
+      const xWorld = s.startX + offsetX;
+      const zWorld = s.startZ + (s.endZ - s.startZ) * (tMid / len) + offsetZ;
+      const w = CENTER_LINE_WIDTH;
+      const d = segLength;
+      parts.push(
+        `  <m-cube id="center-${streetIdx}-${segIdx}" x="${r2(xWorld)}" y="${r2(lineY)}" z="${r2(zWorld)}" width="${r2(w)}" height="${r2(CENTER_LINE_THICKNESS)}" depth="${r2(d)}" color="${lineColor}" emission="${lineColor}" emission-intensity="${CENTER_LINE_EMISSION_INTENSITY}" collide="false" />`,
+      );
+    }
+    segIdx++;
+  }
+}
+
+/** Fallback vehicle catalog IDs when catalog has no Vehicles category (e.g. block not seeded). Enables vehicles to show when block has these models. */
+const DEFAULT_VEHICLE_CATALOG_IDS = ["SportsCar", "PoliceCar", "Motorcycle"];
+/** Minimum segment length to spawn a moving vehicle (m). Lower so more streets get vehicles. */
+const VEHICLE_MIN_LEN = 4;
 /** Ms per metre of travel (slow city traffic). */
 const VEHICLE_MS_PER_M = 320;
-const VEHICLE_END_PAD = 3;
+const VEHICLE_END_PAD = 2;
 const VEHICLE_LANE_OFFSET = 0.55;
+/** Number of vehicles per segment (different lanes, staggered start). */
+const VEHICLES_PER_SEGMENT = 2;
 /** Traffic lights along segment centerline (static m-model). */
 const TRAFFIC_LIGHT_SPACING = 28;
-const TRAFFIC_LIGHT_CATALOG = "TrafficLight";
 
 function emitStreetLights(
   parts: string[],
@@ -385,8 +468,8 @@ function emitStreetLights(
 }
 
 /**
- * One vehicle per long segment: m-model catalog + m-attr-anim ping-pong along road axis.
- * Models sit on y=0; ry aligns roughly with travel direction (catalog forward assumed +Z).
+ * Emit animated vehicles along the segment (m-model + m-attr-anim). Picks from catalog IDs by category Vehicles.
+ * No-op when vehicleCatalogIds is empty.
  */
 function emitVehicle(
   parts: string[],
@@ -396,47 +479,50 @@ function emitVehicle(
   offsetX: number,
   offsetZ: number,
   rng: () => number,
+  vehicleCatalogIds: string[],
 ): void {
+  if (vehicleCatalogIds.length === 0) return;
   const usable = len - 2 * VEHICLE_END_PAD;
   if (usable < VEHICLE_MIN_LEN) return;
   const duration = Math.max(4000, Math.round(usable * VEHICLE_MS_PER_M));
-  const lane = rng() > 0.5 ? VEHICLE_LANE_OFFSET : -VEHICLE_LANE_OFFSET;
-  const startTime = Math.round(rng() * duration);
-  const catalogId = pick(VEHICLE_CATALOG_IDS, rng);
-  // Face along +X / -X or +Z / -Z (deg); ping-pong only moves position—model may reverse visually half cycle.
-  const ryAlongX = rng() > 0.5 ? 90 : -90;
-  const ryAlongZ = rng() > 0.5 ? 0 : 180;
 
-  if (s.alongX) {
-    const zWorld = s.startZ + offsetZ + lane;
-    const x0 = Math.min(s.startX, s.endX) + offsetX + VEHICLE_END_PAD;
-    const x1 = Math.max(s.startX, s.endX) + offsetX - VEHICLE_END_PAD;
-    const id = `veh-${streetIdx}`;
-    parts.push(
-      `  <m-model id="${id}" x="${r2(x0)}" y="0" z="${r2(zWorld)}" ry="${ryAlongX}" catalogId="${catalogId}" collide="false">`
-    );
-    parts.push(
-      `    <m-attr-anim attr="x" start="${r2(x0)}" end="${r2(x1)}" duration="${duration}" start-time="${startTime}" loop="true" ping-pong="true" easing="linear" />`
-    );
-    parts.push(`  </m-model>`);
-  } else {
-    const xWorld = s.startX + offsetX + lane;
-    const z0 = Math.min(s.startZ, s.endZ) + offsetZ + VEHICLE_END_PAD;
-    const z1 = Math.max(s.startZ, s.endZ) + offsetZ - VEHICLE_END_PAD;
-    const id = `veh-${streetIdx}`;
-    parts.push(
-      `  <m-model id="${id}" x="${r2(xWorld)}" y="0" z="${r2(z0)}" ry="${ryAlongZ}" catalogId="${catalogId}" collide="false">`
-    );
-    parts.push(
-      `    <m-attr-anim attr="z" start="${r2(z0)}" end="${r2(z1)}" duration="${duration}" start-time="${startTime}" loop="true" ping-pong="true" easing="linear" />`
-    );
-    parts.push(`  </m-model>`);
+  for (let v = 0; v < VEHICLES_PER_SEGMENT; v++) {
+    const lane = v === 0 ? VEHICLE_LANE_OFFSET : -VEHICLE_LANE_OFFSET;
+    const startTime = Math.round(rng() * duration * 0.8);
+    const catalogId = pick(vehicleCatalogIds, rng);
+    const id = `veh-${streetIdx}-${v}`;
+    const ryAlongX = rng() > 0.5 ? 90 : -90;
+    const ryAlongZ = rng() > 0.5 ? 0 : 180;
+
+    if (s.alongX) {
+      const zWorld = s.startZ + offsetZ + lane;
+      const x0 = Math.min(s.startX, s.endX) + offsetX + VEHICLE_END_PAD;
+      const x1 = Math.max(s.startX, s.endX) + offsetX - VEHICLE_END_PAD;
+      parts.push(
+        `  <m-model id="${id}" x="${r2(x0)}" y="0" z="${r2(zWorld)}" ry="${ryAlongX}" catalogId="${catalogId}" collide="false">`
+      );
+      parts.push(
+        `    <m-attr-anim attr="x" start="${r2(x0)}" end="${r2(x1)}" duration="${duration}" start-time="${startTime}" loop="true" ping-pong="true" easing="linear" />`
+      );
+      parts.push(`  </m-model>`);
+    } else {
+      const xWorld = s.startX + offsetX + lane;
+      const z0 = Math.min(s.startZ, s.endZ) + offsetZ + VEHICLE_END_PAD;
+      const z1 = Math.max(s.startZ, s.endZ) + offsetZ - VEHICLE_END_PAD;
+      parts.push(
+        `  <m-model id="${id}" x="${r2(xWorld)}" y="0" z="${r2(z0)}" ry="${ryAlongZ}" catalogId="${catalogId}" collide="false">`
+      );
+      parts.push(
+        `    <m-attr-anim attr="z" start="${r2(z0)}" end="${r2(z1)}" duration="${duration}" start-time="${startTime}" loop="true" ping-pong="true" easing="linear" />`
+      );
+      parts.push(`  </m-model>`);
+    }
   }
 }
 
 /**
- * TrafficLight models at road edge (same setback as street lamps), not in the travel lane.
- * Alternates north/south or west/east side along the segment so they read as roadside signals.
+ * Traffic-light models at road edge (same setback as street lamps). Picks from catalog IDs (e.g. Props with "traffic").
+ * No-op when trafficLightCatalogIds is empty.
  */
 function emitTrafficLights(
   parts: string[],
@@ -446,26 +532,30 @@ function emitTrafficLights(
   streetWidth: number,
   offsetX: number,
   offsetZ: number,
+  trafficLightCatalogIds: string[],
+  rng: () => number,
 ): void {
+  if (trafficLightCatalogIds.length === 0) return;
   if (len < TRAFFIC_LIGHT_SPACING) return;
   const halfW = streetWidth / 2 + LIGHT_SETBACK;
   let idx = 0;
   for (let t = TRAFFIC_LIGHT_SPACING; t < len; t += TRAFFIC_LIGHT_SPACING) {
     const u = t / len;
     const side = idx % 2 === 0 ? 1 : -1;
+    const catalogId = pick(trafficLightCatalogIds, rng);
     if (s.alongX) {
       const xWorld = s.startX + (s.endX - s.startX) * u + offsetX;
       const zBase = s.startZ + offsetZ;
       const zWorld = zBase + side * halfW;
       parts.push(
-        `  <m-model id="tl-${streetIdx}-${idx}" x="${r2(xWorld)}" y="0" z="${r2(zWorld)}" ry="${side > 0 ? 0 : 180}" catalogId="${TRAFFIC_LIGHT_CATALOG}" collide="false" />`
+        `  <m-model id="tl-${streetIdx}-${idx}" x="${r2(xWorld)}" y="0" z="${r2(zWorld)}" ry="${side > 0 ? 0 : 180}" catalogId="${catalogId}" collide="false" />`
       );
     } else {
       const zWorld = s.startZ + (s.endZ - s.startZ) * u + offsetZ;
       const xBase = s.startX + offsetX;
       const xWorld = xBase + side * halfW;
       parts.push(
-        `  <m-model id="tl-${streetIdx}-${idx}" x="${r2(xWorld)}" y="0" z="${r2(zWorld)}" ry="${side > 0 ? 90 : -90}" catalogId="${TRAFFIC_LIGHT_CATALOG}" collide="false" />`
+        `  <m-model id="tl-${streetIdx}-${idx}" x="${r2(xWorld)}" y="0" z="${r2(zWorld)}" ry="${side > 0 ? 90 : -90}" catalogId="${catalogId}" collide="false" />`
       );
     }
     idx++;
@@ -481,12 +571,16 @@ function cityToMml(
   offsetZ: number,
   seed: number,
   pyramidCell: CellBounds | null,
+  vehicleCatalogIds: string[],
+  trafficLightCatalogIds: string[],
 ): string {
   const parts: string[] = [];
   const rng = mulberry32(seed ^ 0xbeef);
   const roadThickness = 0.1;
-  /** Street slab center Y (was lowered to roadThickness/2 for y=0 ground; restored for visual alignment). */
-  const roadY = 0.005;
+  /** Street slab center Y — slightly below floor so road is recessed; no collision. */
+  const roadY = -0.02;
+  /** Center line color: yellow for road lines. */
+  const centerLineColor = CENTER_LINE_COLOR;
 
   for (let i = 0; i < streets.length; i++) {
     const s = streets[i]!;
@@ -496,26 +590,30 @@ function cityToMml(
     const w = s.alongX ? len : streetWidth;
     const d = s.alongX ? streetWidth : len;
     parts.push(
-      `  <m-cube id="street-${i}" x="${r2(cx)}" y="${r2(roadY)}" z="${r2(cz)}" width="${r2(w)}" height="${r2(roadThickness)}" depth="${r2(d)}" color="#333333" />`,
+      `  <m-cube id="street-${i}" x="${r2(cx)}" y="${r2(roadY)}" z="${r2(cz)}" width="${r2(w)}" height="${r2(roadThickness)}" depth="${r2(d)}" color="#333333" collide="false" />`,
     );
+    emitCenterLine(parts, i, s, len, streetWidth, roadY, roadThickness, offsetX, offsetZ, centerLineColor);
     emitStreetLights(parts, i, s, len, streetWidth, roadY, roadThickness, offsetX, offsetZ);
-    emitTrafficLights(parts, i, s, len, streetWidth, offsetX, offsetZ);
-    emitVehicle(parts, i, s, len, offsetX, offsetZ, rng);
+    emitTrafficLights(parts, i, s, len, streetWidth, offsetX, offsetZ, trafficLightCatalogIds, rng);
+    emitVehicle(parts, i, s, len, offsetX, offsetZ, rng, vehicleCatalogIds);
   }
 
+  /** Scale applied to all building m-models (sx, sy, sz). 1.2 = 20% larger. */
+  const BUILDING_SCALE = 1.2;
   for (let i = 0; i < buildings.length; i++) {
     const b = buildings[i]!;
     if (pyramidCell && buildingInCell(b, pyramidCell)) continue;
     const bx = b.x + offsetX;
     const bz = b.z + offsetZ;
-    // Do not set width/height/depth on m-model — ModelManager uses them as instance scale and would distort the GLB.
-    // Physics cuboids for seed buildings use catalogId → dimensions in worldStateCache.entityToCollisionProp.
+    // sx/sy/sz scale the model and collision; physics uses catalogId + dimensions from engine.
     parts.push(
-      `  <m-model id="bldg-${i}" x="${r2(bx)}" y="0" z="${r2(bz)}" ry="${deg(b.rotation)}" catalogId="${b.catalogId}" collide="true" />`,
+      `  <m-model id="bldg-${i}" x="${r2(bx)}" y="0" z="${r2(bz)}" ry="${deg(b.rotation)}" sx="${BUILDING_SCALE}" sy="${BUILDING_SCALE}" sz="${BUILDING_SCALE}" catalogId="${b.catalogId}" collide="true" />`,
     );
     const hasAntenna = b.height >= ANTENNA_HEIGHT_THRESHOLD && rng() < ANTENNA_CHANCE;
-    if (hasAntenna) emitAntenna(parts, i, b, bx, bz, rng);
-    if (!hasAntenna && b.catalogId === "Building2") emitWindows(parts, i, b, bx, bz, rng);
+    if (hasAntenna) emitAntenna(parts, i, b, bx, bz, rng, BUILDING_SCALE);
+    if (!hasAntenna && BUILDING_CATALOG_IDS_WITH_WINDOWS.has(b.catalogId)) {
+      emitWindows(parts, i, b, bx, bz, rng, BUILDING_SCALE);
+    }
   }
 
   if (pyramidCell) emitPyramid(parts, pyramidCell, offsetX, offsetZ, seed);
@@ -526,10 +624,20 @@ function cityToMml(
 
 export type GenerateCityMmlOptions = {
   /**
-   * Building pool for layout packing — from hub catalog or params.
+   * Building pool for layout packing — from hub catalog by category Buildings.
    * If omitted or empty, layout has no buildings (streets and pyramid only).
    */
   buildings?: SeedBuildingEntry[];
+  /**
+   * Catalog IDs for moving vehicles (from hub catalog by category Vehicles).
+   * If omitted or empty, no vehicles are emitted.
+   */
+  vehicleCatalogIds?: string[];
+  /**
+   * Catalog IDs for traffic lights (e.g. Props with "traffic" in id/name).
+   * If omitted or empty, no traffic lights are emitted.
+   */
+  trafficLightCatalogIds?: string[];
 };
 
 /** Pure MML generator; no I/O. Building pool from options.buildings; empty if omitted. */
@@ -559,13 +667,25 @@ export function generateCityMml(
 
   const offsetX = BLOCK_SIZE_M / 2;
   const offsetZ = BLOCK_SIZE_M / 2;
-  return cityToMml(layout.buildings, layout.streets, c.streetWidth, offsetX, offsetZ, c.seed, pyramidCell);
+  const vehicleCatalogIds =
+    options?.vehicleCatalogIds?.length ? options.vehicleCatalogIds : DEFAULT_VEHICLE_CATALOG_IDS;
+  const trafficLightCatalogIds = options?.trafficLightCatalogIds ?? [];
+  return cityToMml(
+    layout.buildings,
+    layout.streets,
+    c.streetWidth,
+    offsetX,
+    offsetZ,
+    c.seed,
+    pyramidCell,
+    vehicleCatalogIds,
+    trafficLightCatalogIds,
+  );
 }
 
 /**
- * Fetch building pool from hub catalog, then generate city MML.
- * Use when hubUrl and blockId are available so layout uses API dimensions and URLs.
- * If fetch fails or returns no buildings, generates city with no buildings (streets + pyramid only).
+ * Fetch catalog from hub by category (Buildings, Vehicles, traffic-light Props), then generate city MML.
+ * No catalog IDs are hardcoded; vehicles and traffic lights use category-driven IDs.
  */
 export async function generateCityMmlFromCatalog(
   hubUrl: string,
@@ -573,6 +693,14 @@ export async function generateCityMmlFromCatalog(
   config: Partial<CityGenConfig> = {},
   apiKey?: string,
 ): Promise<string> {
-  const buildings = await fetchBuildingsFromCatalog(hubUrl, blockId, apiKey);
-  return generateCityMml(config, buildings.length > 0 ? { buildings } : undefined);
+  const { buildings, vehicleCatalogIds, trafficLightCatalogIds } = await fetchCityCatalogFromHub(
+    hubUrl,
+    blockId,
+    apiKey,
+  );
+  return generateCityMml(config, {
+    buildings: buildings.length > 0 ? buildings : undefined,
+    vehicleCatalogIds: vehicleCatalogIds.length > 0 ? vehicleCatalogIds : undefined,
+    trafficLightCatalogIds: trafficLightCatalogIds.length > 0 ? trafficLightCatalogIds : undefined,
+  });
 }

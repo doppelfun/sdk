@@ -1,4 +1,10 @@
-import { runProceduralMml, catalogEntriesToSeedBuildings } from "@doppelfun/gen";
+import {
+  runProceduralMml,
+  catalogEntriesToSeedBuildings,
+  getCatalogIdsByCategory,
+  getTrafficLightCatalogIds,
+  CATEGORY_VEHICLES,
+} from "@doppelfun/gen";
 import type { ToolContext } from "../types.js";
 import { clawLog } from "../../log.js";
 import { loadCatalogEntries } from "../shared/catalog.js";
@@ -53,11 +59,13 @@ export async function handleGenerateProcedural(ctx: ToolContext) {
     try {
       const catalog = await loadCatalogEntries(config);
       const buildings = catalogEntriesToSeedBuildings(catalog);
+      const vehicleCatalogIds = getCatalogIdsByCategory(catalog, CATEGORY_VEHICLES);
+      const trafficLightCatalogIds = getTrafficLightCatalogIds(catalog);
+      const params =
+        raw.params && typeof raw.params === "object" && !Array.isArray(raw.params)
+          ? ({ ...(raw.params as Record<string, unknown>) } as Record<string, unknown>)
+          : {};
       if (buildings.length > 0) {
-        const params =
-          raw.params && typeof raw.params === "object" && !Array.isArray(raw.params)
-            ? ({ ...(raw.params as Record<string, unknown>) } as Record<string, unknown>)
-            : {};
         params.buildings = buildings.map((b) => ({
           id: b.id,
           name: b.name,
@@ -66,8 +74,10 @@ export async function handleGenerateProcedural(ctx: ToolContext) {
           depth: b.depth,
           height: b.height,
         }));
-        raw.params = params;
       }
+      if (vehicleCatalogIds.length > 0) params.vehicleCatalogIds = vehicleCatalogIds;
+      if (trafficLightCatalogIds.length > 0) params.trafficLightCatalogIds = trafficLightCatalogIds;
+      raw.params = params;
     } catch {
       // fall back to empty building list inside gen (streets + pyramid only)
     }

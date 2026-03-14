@@ -175,7 +175,7 @@ Suggested sequence: **1 → 2 → 3 → 4 → 5**, then **6** only if needed.
 |-------------------------|--------|
 | `src/lib/agent/scheduling.ts` (or same name under agent) | Add `getNextTickDelay`, optionally `TickScheduler`. |
 | `src/lib/agent/tickRunner.ts`                            | Add `TickIntent`, `computeTickIntent`; refactor `runTick` to switch on intent. |
-| `src/lib/agent/agent.ts`                                 | Use getNextTickDelay; use TickScheduler; use fast-tick list; use wake API. |
+| `src/lib/agent/index.ts` + `Agent.ts`                    | Use getNextTickDelay; use TickScheduler; use fast-tick list; use wake API. |
 | `src/lib/agent/fastTick.ts` (optional)                    | Handler type + handler array. |
 | `src/lib/agent/wake.ts` or inline in agent (optional)    | requestWake / shared wake logic. |
 | `*.test.ts`                                              | scheduling (getNextTickDelay, TickScheduler), tickRunner (computeTickIntent). |

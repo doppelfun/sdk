@@ -73,7 +73,7 @@ export type AgentWsSpeakMessage = {
   voiceId?: string;
 };
 
-/** Request pathfinding waypoints from current position to (toX, toZ). Server responds with waypoints message. */
+/** Request pathfinding waypoints from current position to (toX, toZ). toX, toZ are block-local 0–100. Server responds with waypoints in block-local coords. */
 export type AgentWsRequestPathMessage = {
   type: "request_path";
   toX: number;
@@ -122,7 +122,7 @@ export type AgentWsThinkingServerMessage = {
   thinking: boolean;
 };
 
-/** Server-authored pathfinding waypoints (world x,z). Set movementWaypoints when received. */
+/** Server-authored pathfinding waypoints (block-local x,z, 0–100). Set movementWaypoints when received. */
 export type AgentWsWaypointsMessage = {
   type: "waypoints";
   waypoints: { x: number; z: number }[];
@@ -140,7 +140,11 @@ export type AgentWsChatServerMessage = {
   mentions?: Array<{ sessionId?: string; userId?: string; username?: string }>;
 };
 
-/** All inbound Agent WebSocket message types. Parse JSON from the socket. */
+/**
+ * Inbound Agent WebSocket messages. Position data:
+ * - waypoints: block-local 0–100 (matches GET /api/occupants and approachPosition).
+ * - error (e.g. space_boundary): optional x,z are world; claw typically ignores them and uses blockId to join.
+ */
 export type AgentWsServerMessage =
   | AgentWsAuthenticatedMessage
   | AgentWsJoinedMessage

@@ -1,0 +1,1 @@
+[DM REPLY REQUIRED] Someone DM'd you. You MUST respond by calling the chat tool with text="<your reply>" and targetSessionId="{{lastDmPeerSessionId}}". Do not reply with plain text only — the runtime only sends chat when you call the chat tool. If you output text without calling chat, your message will not be delivered.

@@ -16,7 +16,7 @@ import type { DoppelClient } from "@doppelfun/sdk";
 import { CLAW_TOOL_REGISTRY, getToolSchema } from "../tools/toolsZod.js";
 import { executeTool, type ExecuteToolResult } from "../tools/index.js";
 import type { ClawStore } from "../state/index.js";
-import type { ClawConfig } from "../config/config.js";
+import type { ClawConfig } from "../config/index.js";
 import { createLlmProvider } from "./provider.js";
 import { usageFromAiSdk, type Usage } from "./usage.js";
 import { clawLog, clawDebug } from "../log.js";

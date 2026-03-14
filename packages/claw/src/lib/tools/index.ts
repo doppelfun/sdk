@@ -5,7 +5,7 @@
 
 import type { DoppelClient } from "@doppelfun/sdk";
 import { clawLog, clawDebug } from "../log.js";
-import type { ClawConfig } from "../config/config.js";
+import type { ClawConfig } from "../config/index.js";
 import type { ClawStore } from "../state/index.js";
 import type { ToolInvocation, ExecuteToolResult, ToolContext } from "./types.js";
 import { TOOL_HANDLERS } from "./handlers/index.js";

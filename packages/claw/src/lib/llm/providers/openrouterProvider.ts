@@ -7,7 +7,7 @@
  */
 
 import type { LanguageModel } from "ai";
-import type { ClawConfig } from "../../config/config.js";
+import type { ClawConfig } from "../../config/index.js";
 import type { LlmProvider, CompletionResult, BuildIntentResult } from "../provider.js";
 import type { Usage } from "../usage.js";
 import { createOpenAI } from "@ai-sdk/openai";

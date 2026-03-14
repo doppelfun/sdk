@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * CLI entrypoint for the Doppel claw agent.
+ * CLI entrypoint — run the claw agent from the command line.
+ * Invoked as: `doppel-claw` (package bin) or `pnpm start` / `node dist/cli.js`.
+ * For programmatic use, import from "@doppelfun/claw" and call runAgent().
  */
 
 import { config } from "dotenv";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runAgent } from "./lib/agent/agent.js";
+import { runAgent } from "./lib/agent/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

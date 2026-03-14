@@ -1,8 +1,8 @@
 /**
  * NPC-style continuous movement for the agent.
  * NpcDriver ticks every ~50ms with heading/speed lerp and pendingInput;
- * agents only called move once per LLM tick. This driver sends input at the
- * same interval toward a world target until within stop distance—smooth
+ * agents only call move once per LLM tick. This driver sends input at the
+ * same interval toward a block-local target (0–100) until within stop distance—smooth
  * approach like NPCs without requiring the LLM to spam move.
  */
 
@@ -11,15 +11,19 @@ import { buildChatSendOptions } from "../chatSendOptions.js";
 import { canSendDmTo, onWeSentDm } from "../conversation/index.js";
 import { getFacingTowardNearestOccupant } from "../state/state.js";
 import type { ClawStore } from "../state/index.js";
-import { getBlockBounds } from "../../util/blockBounds.js";
+import { BLOCK_SIZE_M } from "../../util/blockBounds.js";
 
 /** Match NpcDriver INPUT_INTERVAL_MS so agent motion feels similar. */
 export const MOVEMENT_INPUT_INTERVAL_MS = 50;
 /** Match NPC_ENCOUNTER_RADIUS — stop moving when a human is this close (optional). */
 const ENCOUNTER_RADIUS = 1.5;
 const ENCOUNTER_RADIUS2 = ENCOUNTER_RADIUS * ENCOUNTER_RADIUS;
-/** Keep this far inside block edges before zeroing velocity component (NpcDriver BOUNDS_MARGIN). */
+/** Keep this far inside block edges before zeroing velocity component (NpcDriver BOUNDS_MARGIN). Positions are block-local 0–100. */
 const BOUNDS_MARGIN = 2;
+const LOCAL_X_MIN = BOUNDS_MARGIN;
+const LOCAL_X_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
+const LOCAL_Z_MIN = BOUNDS_MARGIN;
+const LOCAL_Z_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
 /** Default stop distance (m) when approaching target. */
 export const DEFAULT_STOP_DISTANCE_M = 2;
 /** Direction scale before engine multiplies by walk/run speed (NpcDriver uses ~0.15–0.6). */
@@ -61,15 +65,10 @@ export function movementDriverTick(
     let mx = moveX;
     let mz = moveZ;
     if (my) {
-      const bounds = getBlockBounds(state.blockSlotId);
-      const xMin = bounds.xMin + BOUNDS_MARGIN;
-      const xMax = bounds.xMax - BOUNDS_MARGIN;
-      const zMin = bounds.zMin + BOUNDS_MARGIN;
-      const zMax = bounds.zMax - BOUNDS_MARGIN;
-      if (my.x <= xMin && mx < 0) mx = 0;
-      if (my.x >= xMax && mx > 0) mx = 0;
-      if (my.z <= zMin && mz < 0) mz = 0;
-      if (my.z >= zMax && mz > 0) mz = 0;
+      if (my.x <= LOCAL_X_MIN && mx < 0) mx = 0;
+      if (my.x >= LOCAL_X_MAX && mx > 0) mx = 0;
+      if (my.z <= LOCAL_Z_MIN && mz < 0) mz = 0;
+      if (my.z >= LOCAL_Z_MAX && mz > 0) mz = 0;
     }
     client.sendInput({ moveX: mx, moveZ: mz, sprint, jump: false });
     return true;
@@ -114,15 +113,10 @@ export function movementDriverTick(
         let moveZ = (ndz / nnorm) * DIRECTION_SPEED;
         moveX = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, moveX));
         moveZ = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, moveZ));
-        const bounds = getBlockBounds(state.blockSlotId);
-        const xMin = bounds.xMin + BOUNDS_MARGIN;
-        const xMax = bounds.xMax - BOUNDS_MARGIN;
-        const zMin = bounds.zMin + BOUNDS_MARGIN;
-        const zMax = bounds.zMax - BOUNDS_MARGIN;
-        if (my.x <= xMin && moveX < 0) moveX = 0;
-        if (my.x >= xMax && moveX > 0) moveX = 0;
-        if (my.z <= zMin && moveZ < 0) moveZ = 0;
-        if (my.z >= zMax && moveZ > 0) moveZ = 0;
+        if (my.x <= LOCAL_X_MIN && moveX < 0) moveX = 0;
+        if (my.x >= LOCAL_X_MAX && moveX > 0) moveX = 0;
+        if (my.z <= LOCAL_Z_MIN && moveZ < 0) moveZ = 0;
+        if (my.z >= LOCAL_Z_MAX && moveZ > 0) moveZ = 0;
         client.sendInput({ moveX, moveZ, sprint: state.movementSprint === true, jump: false });
         return true;
       }
@@ -135,15 +129,10 @@ export function movementDriverTick(
       let moveZ = (dz / norm) * DIRECTION_SPEED;
       moveX = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, moveX));
       moveZ = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, moveZ));
-      const bounds = getBlockBounds(state.blockSlotId);
-      const xMin = bounds.xMin + BOUNDS_MARGIN;
-      const xMax = bounds.xMax - BOUNDS_MARGIN;
-      const zMin = bounds.zMin + BOUNDS_MARGIN;
-      const zMax = bounds.zMax - BOUNDS_MARGIN;
-      if (my.x <= xMin && moveX < 0) moveX = 0;
-      if (my.x >= xMax && moveX > 0) moveX = 0;
-      if (my.z <= zMin && moveZ < 0) moveZ = 0;
-      if (my.z >= zMax && moveZ > 0) moveZ = 0;
+      if (my.x <= LOCAL_X_MIN && moveX < 0) moveX = 0;
+      if (my.x >= LOCAL_X_MAX && moveX > 0) moveX = 0;
+      if (my.z <= LOCAL_Z_MIN && moveZ < 0) moveZ = 0;
+      if (my.z >= LOCAL_Z_MAX && moveZ > 0) moveZ = 0;
       client.sendInput({ moveX, moveZ, sprint: state.movementSprint === true, jump: false });
       return true;
     }
@@ -184,16 +173,11 @@ export function movementDriverTick(
   moveX = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, moveX));
   moveZ = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, moveZ));
 
-  // Bounds clamp like NpcDriver — don't push into block edge
-  const bounds = getBlockBounds(state.blockSlotId);
-  const xMin = bounds.xMin + BOUNDS_MARGIN;
-  const xMax = bounds.xMax - BOUNDS_MARGIN;
-  const zMin = bounds.zMin + BOUNDS_MARGIN;
-  const zMax = bounds.zMax - BOUNDS_MARGIN;
-  if (my.x <= xMin && moveX < 0) moveX = 0;
-  if (my.x >= xMax && moveX > 0) moveX = 0;
-  if (my.z <= zMin && moveZ < 0) moveZ = 0;
-  if (my.z >= zMax && moveZ > 0) moveZ = 0;
+  // Bounds clamp — positions are block-local 0–100
+  if (my.x <= LOCAL_X_MIN && moveX < 0) moveX = 0;
+  if (my.x >= LOCAL_X_MAX && moveX > 0) moveX = 0;
+  if (my.z <= LOCAL_Z_MIN && moveZ < 0) moveZ = 0;
+  if (my.z >= LOCAL_Z_MAX && moveZ > 0) moveZ = 0;
 
   client.sendInput({
     moveX,

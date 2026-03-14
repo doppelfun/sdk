@@ -20,7 +20,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && pnpm run copy-templates",
+    "copy-templates": "test -d src/lib/prompts/templates || (echo 'Missing src/lib/prompts/templates' && exit 1) && cp -r src/lib/prompts/templates dist/lib/prompts/",
     "clean": "rm -rf dist",
     "start": "node dist/cli.js",
     "run": "pnpm run build && pnpm run start",

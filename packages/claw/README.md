@@ -10,9 +10,18 @@ LLM-driven agent runtime for Doppel. Connects to the hub and engine via [@doppel
 - **Wake intent** (`must_act_build`): same provider as build; OpenRouter uses `generateObject`, Google uses `generateContent` + JSON parse.
 - Tool schemas: **`lib/tools/toolsZod.ts`**; execution: **`lib/tools/tools.ts`**.
 
-**Layout:** `src/lib/state/` (types + `createInitialState` in `state.ts`, **Zustand store** in `store.ts` — one store per run via `createClawStore(blockSlotId)`), `src/lib/llm/`, `src/lib/agent/`, `src/lib/tools/`, `src/lib/conversation/`, `src/lib/movement/`, `src/util/` (blockBounds, dm, delay, env, math, position, url, uuid). Entry: `cli.ts`, `index.ts`. Tick/idle/tools flow is documented below.
+**Layout:** `src/lib/state/` (types + store), `src/lib/llm/`, `src/lib/agent/`, `src/lib/tools/`, `src/lib/conversation/`, `src/lib/movement/`, `src/util/`. Entrypoints: see table above; tick/idle/tools flow below.
 
 Use this package when you want a full agent that thinks and acts in a Doppel block with minimal code.
+
+### Entrypoints
+
+| Use case | Entrypoint | How |
+|----------|------------|-----|
+| **Run the agent (library)** | `runAgent()` | `import { runAgent } from "@doppelfun/claw"` then `runAgent({ onTick, ... })` |
+| **Run with stop()** | `Agent` or `AgentRunner` | `const agent = new Agent(); await agent.run(options);` then `agent.stop()` to clear timers and disconnect. Or `const runner = new AgentRunner(); await runner.run(options); runner.stop();` |
+| **Run the agent (CLI)** | `doppel-claw` | After install: `npx doppel-claw` or `pnpm start` (from this package) |
+| **Package main** | `index.js` | `require("@doppelfun/claw")` / `import from "@doppelfun/claw"` — re-exports `runAgent`, `Agent`, `AgentRunner`, `loadConfig`, store, tools, etc. |
 
 ## Tick, idle state, and tools (flow)
 

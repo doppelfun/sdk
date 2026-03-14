@@ -3,7 +3,7 @@
  */
 
 import type { DoppelClient } from "@doppelfun/sdk";
-import type { ClawConfig } from "../config/config.js";
+import type { ClawConfig } from "../config/index.js";
 import type { ClawStore } from "../state/index.js";
 
 export type ToolInvocation = { name: string; args: Record<string, unknown> };

@@ -22,7 +22,7 @@ export type OwnerMessage = { text: string; at: number };
 
 export type BlockDocument = { documentId: string; mml: string };
 
-/** World position (e.g. from occupants API). */
+/** Block-local position 0–100 (e.g. from occupants API). */
 export type Position3 = { x: number; y: number; z: number };
 
 /** Build target to walk toward (x,z only). */
@@ -54,7 +54,7 @@ export type ClawState = {
   lastAgentChatMessage: string | null;
   /** UserId of whoever last spoke in a DM to you or as owner; used for owner-gating builds. */
   lastTriggerUserId: string | null;
-  /** Agent's world position when in same block (set from get_occupants when self has position). */
+  /** Agent's block-local position 0–100 when in same block (set from get_occupants when self has position). */
   myPosition: Position3 | null;
   /** Last build location to walk toward; stop when close (~2 m). */
   lastBuildTarget: BuildTarget | null;
@@ -72,7 +72,7 @@ export type ClawState = {
    * same cadence as NpcDriver so motion stays smooth instead of one-shot jerk per LLM tick.
    */
   movementIntent: { moveX: number; moveZ: number; sprint: boolean } | null;
-  /** Server-authored pathfinding waypoints (world x,z). When set, movementDriver steers toward current waypoint. */
+  /** Server-authored pathfinding waypoints (block-local x,z, 0–100). When set, movementDriver steers toward current waypoint. */
   movementWaypoints: { x: number; z: number }[] | null;
   /** Index into movementWaypoints for the next waypoint to steer toward. */
   movementWaypointIndex: number;

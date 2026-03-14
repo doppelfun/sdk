@@ -30,7 +30,7 @@ export async function handleMove(ctx: ToolContext) {
     store.setMovementSprint(sprint);
     client.sendRequestPath(occ.position.x, occ.position.z);
     client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
-    const summary = `approach ${occ.username} at (${occ.position.x.toFixed(1)}, ${occ.position.z.toFixed(1)}) — auto-walk until close`;
+    const summary = `approach ${occ.username} at (${occ.position.x.toFixed(1)}, ${occ.position.z.toFixed(1)}) local — auto-walk until close`;
     logAction(summary);
     return { ok: true, summary };
   }
@@ -38,7 +38,7 @@ export async function handleMove(ctx: ToolContext) {
   if (approachPosition) {
     const parsed = parsePositionHint(approachPosition);
     if (!parsed) {
-      return { ok: false, error: 'approachPosition must be like "x,z" or "x,y,z" (world coords)' };
+      return { ok: false, error: 'approachPosition must be like "x,z" or "x,y,z" (block-local 0–100, same as building)' };
     }
     store.setMovementIntent(null);
     store.setMovementTarget({ x: parsed.x, z: parsed.z });
@@ -46,7 +46,7 @@ export async function handleMove(ctx: ToolContext) {
     store.setMovementSprint(sprint);
     client.sendRequestPath(parsed.x, parsed.z);
     client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
-    const summary = `approach (${parsed.x.toFixed(1)}, ${parsed.z.toFixed(1)}) — auto-walk until within ~2 m`;
+    const summary = `approach (${parsed.x.toFixed(1)}, ${parsed.z.toFixed(1)}) local — auto-walk until within ~2 m`;
     logAction(summary);
     return { ok: true, summary };
   }

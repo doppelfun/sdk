@@ -86,7 +86,7 @@ export function loadConfig(): ClawConfig {
   // Optional fallback only: profile default_space_id (GET /api/agents/me defaultBlock) is preferred at join time.
   const blockId = process.env.BLOCK_ID?.trim() || null;
   const ownerUserId = process.env.OWNER_USER_ID?.trim() || null;
-  const skillIdsRaw = process.env.SKILL_IDS?.trim() || "doppel,doppel-block-builder";
+  const skillIdsRaw = process.env.SKILL_IDS?.trim() || "doppel-claw";
   const skillIds =
     skillIdsRaw != null && skillIdsRaw !== ""
       ? skillIdsRaw.split(",").map((s) => s.trim()).filter(Boolean)

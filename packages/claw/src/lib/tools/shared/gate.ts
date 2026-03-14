@@ -2,11 +2,11 @@
  * Owner gate and balance/usage reporting for build tools.
  */
 
-import type { ClawConfig } from "../../config/config.js";
-import type { ClawState } from "../../state/state.js";
-import { createLlmProvider } from "../../llm/provider.js";
+import type { ClawConfig } from "../../config/index.js";
+import type { ClawState } from "../../state/index.js";
+import { createLlmProvider } from "../../llm/index.js";
 import type { Usage } from "../../llm/usage.js";
-import { checkBalance, reportUsage as hubReportUsage } from "../../hub/hub.js";
+import { checkBalance, reportUsage as hubReportUsage } from "../../hub/index.js";
 
 export function checkOwnerGate(config: ClawConfig, state: ClawState): string | null {
   if (!config.hosted) return null;

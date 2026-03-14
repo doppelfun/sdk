@@ -1,5 +1,6 @@
 /**
- * One tick of the agent loop: boundary handling, must_act_build phase, normal LLM tick, and fallbacks.
+ * One tick of the tick loop: boundary handling, must_act_build phase, normal LLM tick, and fallbacks.
+ * Driven by computeTickIntent + switch on intent kind. Each intent has a single handler.
  */
 
 import type { DoppelClient } from "@doppelfun/sdk";
@@ -10,11 +11,11 @@ import {
 } from "../conversation/index.js";
 import type { ClawStore } from "../state/index.js";
 import type { ClawState } from "../state/state.js";
-import type { ClawConfig } from "../config/config.js";
-import { buildUserMessage } from "../prompts/prompts.js";
+import type { ClawConfig } from "../config/index.js";
+import { buildUserMessage } from "../prompts/index.js";
 import { runTickWithAiSdk, MUST_ACT_BUILD_TOOL_NAMES } from "../llm/toolsAi.js";
 import { executeTool } from "../tools/index.js";
-import { isOwnerNearby } from "../movement/ownerProximity.js";
+import { isOwnerNearby } from "../movement/index.js";
 import { clawLog, clawDebug, truncatePreview } from "../log.js";
 import type { ToolCallResult } from "./types.js";
 import { reportChatUsageToHub } from "./usage.js";
@@ -28,6 +29,44 @@ const BUILD_TOOLS = new Set([
   "build_with_code",
   "build_incremental",
 ]);
+
+/** Prompt suffix when in must_act_build so the LLM only uses build tools. */
+const MUST_ACT_BUILD_SUFFIX =
+  "\n\n[Phase: must_act_build — chat is disabled until you run generate_procedural or build_full/build_incremental. Call one of those now; do not call chat.]";
+
+/** Intent for one tick (after boundary is handled and lastTickToolNames cleared). */
+export type TickIntent =
+  | { kind: "build_procedural"; proceduralKind: "city" | "pyramid" }
+  | { kind: "build_llm" }
+  | { kind: "idle_skip" }
+  | { kind: "llm_tick"; soulTick?: boolean };
+
+/**
+ * Compute what to do this tick from current state. Call after boundary handling and,
+ * when in must_act_build, after incrementing pendingBuildTicks.
+ */
+export function computeTickIntent(state: ClawState, config: ClawConfig): TickIntent {
+  if (state.tickPhase === "must_act_build") {
+    if (state.pendingBuildTicks > MUST_ACT_MAX_TICKS || ownerBuildBlocked(config, state)) {
+      return { kind: "idle_skip" };
+    }
+    if (state.pendingBuildKind) {
+      return { kind: "build_procedural", proceduralKind: state.pendingBuildKind };
+    }
+    return { kind: "build_llm" };
+  }
+
+  // Idle phase: run LLM only if woken (DM/owner/error) or soul tick. If owner is nearby, don't treat soul as wake.
+  let soulTick = state.autonomousSoulTickDue;
+  if (soulTick && config.ownerUserId && state.myPosition && isOwnerNearby(state, config)) {
+    soulTick = false;
+  }
+  if (!state.llmWakePending && !state.lastError && !soulTick) {
+    return { kind: "idle_skip" };
+  }
+
+  return { kind: "llm_tick", soulTick: soulTick ?? undefined };
+}
 
 /**
  * True when hosted and owner gate blocks build (only owner can trigger build phase).
@@ -75,9 +114,154 @@ export type RunTickOptions = {
   onToolCallResult?: (name: string, args: string, result: ToolCallResult) => void;
 };
 
+/** Context passed to every tick intent handler (client, store, config, options, onToolResult). */
+type TickContext = {
+  client: DoppelClient;
+  store: ClawStore;
+  config: ClawConfig;
+  systemContent: string;
+  options: RunTickOptions;
+  onToolResult: (name: string, args: string, result: ToolCallResult) => void;
+};
+
 /**
- * Run one tick: optional boundary auto-join, must_act_build phase (procedural or build-only LLM),
- * or normal LLM tick with DM/error fallbacks.
+ * Send a fallback reply (DM or global). If dmTarget is set but we can't send yet (e.g. receive delay),
+ * queue to pendingDmReply for the 50ms loop to drain. Otherwise send now and optionally log.
+ */
+function sendFallbackReply(
+  ctx: TickContext,
+  text: string,
+  dmTarget: string | null,
+  logLabel?: string
+): void {
+  const blocked = dmTarget != null && !canSendDmTo(ctx.store, dmTarget);
+  if (blocked && dmTarget) {
+    ctx.store.setState({ pendingDmReply: { text, targetSessionId: dmTarget } });
+    return;
+  }
+  if (dmTarget) {
+    sendDmAndTransition(ctx.client, ctx.store, text, dmTarget, ctx.config.voiceId);
+  } else {
+    ctx.client.sendChat(text, buildChatSendOptions({ voiceId: ctx.config.voiceId }));
+    ctx.store.setLastAgentChatMessage(text);
+    ctx.store.setLastTickSentChat(true);
+  }
+  ctx.store.setLastToolRun("chat");
+  if (logLabel) ctx.options.onTick?.(logLabel);
+}
+
+/** Idle skip: clear must_act_build if we're escaping from it, then clear tool names. */
+async function handleIdleSkip(ctx: TickContext): Promise<void> {
+  const state = ctx.store.getState();
+  if (state.tickPhase === "must_act_build") {
+    ctx.store.clearMustActBuild();
+    ctx.options.onTick?.("must_act_build: timeout or blocked, returning to idle");
+  }
+  ctx.store.setLastTickToolNames(null);
+}
+
+/** Build phase: run generate_procedural deterministically (no LLM) for city/pyramid. */
+async function handleBuildProcedural(
+  ctx: TickContext,
+  proceduralKind: "city" | "pyramid"
+): Promise<void> {
+  const execResult = await executeTool(ctx.client, ctx.store, ctx.config, {
+    name: "generate_procedural",
+    args: { kind: proceduralKind },
+  });
+  ctx.onToolResult("generate_procedural", JSON.stringify({ kind: proceduralKind }), execResult);
+  if (!execResult.ok) {
+    ctx.options.onTick?.(`deterministic generate_procedural failed: ${execResult.error}`);
+    ctx.store.setPendingBuildKind(null);
+  }
+  ctx.store.setLastTickToolNames(null);
+}
+
+/** Build phase: LLM with build-only tools (no chat). Used when pendingBuildKind is unset. */
+async function handleBuildLlm(ctx: TickContext): Promise<void> {
+  const userContent = buildUserMessage(ctx.store, ctx.config) + MUST_ACT_BUILD_SUFFIX;
+  const result = await runTickWithAiSdk(
+    ctx.client,
+    ctx.store,
+    ctx.config,
+    ctx.systemContent,
+    userContent,
+    ctx.onToolResult,
+    { omitChat: true, allowOnlyTools: MUST_ACT_BUILD_TOOL_NAMES }
+  );
+  if (!result.ok) ctx.options.onTick?.(`LLM error: ${result.error}`);
+  else if (ctx.config.hosted) reportChatUsageToHub(ctx.config, result.usage, ctx.options.onTick);
+  if (result.ok && !result.hadToolCalls) ctx.options.onTick?.("must_act_build: no tool calls");
+  ctx.store.setLastTickToolNames(null);
+}
+
+/**
+ * Normal LLM tick: build user message, run LLM with tools, then apply DM/error fallbacks
+ * if the model didn't call tools but we owed a reply. Clears wake flags and lastError when done.
+ */
+async function handleLlmTick(ctx: TickContext, soulTick: boolean): Promise<void> {
+  if (soulTick) ctx.store.setAutonomousSoulTickDue(false);
+  const userContent = buildUserMessage(ctx.store, ctx.config);
+  const result = await runTickWithAiSdk(
+    ctx.client,
+    ctx.store,
+    ctx.config,
+    ctx.systemContent,
+    userContent,
+    ctx.onToolResult
+  );
+
+  ctx.store.setLlmWakePending(false);
+
+  if (!result.ok) {
+    ctx.options.onTick?.(`LLM error: ${result.error}`);
+    ctx.store.setDmReplyPending(false);
+    ctx.store.setLastTickToolNames(null);
+    return;
+  }
+
+  if (ctx.config.hosted) reportChatUsageToHub(ctx.config, result.usage, ctx.options.onTick);
+
+  const state = ctx.store.getState();
+  const replyText = "replyText" in result ? (result.replyText ?? "") : "";
+
+  // DM fallback: we owed a DM reply but the model returned no tool calls (e.g. text-only).
+  if (state.dmReplyPending && !result.hadToolCalls && state.lastDmPeerSessionId) {
+    const text = replyText.length > 0 ? replyText : "Hey — I'm here.";
+    sendFallbackReply(
+      ctx,
+      text,
+      state.lastDmPeerSessionId,
+      `dm fallback chat: ${truncatePreview(text)}`
+    );
+  } else if (!result.hadToolCalls) {
+    ctx.options.onTick?.("no tool calls");
+  }
+
+  // Error fallback: summarize lastError in plain language and send (DM or global).
+  if (state.errorReplyPending && !result.hadToolCalls) {
+    const text =
+      replyText.trim().length > 0
+        ? replyText.trim().slice(0, 500)
+        : "Something went wrong on the server. If it keeps happening, try again in a moment.";
+    sendFallbackReply(
+      ctx,
+      text,
+      state.lastDmPeerSessionId ?? null,
+      `error-reply fallback chat: ${truncatePreview(text)}`
+    );
+  }
+
+  if (ctx.store.getState().lastError && ctx.store.getState().lastTickSentChat) {
+    ctx.store.clearLastError();
+  }
+  ctx.store.setErrorReplyPending(false);
+  ctx.store.setDmReplyPending(false);
+  ctx.store.setLastTickToolNames(null);
+}
+
+/**
+ * Run one tick: optional boundary auto-join, then intent-based handlers (build procedural/LLM, idle skip, LLM tick with fallbacks).
  *
  * @param client - Doppel client (sendJoin, sendChat, etc.).
  * @param store - Claw store (reads via getState(), writes via actions/setState).
@@ -99,12 +283,14 @@ export async function runTick(
     tickParts.push("buildTicks=" + state.pendingBuildTicks);
   clawLog("tick", ...tickParts);
 
+  // Boundary: join and clear so rest of tick sees clean state.
   const boundarySlot = state.lastError?.blockSlotId;
   if (state.lastError?.code === "region_boundary" && boundarySlot) {
     client.sendJoin(boundarySlot);
     store.setBlockSlotId(boundarySlot);
     store.clearLastError();
     options.onTick?.(`join_block: ${store.getState().blockSlotId} (auto from boundary)`);
+    return;
   }
 
   store.setLastTickToolNames([]);
@@ -122,137 +308,31 @@ export async function runTick(
   if (state.tickPhase === "must_act_build") {
     store.setPendingBuildTicks(state.pendingBuildTicks + 1);
     state = store.getState();
-    if (state.pendingBuildTicks > MUST_ACT_MAX_TICKS) {
-      options.onTick?.("must_act_build: timeout, returning to idle");
-      store.clearMustActBuild();
-    } else if (ownerBuildBlocked(config, state)) {
-      options.onTick?.("must_act_build: owner gate blocks build, clearing phase");
-      store.clearMustActBuild();
-    } else if (state.pendingBuildKind) {
-      const kind = state.pendingBuildKind;
-      const execResult = await executeTool(client, store, config, {
-        name: "generate_procedural",
-        args: { kind },
-      });
-      onToolResult("generate_procedural", JSON.stringify({ kind }), execResult);
-      if (!execResult.ok) {
-        options.onTick?.(`deterministic generate_procedural failed: ${execResult.error}`);
-        store.setPendingBuildKind(null);
-      }
-      store.setLastTickToolNames(null);
-      return;
-    } else {
-      const userContent =
-        buildUserMessage(store, config) +
-        "\n\n[Phase: must_act_build — chat is disabled until you run generate_procedural or build_full/build_incremental. Call one of those now; do not call chat.]";
-      const result = await runTickWithAiSdk(
-        client,
-        store,
-        config,
-        systemContent,
-        userContent,
-        onToolResult,
-        { omitChat: true, allowOnlyTools: MUST_ACT_BUILD_TOOL_NAMES }
-      );
-      if (!result.ok) options.onTick?.(`LLM error: ${result.error}`);
-      else if (config.hosted) reportChatUsageToHub(config, result.usage, options.onTick);
-      if (result.ok && !result.hadToolCalls) options.onTick?.("must_act_build: no tool calls");
-      store.setLastTickToolNames(null);
-      return;
-    }
   }
 
-  state = store.getState();
-  let soulTick = state.autonomousSoulTickDue;
-  if (soulTick && config.ownerUserId && state.myPosition && isOwnerNearby(state, config)) {
-    store.setAutonomousSoulTickDue(false);
-    soulTick = false;
-  }
-  if (!state.llmWakePending && !state.lastError && !soulTick) {
-    clawDebug("tick skip idle (no wake — LLM runs again on DM/owner message or error)");
-    store.setLastTickToolNames(null);
-    return;
-  }
-
-  const userContent = buildUserMessage(store, config);
-  if (soulTick) store.setAutonomousSoulTickDue(false);
-  const result = await runTickWithAiSdk(
+  const intent = computeTickIntent(state, config);
+  const ctx: TickContext = {
     client,
     store,
     config,
     systemContent,
-    userContent,
-    onToolResult
-  );
+    options,
+    onToolResult,
+  };
 
-  store.setLlmWakePending(false);
-
-  if (!result.ok) {
-    options.onTick?.(`LLM error: ${result.error}`);
-    store.setDmReplyPending(false);
-    store.setLastTickToolNames(null);
-    return;
+  switch (intent.kind) {
+    case "idle_skip":
+      clawDebug("tick skip idle (no wake — LLM runs again on DM/owner message or error)");
+      await handleIdleSkip(ctx);
+      return;
+    case "build_procedural":
+      await handleBuildProcedural(ctx, intent.proceduralKind);
+      return;
+    case "build_llm":
+      await handleBuildLlm(ctx);
+      return;
+    case "llm_tick":
+      await handleLlmTick(ctx, intent.soulTick ?? false);
+      return;
   }
-
-  if (config.hosted) reportChatUsageToHub(config, result.usage, options.onTick);
-
-  state = store.getState();
-  if (
-    state.dmReplyPending &&
-    !result.hadToolCalls &&
-    state.lastDmPeerSessionId &&
-    result.ok &&
-    "replyText" in result
-  ) {
-    const peer = state.lastDmPeerSessionId;
-    const text =
-      result.replyText && result.replyText.length > 0
-        ? result.replyText
-        : "Hey — I'm here.";
-    if (peer && !canSendDmTo(store, peer)) {
-      store.setState({ pendingDmReply: { text, targetSessionId: peer } });
-    } else if (peer) {
-      sendDmAndTransition(client, store, text, peer, config.voiceId);
-      store.setLastToolRun("chat");
-      options.onTick?.(`dm fallback chat: ${truncatePreview(text)}`);
-    }
-  } else if (!result.hadToolCalls) {
-    options.onTick?.("no tool calls");
-  }
-
-  state = store.getState();
-  if (
-    state.errorReplyPending &&
-    !result.hadToolCalls &&
-    result.ok &&
-    "replyText" in result
-  ) {
-    const text =
-      result.replyText && result.replyText.trim().length > 0
-        ? result.replyText.trim().slice(0, 500)
-        : "Something went wrong on the server. If it keeps happening, try again in a moment.";
-    const dmTarget = state.lastDmPeerSessionId;
-    const blocked = dmTarget != null && !canSendDmTo(store, dmTarget);
-    if (blocked && dmTarget) {
-      store.setState({ pendingDmReply: { text, targetSessionId: dmTarget } });
-    } else if (!blocked) {
-      if (dmTarget) {
-        sendDmAndTransition(client, store, text, dmTarget, config.voiceId);
-      } else {
-        client.sendChat(text, buildChatSendOptions({ voiceId: config.voiceId }));
-        store.setLastAgentChatMessage(text);
-        store.setLastTickSentChat(true);
-      }
-      store.setLastToolRun("chat");
-      options.onTick?.(`error-reply fallback chat: ${truncatePreview(text)}`);
-    }
-  }
-
-  state = store.getState();
-  if (state.lastError && state.lastTickSentChat) {
-    store.clearLastError();
-  }
-  store.setErrorReplyPending(false);
-  store.setDmReplyPending(false);
-  store.setLastTickToolNames(null);
 }

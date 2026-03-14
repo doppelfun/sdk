@@ -10,7 +10,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { createVertex, type GoogleVertexProvider } from "@ai-sdk/google-vertex";
 import type { LanguageModel } from "ai";
-import type { ClawConfig } from "../../config/config.js";
+import type { ClawConfig } from "../../config/index.js";
 import { GoogleGenAiProviderBase } from "./googleGenAiBase.js";
 
 export function resolveVertexProjectLocation(config: ClawConfig): {

@@ -1,7 +1,7 @@
 import type { ToolContext } from "../types.js";
 import { getBlockBounds } from "../../../util/blockBounds.js";
 import { buildIncremental } from "../../llm/buildLlm.js";
-import { createLlmProvider } from "../../llm/provider.js";
+import { createLlmProvider } from "../../llm/index.js";
 import { getCatalogForBuild, catalogToJson } from "../shared/catalog.js";
 import { ownerGateDenied, preCheckBalance, reportBuildUsage } from "../shared/gate.js";
 import { isDocumentIdUuid, DOCUMENT_ID_UUID_HINT } from "../shared/documents.js";

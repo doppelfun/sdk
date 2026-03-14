@@ -18,7 +18,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "echo 'No tests in @doppelfun/gen'"
   },
   "dependencies": {
     "@doppelfun/sdk": "workspace:*"

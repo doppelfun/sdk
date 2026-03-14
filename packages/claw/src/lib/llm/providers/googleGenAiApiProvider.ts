@@ -10,7 +10,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { createGoogleGenerativeAI, type GoogleGenerativeAIProvider } from "@ai-sdk/google";
 import type { LanguageModel } from "ai";
-import type { ClawConfig } from "../../config/config.js";
+import type { ClawConfig } from "../../config/index.js";
 import { GoogleGenAiProviderBase } from "./googleGenAiBase.js";
 
 /** Read API key from config then env (AI SDK also reads GOOGLE_GENERATIVE_AI_API_KEY). */

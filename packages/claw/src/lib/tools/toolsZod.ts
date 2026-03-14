@@ -10,7 +10,7 @@ export const moveSchema = z.object({
   moveX: z
     .number()
     .describe(
-      "Horizontal component, -0.4 to 0.4. Use 0,0 to stop. Non-zero values are held and sent every 50ms like NPCs until 0,0. Prefer approachSessionId or approachPosition to walk to a world target until close."
+      "Horizontal component, -0.4 to 0.4. Use 0,0 to stop. Non-zero values are held and sent every 50ms like NPCs until 0,0. Prefer approachSessionId or approachPosition to walk to a block-local target (0–100) until close."
     ),
   moveZ: z
     .number()
@@ -26,7 +26,7 @@ export const moveSchema = z.object({
   approachPosition: z
     .string()
     .optional()
-    .describe('Optional. World target "x,z" or "x,y,z" to walk toward until close; same as build position hint format.'),
+    .describe('Optional. Block-local target "x,z" or "x,y,z" (0–100, same as building) to walk toward until close.'),
 });
 
 export const chatSchema = z.object({
@@ -205,7 +205,7 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "move",
     description:
-      "Move toward a target. Prefer approachSessionId or approachPosition for auto-walk to a world point (50ms stream until close). Or moveX/moveZ -0.4..0.4—held and streamed every 50ms like NPCs until move 0,0 stops; 0,0 also clears auto-approach.",
+      "Move toward a target. Prefer approachSessionId or approachPosition for auto-walk to a block-local point (0–100, same as building; 50ms stream until close). Or moveX/moveZ -0.4..0.4—held and streamed every 50ms like NPCs until move 0,0 stops; 0,0 also clears auto-approach.",
     schema: moveSchema,
   },
   {

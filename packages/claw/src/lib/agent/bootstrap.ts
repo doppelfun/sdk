@@ -2,8 +2,8 @@
  * Agent bootstrap: fetch profile/soul/skills and resolve JWT + engine URL for join.
  */
 
-import { joinBlock } from "../hub/hub.js";
-import type { ClawConfig } from "../config/config.js";
+import { joinBlock } from "../hub/index.js";
+import type { ClawConfig } from "../config/index.js";
 import type { AgentBootstrapResponse, SkillEntry } from "./types.js";
 
 /**
@@ -54,28 +54,35 @@ export async function fetchAgentBootstrap(
 }
 
 /**
+ * Fetch skill entries by ids from hub. Returns array of { name/id, content }.
+ * Used by getSkillsContent to merge with built-in templates.
+ */
+export async function fetchSkillEntries(
+  agentApiUrl: string,
+  apiKey: string,
+  skillIds: string[]
+): Promise<SkillEntry[]> {
+  if (skillIds.length === 0) return [];
+  const base = agentApiUrl.replace(/\/$/, "");
+  const params = `?ids=${skillIds.map(encodeURIComponent).join(",")}`;
+  const res = await fetch(`${base}/api/skills${params}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { skills?: SkillEntry[] };
+  return Array.isArray(data.skills) ? data.skills : [];
+}
+
+/**
  * Fetch skills by ids from hub and return concatenated content.
- *
- * @param agentApiUrl - Base URL of the agent/hub API.
- * @param apiKey - Bearer token for Authorization header.
- * @param skillIds - Array of skill IDs to request (e.g. config.skillIds).
- * @returns Concatenated skill content separated by "---"; empty string on error or no ids.
  */
 export async function fetchSkills(
   agentApiUrl: string,
   apiKey: string,
   skillIds: string[]
 ): Promise<string> {
-  if (skillIds.length === 0) return "";
-  const base = agentApiUrl.replace(/\/$/, "");
-  const params = `?ids=${skillIds.map(encodeURIComponent).join(",")}`;
-  const res = await fetch(`${base}/api/skills${params}`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
-  if (!res.ok) return "";
-  const data = (await res.json()) as { skills?: SkillEntry[] };
-  const skills = Array.isArray(data.skills) ? data.skills : [];
-  return skills
+  const entries = await fetchSkillEntries(agentApiUrl, apiKey, skillIds);
+  return entries
     .map((s) => (typeof s.content === "string" ? s.content : "").trim())
     .filter(Boolean)
     .join("\n\n---\n\n");

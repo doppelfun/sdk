@@ -6,13 +6,13 @@
  */
 
 import type { DoppelClient } from "@doppelfun/sdk";
-import type { ClawConfig } from "../config/config.js";
+import type { ClawConfig } from "../config/index.js";
 import { isInConversationWithAgentInRoom } from "../state/state.js";
 import type { ClawStore } from "../state/index.js";
 import { isInConversation } from "../conversation/index.js";
 import { clawLog } from "../log.js";
 import { isOwnerNearby } from "./ownerProximity.js";
-import { getBlockBounds } from "../../util/blockBounds.js";
+import { BLOCK_SIZE_M } from "../../util/blockBounds.js";
 import { normalizeAngle, lerpAngle, randomRange } from "../../util/math.js";
 
 /** When idle, probability per “idle tick” to try seeking another agent (vs wander/emote). */
@@ -29,8 +29,12 @@ const EMOTES = ["wave", "heart", "thumbs", "clap", "dance", "shocked"] as const;
 const EMOTE_PROBABILITY = 0.005;
 /** Duration (ms) agent stands still while emote plays. */
 const EMOTE_STAND_STILL_MS = 3000;
-/** Keep agent this many meters inside block edges. */
+/** Keep agent this many meters inside block edges. Positions are block-local 0–100. */
 const BOUNDS_MARGIN = 2;
+const LOCAL_X_MIN = BOUNDS_MARGIN;
+const LOCAL_X_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
+const LOCAL_Z_MIN = BOUNDS_MARGIN;
+const LOCAL_Z_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
 const HEADING_RETARGET_MS = { min: 800, max: 2800 };
 const SPEED_RETARGET_MS = { min: 600, max: 2200 };
 
@@ -155,15 +159,10 @@ export class AutonomousManager {
     let moveX = Math.cos(bs.heading) * bs.speed;
     let moveZ = Math.sin(bs.heading) * bs.speed;
 
-    const bounds = getBlockBounds(state.blockSlotId);
-    const xMin = bounds.xMin + BOUNDS_MARGIN;
-    const xMax = bounds.xMax - BOUNDS_MARGIN;
-    const zMin = bounds.zMin + BOUNDS_MARGIN;
-    const zMax = bounds.zMax - BOUNDS_MARGIN;
-    if (my.x <= xMin && moveX < 0) moveX = 0;
-    if (my.x >= xMax && moveX > 0) moveX = 0;
-    if (my.z <= zMin && moveZ < 0) moveZ = 0;
-    if (my.z >= zMax && moveZ > 0) moveZ = 0;
+    if (my.x <= LOCAL_X_MIN && moveX < 0) moveX = 0;
+    if (my.x >= LOCAL_X_MAX && moveX > 0) moveX = 0;
+    if (my.z <= LOCAL_Z_MIN && moveZ < 0) moveZ = 0;
+    if (my.z >= LOCAL_Z_MAX && moveZ > 0) moveZ = 0;
 
     store.setMovementIntent({ moveX, moveZ, sprint: false });
 

@@ -3,7 +3,7 @@
  * When owner is away, soul ticks drive behavior; when nearby, obedient mode only.
  */
 
-import type { ClawConfig } from "../config/config.js";
+import type { ClawConfig } from "../config/index.js";
 import type { ClawState } from "../state/state.js";
 
 /**

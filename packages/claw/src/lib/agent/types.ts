@@ -45,9 +45,9 @@ export type AgentBootstrapResponse = {
 
 /**
  * Skill entry from GET /api/skills (ids=...).
- * name and content are optional; content is the skill text.
+ * name (or id) identifies the skill; content is the skill text.
  */
-export type SkillEntry = { name?: string; content?: string };
+export type SkillEntry = { name?: string; id?: string; content?: string };
 
 /**
  * Payload for WebSocket "chat" messages from the engine.

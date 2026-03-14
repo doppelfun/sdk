@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import type { DoppelClient } from "@doppelfun/sdk";
 import { createClawStore } from "../state/index.js";
 import { executeTool } from "./index.js";
-import type { ClawConfig } from "../config/config.js";
+import type { ClawConfig } from "../config/index.js";
 
 function minimalConfig(): ClawConfig {
   return {

@@ -2,10 +2,10 @@
  * Report chat LLM usage to hub (hosted agents; credit deduction).
  */
 
-import { reportUsage as hubReportUsage } from "../hub/hub.js";
-import type { ClawConfig } from "../config/config.js";
+import { reportUsage as hubReportUsage } from "../hub/index.js";
+import type { ClawConfig } from "../config/index.js";
 import type { Usage } from "../llm/usage.js";
-import { createLlmProvider } from "../llm/provider.js";
+import { createLlmProvider } from "../llm/index.js";
 
 /**
  * Report chat LLM usage to hub (fire-and-forget).

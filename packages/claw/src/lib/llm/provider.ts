@@ -3,7 +3,7 @@
  */
 
 import type { LanguageModel } from "ai";
-import type { ClawConfig } from "../config/config.js";
+import type { ClawConfig } from "../config/index.js";
 import type { Usage } from "./usage.js";
 import { OpenRouterProvider } from "./providers/openrouterProvider.js";
 import { GoogleGenAiApiProvider } from "./providers/googleGenAiApiProvider.js";

@@ -3,7 +3,7 @@
  */
 
 import { getBlockCatalog, getEngineCatalog, type CatalogEntry as SdkCatalogEntry } from "@doppelfun/sdk";
-import type { ClawConfig } from "../../config/config.js";
+import type { ClawConfig } from "../../config/index.js";
 
 export type CatalogEntry = {
   id: string;

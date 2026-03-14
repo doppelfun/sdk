@@ -1,8 +1,9 @@
 /**
- * Procedural city layout generator (SDK-local copy of doppel-engine/assets city-layout).
- * Axis-aligned street grid + greedy building packing along both sides of each street.
+ * Procedural city layout: axis-aligned street grid + greedy building packing
+ * along both sides of each street. No I/O; building pool is passed in.
  */
-import type { SeedBuildingEntry } from "./seed-buildings.js";
+import type { SeedBuildingEntry } from "./catalog-bridge.js";
+import { mulberry32 } from "../../shared/prng.js";
 
 export type StreetSegment = {
   startX: number;
@@ -20,8 +21,6 @@ export type BuildingPlacement = {
   width: number;
   depth: number;
   height: number;
-  originOffsetX: number;
-  originOffsetZ: number;
 };
 
 export type CityLayoutConfig = {
@@ -52,25 +51,20 @@ const DEFAULT_CONFIG: Required<CityLayoutConfig> = {
   seed: 12345,
 };
 
+/** Gap between adjacent buildings along a street. */
 const SIDE_GAP = 0.2;
+/** Padding for overlap detection. */
 const OVERLAP_PAD = 0.1;
+/** Margin at street ends / intersections; no buildings placed here. */
 const INTERSECTION_MARGIN = 1;
+/** Max building picks per slot before advancing. */
 const MAX_ATTEMPTS_PER_SLOT = 6;
 
+/** Axis-aligned rectangle (center + half-extents). */
 type Rect = { cx: number; cz: number; w: number; d: number };
 
-type ResolvedBuilding = Required<
-  Pick<SeedBuildingEntry, "id" | "width" | "depth" | "height" | "originOffsetX" | "originOffsetZ">
->;
-
-function mulberry32(seed: number): () => number {
-  return () => {
-    let t = (seed += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+/** Building with required dimensions for packing. */
+type ResolvedBuilding = Required<Pick<SeedBuildingEntry, "id" | "width" | "depth" | "height">>;
 
 function rectsOverlap(a: Rect, b: Rect, pad: number): boolean {
   return (
@@ -93,6 +87,7 @@ function collides(candidate: Rect, streetRects: Rect[], placements: BuildingPlac
   return false;
 }
 
+/** Build horizontal and vertical street segments for the grid. */
 function buildStreetGrid(cfg: Required<CityLayoutConfig>): StreetSegment[] {
   const streets: StreetSegment[] = [];
   const totalW = (cfg.gridCols - 1) * cfg.blockSize;
@@ -111,6 +106,7 @@ function buildStreetGrid(cfg: Required<CityLayoutConfig>): StreetSegment[] {
   return streets;
 }
 
+/** Convert street segments to axis-aligned rects for collision. */
 function buildStreetRects(streets: StreetSegment[], streetWidth: number): Rect[] {
   return streets.map((s) =>
     s.alongX
@@ -119,6 +115,7 @@ function buildStreetRects(streets: StreetSegment[], streetWidth: number): Rect[]
   );
 }
 
+/** Rotation (radians) so building faces the street; sideSign = ±1 for side of street. */
 function facingAngle(alongX: boolean, sideSign: number): number {
   const base = alongX
     ? sideSign > 0
@@ -182,8 +179,6 @@ function packOneSide(
         width: building.width,
         depth: building.depth,
         height: building.height,
-        originOffsetX: building.originOffsetX,
-        originOffsetZ: building.originOffsetZ,
       });
       t += building.width + SIDE_GAP;
       placed = true;
@@ -193,6 +188,10 @@ function packOneSide(
   }
 }
 
+/**
+ * Generate street grid and pack buildings along both sides of each street.
+ * Uses config seed for deterministic placement. Returns streets and placements.
+ */
 export function generateCityLayout(
   buildings: SeedBuildingEntry[],
   config: CityLayoutConfig = {},
@@ -209,8 +208,6 @@ export function generateCityLayout(
     width: b.width ?? 1,
     depth: b.depth ?? 1,
     height: b.height ?? 1,
-    originOffsetX: b.originOffsetX ?? 0,
-    originOffsetZ: b.originOffsetZ ?? 0,
   }));
 
   const sortedPool = [...pool].sort((a, b) => a.width - b.width);

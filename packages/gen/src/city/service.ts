@@ -1,10 +1,11 @@
 /**
- * Procedural city grid → MML using local layout + seed buildings (no @doppel-engine dependency).
+ * Procedural city MML: streets, buildings, pyramid, lights, vehicles.
+ * Uses layout for grid + packing; emits MML for models, cubes, grass, etc.
  */
 import {
   BLOCK_SIZE_M,
+  fetchBuildingsFromCatalog,
   generateCityLayout,
-  getSeedBuildingsWithDimensions,
   type BuildingPlacement,
   type StreetSegment,
   type SeedBuildingEntry,
@@ -12,6 +13,15 @@ import {
 import { mulberry32, r2, deg } from "../shared/prng.js";
 import type { CityGenConfig } from "./config.js";
 import { clampCityConfig } from "./config.js";
+
+// --- Helpers -----------------------------------------------------------------
+
+/** Pick a random element from a readonly array using the given PRNG. */
+function pick<T>(arr: readonly T[], rng: () => number): T {
+  return arr[Math.floor(rng() * arr.length)]!;
+}
+
+// --- Building attachments (windows, antennas) --------------------------------
 
 const ANTENNA_HEIGHT_THRESHOLD = 8;
 const ANTENNA_CHANCE = 0.4;
@@ -26,9 +36,10 @@ const WIN_W = 0.35;
 const WIN_H = 0.45;
 const WIN_INTENSITY = 3.0;
 
+// --- Pyramid -----------------------------------------------------------------
+
 const STONE_VARIANTS = ["#8a8578", "#6e6960", "#9e978a"];
-/** Emissive corner palette (random per block when no fixed palette). */
-/** Pyramid corner emissive palette — mixed hues (matches standalone pyramid variety). */
+/** Pyramid corner emissive palette (mixed hues). */
 const GLOW_COLORS = [
   "#ff0040", "#00ff88", "#00aaff", "#ff6600",
   "#cc00ff", "#ffdd00", "#ff0088", "#00ffcc",
@@ -45,7 +56,6 @@ type PyramidBlock = {
   x: number; y: number; z: number; size: number;
   color: string; emission?: string;
   layer: number; isCorner: boolean;
-  /** Pulse anim start intensity (randomized per corner for variety). */
   pulseDim?: number;
   pulseBright?: number;
 };
@@ -54,6 +64,9 @@ type PyramidGrassPatch = { dx: number; dz: number; count: number; spread: number
 
 type CellBounds = { minX: number; maxX: number; minZ: number; maxZ: number };
 
+// --- Cell / pyramid helpers --------------------------------------------------
+
+/** Returns a function that gives the world bounds of a grid cell by (row, col). */
 function getCellBounds(cfg: {
   gridRows: number; gridCols: number; blockSize: number; streetWidth: number; centerX: number; centerZ: number;
 }): (row: number, col: number) => CellBounds | null {
@@ -98,7 +111,7 @@ function generatePyramidForCell(
   const rng = mulberry32(pyramidSeedForCell(cell, citySeed));
   const blocks: PyramidBlock[] = [];
   // One random emissive color + pulse range for the whole pyramid.
-  const glowColor = GLOW_COLORS[Math.floor(rng() * GLOW_COLORS.length)]!;
+  const glowColor = pick(GLOW_COLORS, rng);
   const pulseDim = 0.25 + rng() * 0.25;
   const pulseBright = 2.5 + rng() * 2.5;
   const cellSize = Math.min(cell.maxX - cell.minX, cell.maxZ - cell.minZ);
@@ -131,7 +144,7 @@ function generatePyramidForCell(
             pulseDim, pulseBright,
           });
         } else {
-          const color = STONE_VARIANTS[Math.floor(rng() * STONE_VARIANTS.length)]!;
+          const color = pick(STONE_VARIANTS, rng);
           blocks.push({ x, y, z, size: PYRAMID_BLOCK_SIZE, color, layer, isCorner: false });
         }
       }
@@ -244,15 +257,19 @@ function emitAntenna(parts: string[], idx: number, b: BuildingPlacement, bx: num
   const poleH = 0.8 + rng() * 1.2;
   const poleW = 0.08 + rng() * 0.06;
   const tipSize = 0.15 + rng() * 0.15;
-  const color = ANTENNA_COLORS[Math.floor(rng() * ANTENNA_COLORS.length)]!;
+  const color = pick(ANTENNA_COLORS, rng);
   const intensity = 3 + rng() * 7;
-  const jx = (rng() - 0.5) * b.width * 0.4;
-  const jz = (rng() - 0.5) * b.depth * 0.4;
+  const localX = (rng() - 0.5) * b.width * 0.4;
+  const localZ = (rng() - 0.5) * b.depth * 0.4;
+  const cosR = Math.cos(b.rotation);
+  const sinR = Math.sin(b.rotation);
+  const wx = bx + localX * cosR - localZ * sinR;
+  const wz = bz + localX * sinR + localZ * cosR;
   const poleY = b.height + poleH / 2;
   const tipY = b.height + poleH + tipSize / 2;
   parts.push(
-    `  <m-cube id="ant-pole-${idx}" x="${r2(bx + jx)}" y="${r2(poleY)}" z="${r2(bz + jz)}" width="${r2(poleW)}" height="${r2(poleH)}" depth="${r2(poleW)}" color="#666666" />`,
-    `  <m-cube id="ant-tip-${idx}" x="${r2(bx + jx)}" y="${r2(tipY)}" z="${r2(bz + jz)}" width="${r2(tipSize)}" height="${r2(tipSize)}" depth="${r2(tipSize)}" color="${color}" emission="${color}" emission-intensity="${r2(intensity)}" />`,
+    `  <m-cube id="ant-pole-${idx}" x="${r2(wx)}" y="${r2(poleY)}" z="${r2(wz)}" width="${r2(poleW)}" height="${r2(poleH)}" depth="${r2(poleW)}" color="#666666" />`,
+    `  <m-cube id="ant-tip-${idx}" x="${r2(wx)}" y="${r2(tipY)}" z="${r2(wz)}" width="${r2(tipSize)}" height="${r2(tipSize)}" depth="${r2(tipSize)}" color="${color}" emission="${color}" emission-intensity="${r2(intensity)}" />`,
   );
 }
 
@@ -260,11 +277,9 @@ function emitWindows(parts: string[], idx: number, b: BuildingPlacement, bx: num
   const θ = b.rotation;
   const cosR = Math.cos(θ);
   const sinR = Math.sin(θ);
-  const ox = b.originOffsetX;
-  const oz = b.originOffsetZ;
-  const geoCX = bx + ox * cosR + oz * sinR;
-  const geoCZ = bz - ox * sinR + oz * cosR;
-  const wColor = WINDOW_COLORS[Math.floor(rng() * WINDOW_COLORS.length)]!;
+  const geoCX = bx;
+  const geoCZ = bz;
+  const wColor = pick(WINDOW_COLORS, rng);
   let winIdx = 0;
   const hw = b.width / 2;
   const hd = b.depth / 2;
@@ -288,8 +303,9 @@ function emitWindows(parts: string[], idx: number, b: BuildingPlacement, bx: num
       placed.push({ lat: lateral, y: wy });
       const localX = face.nx * (face.dist + 0.02) + (face.nz !== 0 ? lateral : 0);
       const localZ = face.nz * (face.dist + 0.02) + (face.nx !== 0 ? lateral : 0);
-      const wx = geoCX + localX * cosR + localZ * sinR;
-      const wz = geoCZ - localX * sinR + localZ * cosR;
+      // Local → world: (bx,bz) + R(θ)*(localX,localZ), R(θ) = [cos -sin; sin cos]
+      const wx = geoCX + localX * cosR - localZ * sinR;
+      const wz = geoCZ + localX * sinR + localZ * cosR;
       parts.push(
         `  <m-cube id="win-${idx}-${winIdx}" x="${r2(wx)}" y="${r2(wy)}" z="${r2(wz)}" ry="${deg(face.winRy)}" width="${WIN_W}" height="${WIN_H}" depth="0.05" color="${wColor}" emission="${wColor}" emission-intensity="${WIN_INTENSITY}" />`,
       );
@@ -299,7 +315,8 @@ function emitWindows(parts: string[], idx: number, b: BuildingPlacement, bx: num
   }
 }
 
-/** Street light pole + lamp (emissive), spaced along each road segment. */
+// --- Street furniture (lights, vehicles, traffic lights) ----------------------
+
 const LIGHT_SPACING = 14;
 const LIGHT_POLE_H = 3.2;
 const LIGHT_POLE_W = 0.12;
@@ -385,8 +402,7 @@ function emitVehicle(
   const duration = Math.max(4000, Math.round(usable * VEHICLE_MS_PER_M));
   const lane = rng() > 0.5 ? VEHICLE_LANE_OFFSET : -VEHICLE_LANE_OFFSET;
   const startTime = Math.round(rng() * duration);
-  const catalogId =
-    VEHICLE_CATALOG_IDS[Math.floor(rng() * VEHICLE_CATALOG_IDS.length)]!;
+  const catalogId = pick(VEHICLE_CATALOG_IDS, rng);
   // Face along +X / -X or +Z / -Z (deg); ping-pong only moves position—model may reverse visually half cycle.
   const ryAlongX = rng() > 0.5 ? 90 : -90;
   const ryAlongZ = rng() > 0.5 ? 0 : 180;
@@ -456,6 +472,7 @@ function emitTrafficLights(
   }
 }
 
+/** Emit full city MML: streets, buildings (with windows/antennas), pyramid, lights, vehicles. */
 function cityToMml(
   buildings: BuildingPlacement[],
   streets: StreetSegment[],
@@ -505,15 +522,17 @@ function cityToMml(
   return `<m-group id="city-layout-root">\n${parts.join("\n")}\n</m-group>`;
 }
 
+// --- Public API --------------------------------------------------------------
+
 export type GenerateCityMmlOptions = {
   /**
-   * Building pool for layout packing — e.g. from hub catalog via catalogEntriesToSeedBuildings.
-   * If omitted or empty, uses static SEED_BUILDINGS + DEFAULT_SEED_BUILDING_DIMENSIONS.
+   * Building pool for layout packing — from hub catalog or params.
+   * If omitted or empty, layout has no buildings (streets and pyramid only).
    */
   buildings?: SeedBuildingEntry[];
 };
 
-/** Pure MML generator — no I/O. Building pool from options.buildings or static seed list. */
+/** Pure MML generator; no I/O. Building pool from options.buildings; empty if omitted. */
 export function generateCityMml(
   config: Partial<CityGenConfig> = {},
   options?: GenerateCityMmlOptions,
@@ -529,10 +548,7 @@ export function generateCityMml(
     buildingSetback: c.buildingSetback,
     seed: c.seed,
   };
-  const pool =
-    options?.buildings && options.buildings.length > 0
-      ? options.buildings
-      : getSeedBuildingsWithDimensions();
+  const pool = options?.buildings?.length ? options.buildings : [];
   const layout = generateCityLayout(pool, layoutCfg);
 
   let pyramidCell: CellBounds | null = null;
@@ -544,4 +560,19 @@ export function generateCityMml(
   const offsetX = BLOCK_SIZE_M / 2;
   const offsetZ = BLOCK_SIZE_M / 2;
   return cityToMml(layout.buildings, layout.streets, c.streetWidth, offsetX, offsetZ, c.seed, pyramidCell);
+}
+
+/**
+ * Fetch building pool from hub catalog, then generate city MML.
+ * Use when hubUrl and blockId are available so layout uses API dimensions and URLs.
+ * If fetch fails or returns no buildings, generates city with no buildings (streets + pyramid only).
+ */
+export async function generateCityMmlFromCatalog(
+  hubUrl: string,
+  blockId: string,
+  config: Partial<CityGenConfig> = {},
+  apiKey?: string,
+): Promise<string> {
+  const buildings = await fetchBuildingsFromCatalog(hubUrl, blockId, apiKey);
+  return generateCityMml(config, buildings.length > 0 ? { buildings } : undefined);
 }

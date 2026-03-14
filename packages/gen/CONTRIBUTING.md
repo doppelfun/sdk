@@ -49,7 +49,7 @@ Callers may also import your `generate*Mml` and clamps directly; keep those expo
 
 ## Model dimensions
 
-To refresh `DEFAULT_SEED_BUILDING_DIMENSIONS` after changing a seed GLB, run `pnpm run analyze-model-dimensions` in `packages/gen` (needs network + Draco devDeps). Pipe stdout into jq or paste into `city/layout/seed-buildings.ts`.
+To analyse GLB dimensions (e.g. for docs or tooling), run `pnpm run analyze-model-dimensions -- <url> [url2 ...]` in `packages/gen` (needs network + Draco devDeps). Output is JSON to stdout.
 
 ## Questions
 

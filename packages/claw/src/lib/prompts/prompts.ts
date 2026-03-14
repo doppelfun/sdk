@@ -57,13 +57,6 @@ const HINT_HAVE_CATALOG =
 /** Hint when list_documents result is cached. */
 const HINT_HAVE_DOCUMENTS =
   " (Use this list to answer; do not call list_documents again unless the current message asks to refresh or you just created/deleted a document.)";
-/** Instruction when we have a stored last reply (show it so model does not repeat). */
-function hintAlreadyReplied(lastMessage: string | null): string {
-  if (lastMessage) {
-    return `Your last reply was: "${lastMessage}". Do not send the same or another chat message until there is a *new* DM or owner message.`;
-  }
-  return "You already replied in chat last tick. Do not repeat—only reply again if there is a *new* DM or owner message.";
-}
 /** Default instruction for when to reply. */
 const HINT_WHEN_TO_REPLY =
   "Only reply when a line is marked '(DM)' or Owner said has an instruction. Otherwise skip chat and tool calls if nothing to do.";
@@ -76,6 +69,14 @@ const BUILD_TOOLS_NO_REPEAT = new Set(["build_full", "build_with_code", "build_i
 
 /** Cap injected catalog bytes so wake ticks stay bounded. */
 const MAX_INJECT_CATALOG_CHARS = 3200;
+
+/** Instruction when we have a stored last reply (show it so model does not repeat). */
+function hintAlreadyReplied(lastMessage: string | null): string {
+  if (lastMessage) {
+    return `Your last reply was: "${lastMessage}". Do not send the same or another chat message until there is a *new* DM or owner message.`;
+  }
+  return "You already replied in chat last tick. Do not repeat—only reply again if there is a *new* DM or owner message.";
+}
 
 /**
  * Format one chat entry for the user prompt (global vs DM thread hints).

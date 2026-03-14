@@ -18,7 +18,7 @@
 
 import { fetchJson, normalizeBaseUrl } from "./utils.js";
 
-/** Full entry (hub block catalog / engine cache). */
+/** Full entry (hub block catalog / engine cache). Includes collision and dimensions for models. */
 export type CatalogEntry = {
   id: string;
   name: string;
@@ -29,6 +29,12 @@ export type CatalogEntry = {
   blockId?: string | null;
   /** Hub may send tag as id alias */
   tag?: string;
+  /** URL to collision mesh blob (models). */
+  collisionUrl?: string | null;
+  /** Bounding box dimensions in meters (models). For procedural generation and pathfinding. */
+  width?: number | null;
+  depth?: number | null;
+  height?: number | null;
 };
 
 /** Public list entry (hub GET /api/catalog). */

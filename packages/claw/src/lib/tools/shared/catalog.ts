@@ -5,7 +5,16 @@
 import { getBlockCatalog, getEngineCatalog, type CatalogEntry as SdkCatalogEntry } from "@doppelfun/sdk";
 import type { ClawConfig } from "../../config/config.js";
 
-export type CatalogEntry = { id: string; name?: string; url?: string; category?: string };
+export type CatalogEntry = {
+  id: string;
+  name?: string;
+  url?: string;
+  category?: string;
+  /** From catalog API (models). Used for city layout when present. */
+  width?: number | null;
+  depth?: number | null;
+  height?: number | null;
+};
 
 export function mapSdkCatalog(list: SdkCatalogEntry[]): CatalogEntry[] {
   return list
@@ -14,6 +23,9 @@ export function mapSdkCatalog(list: SdkCatalogEntry[]): CatalogEntry[] {
       name: e.name,
       url: e.url,
       category: e.category,
+      width: e.width,
+      depth: e.depth,
+      height: e.height,
     }))
     .filter((e) => e.id);
 }

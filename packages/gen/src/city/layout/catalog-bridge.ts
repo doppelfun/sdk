@@ -1,41 +1,80 @@
 /**
  * Map hub/engine catalog entries into SeedBuildingEntry for city layout.
- * Hub lists don't include width/depth/height — we merge DEFAULT_SEED_BUILDING_DIMENSIONS
- * by id when present, else use a generic fallback so layout packing still works.
+ * Uses API width/depth/height when present; otherwise a single fallback.
+ * Models are normalized to center-at-origin.
  */
-import { DEFAULT_SEED_BUILDING_DIMENSIONS, type SeedBuildingEntry } from "./seed-buildings.js";
 
-const FALLBACK = { width: 5, depth: 3, height: 5, originOffsetX: 0, originOffsetZ: 0 } as const;
+// --- Types -------------------------------------------------------------------
 
-/** Categories treated as building models when filtering hub catalog (case-insensitive substring). */
-const DEFAULT_BUILDING_CATEGORY_HINTS = ["building", "buildings"];
+/** Building entry for city layout; produced from catalog API or params. */
+export type SeedBuildingEntry = {
+  id: string;
+  name: string;
+  url: string;
+  width?: number;
+  depth?: number;
+  height?: number;
+};
 
+/** Input shape from hub/engine catalog (id required; rest optional). */
 export type CatalogLike = {
   id: string;
   name?: string;
   url?: string;
   category?: string;
   assetType?: string;
+  /** From catalog API (models). Used for layout when present. */
+  width?: number | null;
+  depth?: number | null;
+  height?: number | null;
 };
 
+// --- Constants ---------------------------------------------------------------
+
+/** Default dimensions when catalog has no width/depth/height (metres). */
+const FALLBACK = { width: 5, depth: 3, height: 5 } as const;
+
+/** Category substrings that mark an entry as a building (case-insensitive). */
+const DEFAULT_BUILDING_CATEGORY_HINTS = ["building", "buildings"];
+
+// --- Helpers -----------------------------------------------------------------
+
+/** Build a SeedBuildingEntry from id + partial fields; uses FALLBACK for missing dimensions. */
 function mergeDims(id: string, partial: Partial<SeedBuildingEntry>): SeedBuildingEntry {
-  const dims = DEFAULT_SEED_BUILDING_DIMENSIONS[id];
   return {
     id,
     name: partial.name ?? id,
     url: partial.url ?? "",
-    width: partial.width ?? dims?.width ?? FALLBACK.width,
-    depth: partial.depth ?? dims?.depth ?? FALLBACK.depth,
-    height: partial.height ?? dims?.height ?? FALLBACK.height,
-    originOffsetX: partial.originOffsetX ?? dims?.originOffsetX ?? FALLBACK.originOffsetX,
-    originOffsetZ: partial.originOffsetZ ?? dims?.originOffsetZ ?? FALLBACK.originOffsetZ,
+    width: partial.width != null ? partial.width : FALLBACK.width,
+    depth: partial.depth != null ? partial.depth : FALLBACK.depth,
+    height: partial.height != null ? partial.height : FALLBACK.height,
   };
 }
 
+/** True if entry has valid id and (when required) a non-empty URL. */
+function canAddEntry(e: CatalogLike, requireUrl: boolean): boolean {
+  const id = (e.id || "").trim();
+  if (!id) return false;
+  if (requireUrl && !(e.url && String(e.url).trim())) return false;
+  return true;
+}
+
+/** True if entry looks like a building (category hint) and not a vehicle. */
+function isBuildingLike(e: CatalogLike, hints: string[]): boolean {
+  const cat = (e.category || "").toLowerCase();
+  const assetType = (e.assetType || "").toLowerCase();
+  const categoryMatch = hints.some((h) => cat.includes(h) || assetType.includes(h));
+  const vehicleLike = cat.includes("vehicle") || cat.includes("car") || assetType.includes("vehicle");
+  return categoryMatch && !vehicleLike;
+}
+
+// --- Public API --------------------------------------------------------------
+
 /**
  * Turn hub/engine catalog entries into a building pool for generateCityLayout.
- * Filters to entries that look like buildings (category hint or any model with id).
- * If the filtered list is empty, returns [] so caller can fall back to static SEED_BUILDINGS.
+ * First pass: include entries matching building category (and not vehicle).
+ * If none match, second pass: include any entry with a .glb URL (custom block catalog).
+ * Returns [] when no entries pass so caller must pass buildings from API or params.
  */
 export function catalogEntriesToSeedBuildings(
   entries: CatalogLike[],
@@ -49,30 +88,28 @@ export function catalogEntriesToSeedBuildings(
 
   const pushEntry = (e: CatalogLike) => {
     const id = (e.id || "").trim();
-    if (!id || seen.has(id)) return;
-    if (requireUrl && !(e.url && String(e.url).trim())) return;
+    if (!id || seen.has(id) || (requireUrl && !(e.url && String(e.url).trim()))) return;
     seen.add(id);
-    out.push(mergeDims(id, { name: e.name, url: e.url }));
+    out.push(
+      mergeDims(id, {
+        name: e.name,
+        url: e.url,
+        width: e.width ?? undefined,
+        depth: e.depth ?? undefined,
+        height: e.height ?? undefined,
+      })
+    );
   };
 
   for (const e of entries) {
-    const id = (e.id || "").trim();
-    if (!id || seen.has(id)) continue;
-    if (requireUrl && !(e.url && String(e.url).trim())) continue;
-
-    const cat = (e.category || "").toLowerCase();
-    const assetType = (e.assetType || "").toLowerCase();
-    const inKnownDims = Boolean(DEFAULT_SEED_BUILDING_DIMENSIONS[id]);
-    const categoryMatch = hints.some((h) => cat.includes(h) || assetType.includes(h));
-    const vehicleLike = cat.includes("vehicle") || cat.includes("car") || assetType.includes("vehicle");
-    if (inKnownDims || (categoryMatch && !vehicleLike)) pushEntry(e);
+    if (!canAddEntry(e, requireUrl)) continue;
+    if (isBuildingLike(e, hints)) pushEntry(e);
   }
 
-  // No building-tagged entries — use any GLB so layout still runs with fallback dims (custom block catalog)
   if (out.length === 0) {
     seen.clear();
     for (const e of entries) {
-      if (e.url && /\.glb(\?|$)/i.test(e.url)) pushEntry(e);
+      if (canAddEntry(e, requireUrl) && e.url && /\.glb(\?|$)/i.test(e.url)) pushEntry(e);
     }
   }
 
@@ -80,8 +117,22 @@ export function catalogEntriesToSeedBuildings(
 }
 
 /**
- * Normalize raw params.buildings (array of plain objects) into SeedBuildingEntry[].
- * Safe for JSON from Claw — only id required; dims merged from known catalog ids.
+ * Fetch block catalog from hub and return building pool for city layout.
+ * Dimensions come from API when present; otherwise FALLBACK (5×3×5 m).
+ */
+export async function fetchBuildingsFromCatalog(
+  hubUrl: string,
+  blockId: string,
+  apiKey?: string
+): Promise<SeedBuildingEntry[]> {
+  const { getBlockCatalog } = await import("@doppelfun/sdk");
+  const entries = await getBlockCatalog(hubUrl, blockId, apiKey);
+  return catalogEntriesToSeedBuildings(entries);
+}
+
+/**
+ * Normalize raw params.buildings (e.g. from Claw JSON) into SeedBuildingEntry[].
+ * Only id is required per item; name/url/dims are optional and use FALLBACK when missing.
  */
 export function normalizeBuildingsParam(raw: unknown): SeedBuildingEntry[] | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
@@ -98,8 +149,6 @@ export function normalizeBuildingsParam(raw: unknown): SeedBuildingEntry[] | nul
         width: typeof o.width === "number" ? o.width : undefined,
         depth: typeof o.depth === "number" ? o.depth : undefined,
         height: typeof o.height === "number" ? o.height : undefined,
-        originOffsetX: typeof o.originOffsetX === "number" ? o.originOffsetX : undefined,
-        originOffsetZ: typeof o.originOffsetZ === "number" ? o.originOffsetZ : undefined,
       }),
     );
   }

@@ -12,9 +12,14 @@ export {
   clampPyramidConfig,
 } from "./pyramid/config.js";
 
-export { generateCityMml, type GenerateCityMmlOptions } from "./city/service.js";
+export {
+  generateCityMml,
+  generateCityMmlFromCatalog,
+  type GenerateCityMmlOptions,
+} from "./city/service.js";
 export {
   catalogEntriesToSeedBuildings,
+  fetchBuildingsFromCatalog,
   normalizeBuildingsParam,
   type CatalogLike,
 } from "./city/layout/catalog-bridge.js";
@@ -40,11 +45,7 @@ export {
 
 export { mulberry32, r2, deg } from "./shared/prng.js";
 
-export {
-  getModelDimensionsFromDocument,
-  dimensionsToOriginOffsets,
-  type ModelDimensions,
-} from "./model-dimensions.js";
+export { getModelDimensionsFromDocument, type ModelDimensions } from "./model-dimensions.js";
 
 export {
   runProceduralMml,

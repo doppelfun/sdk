@@ -163,17 +163,4 @@ export function getModelDimensionsFromDocument(doc: Document): ModelDimensions |
   };
 }
 
-/**
- * Geometry centre offsets from model origin in X/Z (metres), matching seed-buildings
- * convention: originOffsetX = (minX+maxX)/2, originOffsetZ = (minZ+maxZ)/2 when origin is at corner.
- * Useful for updating DEFAULT_SEED_BUILDING_DIMENSIONS after re-analysing a GLB.
- */
-export function dimensionsToOriginOffsets(d: ModelDimensions): {
-  originOffsetX: number;
-  originOffsetZ: number;
-} {
-  return {
-    originOffsetX: (d.minX + d.maxX) / 2,
-    originOffsetZ: (d.minZ + d.maxZ) / 2,
-  };
-}
+/** Models are normalized to center-at-origin in the pipeline; no origin offsets stored. */

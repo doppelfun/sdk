@@ -58,11 +58,18 @@ export async function handleGenerateProcedural(ctx: ToolContext) {
           raw.params && typeof raw.params === "object" && !Array.isArray(raw.params)
             ? ({ ...(raw.params as Record<string, unknown>) } as Record<string, unknown>)
             : {};
-        params.buildings = buildings.map((b) => ({ id: b.id, name: b.name, url: b.url }));
+        params.buildings = buildings.map((b) => ({
+          id: b.id,
+          name: b.name,
+          url: b.url,
+          width: b.width,
+          depth: b.depth,
+          height: b.height,
+        }));
         raw.params = params;
       }
     } catch {
-      // fall back to static SEED_BUILDINGS inside gen
+      // fall back to empty building list inside gen (streets + pyramid only)
     }
   }
 

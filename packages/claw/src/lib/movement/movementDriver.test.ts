@@ -95,4 +95,59 @@ describe("movementDriverTick", () => {
     expect(Math.abs(arg.moveZ)).toBeGreaterThan(0);
     expect(store.getState().movementTarget).not.toBeNull();
   });
+
+  describe("waypoints (server-authored pathfinding)", () => {
+    it("steers toward current waypoint when movementWaypoints set", () => {
+      const sendInput = vi.fn();
+      const client = { sendInput } as unknown as DoppelClient;
+      const store = createClawStore("0_0");
+      store.setMovementTarget({ x: 20, z: 20 });
+      store.setMovementWaypoints([
+        { x: 5, z: 5 },
+        { x: 10, z: 10 },
+        { x: 20, z: 20 },
+      ]);
+      store.setState({ myPosition: { x: 0, y: 0, z: 0 } });
+      expect(movementDriverTick(client, store)).toBe(true);
+      expect(sendInput).toHaveBeenCalled();
+      const arg = sendInput.mock.calls[0]![0] as { moveX: number; moveZ: number };
+      expect(Math.abs(arg.moveX)).toBeGreaterThan(0);
+      expect(Math.abs(arg.moveZ)).toBeGreaterThan(0);
+      expect(store.getState().movementTarget).not.toBeNull();
+      expect(store.getState().movementWaypoints).not.toBeNull();
+      expect(store.getState().movementWaypointIndex).toBe(0);
+    });
+
+    it("clears waypoints and target when within stop distance on arrive", () => {
+      const sendInput = vi.fn();
+      const client = { sendInput } as unknown as DoppelClient;
+      const store = createClawStore("0_0");
+      store.setMovementTarget({ x: 10, z: 10 });
+      store.setMovementWaypoints([{ x: 10, z: 10 }]);
+      store.setState({
+        myPosition: { x: 9.5, y: 0, z: 10 },
+        movementStopDistanceM: 2,
+      });
+      expect(movementDriverTick(client, store)).toBe(true);
+      expect(sendInput).toHaveBeenCalledWith(
+        expect.objectContaining({ moveX: 0, moveZ: 0 })
+      );
+      expect(store.getState().movementTarget).toBeNull();
+      expect(store.getState().movementWaypoints).toBeNull();
+    });
+
+    it("falls back to straight line when no waypoints", () => {
+      const sendInput = vi.fn();
+      const client = { sendInput } as unknown as DoppelClient;
+      const store = createClawStore("0_0");
+      store.setMovementTarget({ x: 50, z: 50 });
+      store.setMovementWaypoints(null);
+      store.setState({ myPosition: { x: 0, y: 0, z: 0 } });
+      expect(movementDriverTick(client, store)).toBe(true);
+      expect(sendInput).toHaveBeenCalled();
+      const arg = sendInput.mock.calls[0]![0] as { moveX: number; moveZ: number };
+      expect(Math.abs(arg.moveX)).toBeGreaterThan(0);
+      expect(Math.abs(arg.moveZ)).toBeGreaterThan(0);
+    });
+  });
 });

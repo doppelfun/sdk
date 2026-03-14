@@ -47,10 +47,6 @@ Claw’s `generate_procedural` tool calls `runProceduralMml(kind, args)` from th
 
 Callers may also import your `generate*Mml` and clamps directly; keep those exports backward compatible when possible.
 
-## Model dimensions
-
-To analyse GLB dimensions (e.g. for docs or tooling), run `pnpm run analyze-model-dimensions -- <url> [url2 ...]` in `packages/gen` (needs network + Draco devDeps). Output is JSON to stdout.
-
 ## Questions
 
 Open an issue or draft PR early if you’re unsure about config shape or engine dependencies.

@@ -28,6 +28,7 @@ export async function handleMove(ctx: ToolContext) {
     store.setMovementIntent(null);
     store.setMovementTarget({ x: occ.position.x, z: occ.position.z });
     store.setMovementSprint(sprint);
+    client.sendRequestPath(occ.position.x, occ.position.z);
     client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
     const summary = `approach ${occ.username} at (${occ.position.x.toFixed(1)}, ${occ.position.z.toFixed(1)}) — auto-walk until close`;
     logAction(summary);
@@ -43,6 +44,7 @@ export async function handleMove(ctx: ToolContext) {
     store.setMovementTarget({ x: parsed.x, z: parsed.z });
     store.setLastBuildTarget({ x: parsed.x, z: parsed.z });
     store.setMovementSprint(sprint);
+    client.sendRequestPath(parsed.x, parsed.z);
     client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
     const summary = `approach (${parsed.x.toFixed(1)}, ${parsed.z.toFixed(1)}) — auto-walk until within ~2 m`;
     logAction(summary);
@@ -51,6 +53,7 @@ export async function handleMove(ctx: ToolContext) {
 
   if (rawX === 0 && rawZ === 0) {
     store.setMovementTarget(null);
+    store.setMovementWaypoints(null);
     store.setMovementIntent(null);
     store.setMovementSprint(false);
     client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump });

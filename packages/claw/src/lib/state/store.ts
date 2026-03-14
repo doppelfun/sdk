@@ -77,6 +77,8 @@ function createClawStore(blockSlotId: string) {
         lastBuildTarget: null,
         movementTarget: null,
         movementIntent: null,
+        movementWaypoints: null,
+        movementWaypointIndex: 0,
         pendingGoTalkToAgent: null,
         autonomousSeekCooldownUntil: 0,
         lastToolRun: null,
@@ -179,6 +181,23 @@ function createClawStore(blockSlotId: string) {
     // --- Movement / autonomous ---
     setMovementTarget(target: { x: number; z: number } | null) {
       setState({ movementTarget: target });
+    },
+
+    setMovementWaypoints(waypoints: { x: number; z: number }[] | null) {
+      setState({
+        movementWaypoints: waypoints,
+        movementWaypointIndex: 0,
+      });
+    },
+
+    advanceMovementWaypoint() {
+      setState((s) => {
+        const next = s.movementWaypointIndex + 1;
+        if (s.movementWaypoints && next >= s.movementWaypoints.length) {
+          return { movementWaypoints: null, movementWaypointIndex: 0 };
+        }
+        return { movementWaypointIndex: next };
+      });
     },
 
     setMovementIntent(intent: {

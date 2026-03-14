@@ -79,12 +79,4 @@ Pyramid is the minimal template (config + service + shared PRNG only). City comb
 
 ---
 
-## Model dimensions (GLB AABB)
-
-Same approach as doppel-engine `analyze-model-dimensions`: glTF-Transform traverses the scene graph with node TRS so scaled roots (e.g. 0.01) yield true world-space size.
-
-- **API:** `getModelDimensionsFromDocument(doc)` — pass a `@gltf-transform/core` `Document` from `NodeIO.read(url)` or `readBinary(buffer)` (register `KHRDracoMeshCompression` + draco decoder if GLB uses Draco).
-- Models are normalized to center-at-origin in the pipeline; no origin offsets stored.
-- **CLI:** `pnpm run analyze-model-dimensions -- <glb-url> [url2 ...]` — fetches GLB(s), prints JSON dimensions to stdout.
-
 **Hub catalog:** Building pool comes from the API only. `catalogEntriesToSeedBuildings(entries)` maps hub/engine catalog into a building pool (category "building(s)" or any `.glb` with fallback dims). `generateCityMml(cfg, { buildings })` uses that pool; if `buildings` is omitted or empty, layout has no buildings. **`generateCityMmlFromCatalog(hubUrl, blockId, config, apiKey?)`** fetches the building pool from the hub then generates city MML. Claw `generate_procedural` city passes `params.buildings` from the prefetched catalog.

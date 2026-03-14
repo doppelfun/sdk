@@ -347,6 +347,11 @@ export async function runAgent(options: AgentRunOptions = {}): Promise<void> {
     }
   });
 
+  client.onMessage("waypoints", (payload: unknown) => {
+    const p = payload as { waypoints?: { x: number; z: number }[] };
+    store.setMovementWaypoints(Array.isArray(p?.waypoints) ? p.waypoints : null);
+  });
+
   await client.connect();
 
   let sessionRefreshTimer: ReturnType<typeof setInterval> | null = null;

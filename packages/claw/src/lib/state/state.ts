@@ -72,6 +72,10 @@ export type ClawState = {
    * same cadence as NpcDriver so motion stays smooth instead of one-shot jerk per LLM tick.
    */
   movementIntent: { moveX: number; moveZ: number; sprint: boolean } | null;
+  /** Server-authored pathfinding waypoints (world x,z). When set, movementDriver steers toward current waypoint. */
+  movementWaypoints: { x: number; z: number }[] | null;
+  /** Index into movementWaypoints for the next waypoint to steer toward. */
+  movementWaypointIndex: number;
   /**
    * When > 0 and now < this timestamp, AutonomousManager is in "emote stand still" — movement
    * driver sends 0,0. Set by AutonomousManager when it triggers an emote; cleared when owner
@@ -215,6 +219,8 @@ export function createInitialState(blockSlotId: string): ClawState {
     movementStopDistanceM: 2,
     movementSprint: false,
     movementIntent: null,
+    movementWaypoints: null,
+    movementWaypointIndex: 0,
     autonomousEmoteStandStillUntil: 0,
     pendingGoTalkToAgent: null,
     autonomousSeekCooldownUntil: 0,

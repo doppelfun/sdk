@@ -45,8 +45,6 @@ export {
 
 export { mulberry32, r2, deg } from "./shared/prng.js";
 
-export { getModelDimensionsFromDocument, type ModelDimensions } from "./model-dimensions.js";
-
 export {
   runProceduralMml,
   listProceduralKinds,

@@ -26,6 +26,8 @@ export const DEFAULT_STOP_DISTANCE_M = 2;
 const DIRECTION_SPEED = 0.35;
 /** Max |moveX|/|moveZ| sent to engine (Claw move tool cap). */
 const MAX_MOVE = 0.4;
+/** When within this distance (m) of current waypoint, advance to next. */
+const WAYPOINT_RADIUS = 1.5;
 
 /** Options for movement driver. voiceId is passed to sendChat when sending autonomous greeting (from CLAW_VOICE_ID). */
 export type MovementDriverOptions = { voiceId?: string | null };
@@ -92,15 +94,71 @@ export function movementDriverTick(
     }
   }
 
+  const stopDist = state.movementStopDistanceM ?? DEFAULT_STOP_DISTANCE_M;
+
+  // Server-authored waypoints: steer toward current waypoint; advance when within radius
+  const waypoints = state.movementWaypoints;
+  const wIndex = state.movementWaypointIndex;
+  if (waypoints?.length && wIndex < waypoints.length) {
+    const wp = waypoints[wIndex]!;
+    const distToWp = Math.hypot(wp.x - my.x, wp.z - my.z);
+    if (distToWp < WAYPOINT_RADIUS) {
+      store.advanceMovementWaypoint();
+      const nextState = store.getState();
+      const nextWp = nextState.movementWaypoints?.[nextState.movementWaypointIndex];
+      if (nextWp) {
+        const ndx = nextWp.x - my.x;
+        const ndz = nextWp.z - my.z;
+        const nnorm = Math.hypot(ndx, ndz) || 1;
+        let moveX = (ndx / nnorm) * DIRECTION_SPEED;
+        let moveZ = (ndz / nnorm) * DIRECTION_SPEED;
+        moveX = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, moveX));
+        moveZ = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, moveZ));
+        const bounds = getBlockBounds(state.blockSlotId);
+        const xMin = bounds.xMin + BOUNDS_MARGIN;
+        const xMax = bounds.xMax - BOUNDS_MARGIN;
+        const zMin = bounds.zMin + BOUNDS_MARGIN;
+        const zMax = bounds.zMax - BOUNDS_MARGIN;
+        if (my.x <= xMin && moveX < 0) moveX = 0;
+        if (my.x >= xMax && moveX > 0) moveX = 0;
+        if (my.z <= zMin && moveZ < 0) moveZ = 0;
+        if (my.z >= zMax && moveZ > 0) moveZ = 0;
+        client.sendInput({ moveX, moveZ, sprint: state.movementSprint === true, jump: false });
+        return true;
+      }
+      // No next waypoint — fall through to check dist to target / straight line
+    } else {
+      const dx = wp.x - my.x;
+      const dz = wp.z - my.z;
+      const norm = Math.hypot(dx, dz) || 1;
+      let moveX = (dx / norm) * DIRECTION_SPEED;
+      let moveZ = (dz / norm) * DIRECTION_SPEED;
+      moveX = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, moveX));
+      moveZ = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, moveZ));
+      const bounds = getBlockBounds(state.blockSlotId);
+      const xMin = bounds.xMin + BOUNDS_MARGIN;
+      const xMax = bounds.xMax - BOUNDS_MARGIN;
+      const zMin = bounds.zMin + BOUNDS_MARGIN;
+      const zMax = bounds.zMax - BOUNDS_MARGIN;
+      if (my.x <= xMin && moveX < 0) moveX = 0;
+      if (my.x >= xMax && moveX > 0) moveX = 0;
+      if (my.z <= zMin && moveZ < 0) moveZ = 0;
+      if (my.z >= zMax && moveZ > 0) moveZ = 0;
+      client.sendInput({ moveX, moveZ, sprint: state.movementSprint === true, jump: false });
+      return true;
+    }
+  }
+
+  // No waypoints or past last waypoint — straight line toward movementTarget
   const dx = target.x - my.x;
   const dz = target.z - my.z;
   const dist = Math.hypot(dx, dz);
-  const stopDist = state.movementStopDistanceM ?? DEFAULT_STOP_DISTANCE_M;
 
   if (dist < stopDist) {
     const rotY = getFacingTowardNearestOccupant(state);
     client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false, ...(rotY != null && { rotY }) });
     store.setMovementTarget(null);
+    store.setMovementWaypoints(null);
     const pending = state.pendingGoTalkToAgent;
     if (pending && canSendDmTo(store, pending.targetSessionId)) {
       client.sendChat(

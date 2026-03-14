@@ -73,6 +73,13 @@ export type AgentWsSpeakMessage = {
   voiceId?: string;
 };
 
+/** Request pathfinding waypoints from current position to (toX, toZ). Server responds with waypoints message. */
+export type AgentWsRequestPathMessage = {
+  type: "request_path";
+  toX: number;
+  toZ: number;
+};
+
 /** All outbound Agent WebSocket message types. Send as JSON after receiving `authenticated`. */
 export type AgentWsClientMessage =
   | AgentWsInputMessage
@@ -80,7 +87,8 @@ export type AgentWsClientMessage =
   | AgentWsJoinMessage
   | AgentWsEmoteMessage
   | AgentWsThinkingMessage
-  | AgentWsSpeakMessage;
+  | AgentWsSpeakMessage
+  | AgentWsRequestPathMessage;
 
 // --- Inbound (server → client) ---
 
@@ -112,6 +120,12 @@ export type AgentWsThinkingServerMessage = {
   type: "thinking";
   sessionId: string;
   thinking: boolean;
+};
+
+/** Server-authored pathfinding waypoints (world x,z). Set movementWaypoints when received. */
+export type AgentWsWaypointsMessage = {
+  type: "waypoints";
+  waypoints: { x: number; z: number }[];
 };
 
 export type AgentWsChatServerMessage = {

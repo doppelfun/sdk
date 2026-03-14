@@ -12,6 +12,7 @@ import type {
   AgentWsJoinMessage,
   AgentWsEmoteMessage,
   AgentWsSpeakMessage,
+  AgentWsRequestPathMessage,
 } from "./agentWs.js";
 import type { ChatHistoryMessage, GetChatHistoryOptions, GetChatHistoryResult } from "./chat.js";
 
@@ -329,6 +330,16 @@ export class DoppelClient {
       text: text.trim().slice(0, 500),
       ...(options?.voiceId?.trim() && { voiceId: options.voiceId.trim() }),
     };
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  /**
+   * Request pathfinding waypoints from server (current position → toX, toZ).
+   * Server responds with a "waypoints" message; register with onMessage("waypoints", ...) to receive.
+   */
+  sendRequestPath(toX: number, toZ: number): void {
+    if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
+    const msg: AgentWsRequestPathMessage = { type: "request_path", toX, toZ };
     this.ws.send(JSON.stringify(msg));
   }
 

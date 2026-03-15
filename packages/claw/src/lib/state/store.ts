@@ -27,9 +27,6 @@ export type ClawStoreApi = {
   ) => void;
 };
 
-/** Max recent messages we sent to keep for repeat detection. */
-const RECENT_AGENT_CHAT_MESSAGES_MAX = 10;
-
 function createClawStore(blockSlotId: string) {
   const vanillaStore = createStore<ClawState>(() => createInitialState(blockSlotId));
   const getState = vanillaStore.getState;
@@ -79,9 +76,8 @@ function createClawStore(blockSlotId: string) {
         myPosition: null,
         lastBuildTarget: null,
         movementTarget: null,
+        lastMoveToFailed: null,
         movementIntent: null,
-        movementWaypoints: null,
-        movementWaypointIndex: 0,
         pendingGoTalkToAgent: null,
         autonomousSeekCooldownUntil: 0,
         lastToolRun: null,
@@ -157,13 +153,7 @@ function createClawStore(blockSlotId: string) {
 
     // --- Chat/DM display (last message, sent flag) ---
     setLastAgentChatMessage(text: string | null) {
-      if (text != null && text.trim()) {
-        const s = getState();
-        const next = [...(s.recentAgentChatMessages || []), text.trim()].slice(-RECENT_AGENT_CHAT_MESSAGES_MAX);
-        setState({ lastAgentChatMessage: text, recentAgentChatMessages: next });
-      } else {
-        setState({ lastAgentChatMessage: text, recentAgentChatMessages: [] });
-      }
+      setState({ lastAgentChatMessage: text != null && text.trim() ? text.trim() : null });
     },
 
     setLastTickSentChat(value: boolean) {
@@ -192,21 +182,8 @@ function createClawStore(blockSlotId: string) {
       setState({ movementTarget: target });
     },
 
-    setMovementWaypoints(waypoints: { x: number; z: number }[] | null) {
-      setState({
-        movementWaypoints: waypoints,
-        movementWaypointIndex: 0,
-      });
-    },
-
-    advanceMovementWaypoint() {
-      setState((s) => {
-        const next = s.movementWaypointIndex + 1;
-        if (s.movementWaypoints && next >= s.movementWaypoints.length) {
-          return { movementWaypoints: null, movementWaypointIndex: 0 };
-        }
-        return { movementWaypointIndex: next };
-      });
+    setLastMoveToFailed(p: { x: number; z: number } | null) {
+      setState({ lastMoveToFailed: p });
     },
 
     setMovementIntent(intent: {

@@ -28,7 +28,8 @@ runAgent({
     console.log("[tick]", summary);
   },
   onToolCallResult: (name, args, result) => {
-    console.log("[tool]", name, "args:", args, "->", result.ok ? result.summary ?? "ok" : result.error);
+    const out = result.ok ? result.summary ?? "ok" : result.error ?? "(no error message)";
+    console.log("[tool]", name, "args:", args, "->", out);
   },
 }).catch((err) => {
   console.error(err);

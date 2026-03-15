@@ -48,9 +48,9 @@ describe("buildClawToolSet", () => {
     const client = {} as DoppelClient;
     const store = createClawStore("0_0");
     const tools = buildClawToolSet(client, store, minimalConfig(), {
-      allowOnlyTools: ["move", "join_block"],
+      allowOnlyTools: ["approach_position", "join_block"],
     });
-    expect(tools.move).toBeDefined();
+    expect(tools.approach_position).toBeDefined();
     expect(tools.join_block).toBeDefined();
     expect(tools.chat).toBeUndefined();
     expect(tools.generate_procedural).toBeUndefined();
@@ -63,17 +63,15 @@ describe("buildClawToolSet", () => {
     expect(tools.chat).toBeUndefined();
   });
 
-  it("move tool execute validates with Zod then calls sendInput", async () => {
-    const sendInput = vi.fn();
-    const client = { sendInput } as unknown as DoppelClient;
+  it("approach_position tool calls moveTo", async () => {
+    const moveTo = vi.fn();
+    const client = { sendInput: vi.fn(), moveTo } as unknown as DoppelClient;
     const store = createClawStore("0_0");
     const tools = buildClawToolSet(client, store, minimalConfig(), {});
-    const moveTool = tools.move;
-    expect(moveTool).toBeDefined();
-    await moveTool.execute({ moveX: 0.3, moveZ: 0 });
-    expect(sendInput).toHaveBeenCalledWith(
-      expect.objectContaining({ moveX: 0.3, moveZ: 0, sprint: false, jump: false })
-    );
+    const approachPositionTool = tools.approach_position;
+    expect(approachPositionTool).toBeDefined();
+    await approachPositionTool.execute({ position: "50,50" });
+    expect(moveTo).toHaveBeenCalledWith(50, 50);
   });
 
   it("join_block execute throws without blockSlotId (Zod)", async () => {
@@ -84,11 +82,11 @@ describe("buildClawToolSet", () => {
     expect(client.sendJoin).not.toHaveBeenCalled();
   });
 
-  it("move tool execute throws on invalid args", async () => {
-    const client = { sendInput: vi.fn() } as unknown as DoppelClient;
+  it("approach_position execute throws on invalid args", async () => {
+    const client = { sendInput: vi.fn(), moveTo: vi.fn() } as unknown as DoppelClient;
     const store = createClawStore("0_0");
     const tools = buildClawToolSet(client, store, minimalConfig(), {});
-    await expect(tools.move.execute({ moveX: "bad", moveZ: 0 })).rejects.toThrow(/Invalid tool arguments/);
-    expect(client.sendInput).not.toHaveBeenCalled();
+    await expect(tools.approach_position.execute({ position: 123 })).rejects.toThrow(/Invalid tool arguments/);
+    expect(client.moveTo).not.toHaveBeenCalled();
   });
 });

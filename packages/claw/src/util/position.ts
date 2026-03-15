@@ -1,6 +1,6 @@
 /**
  * Position/coordinate parsing. Accepts "x,z" or "x,y,z" (world coords).
- * Used by move (approachPosition) and build_incremental (position hint).
+ * Used by approach_position and build_incremental (position hint).
  */
 
 export type Position3 = { x: number; y: number; z: number };

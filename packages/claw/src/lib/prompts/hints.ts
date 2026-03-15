@@ -23,6 +23,26 @@ export const HINT_HAVE_DOCUMENTS =
 export const HINT_WHEN_TO_REPLY =
   "Only reply when a line is marked '(DM)' or Owner said has an instruction. Otherwise skip chat and tool calls if nothing to do.";
 
+/** When there is chat: steer movement to approach_position for coordinate requests. */
+export const HINT_MOVE_COORDINATES =
+  "If the user asked you to go to specific coordinates (e.g. '30, 30' or 'go to 50,50'), call the approach_position tool with position: 'x,z' once.";
+
+const MOVE_TO_COORDS_REGEX = /\b(?:move|go|head|walk)\s+to\s+(\d+(?:\.\d*)?)\s*,\s*(\d+(?:\.\d*)?)\b/i;
+const BLOCK_COORD_MAX = 100;
+
+/**
+ * If the message is a "move to X, Y" request (block-local 0–100), return the exact instruction for the approach_position tool.
+ */
+export function getMoveToCoordsInstruction(message: string): string | null {
+  const match = message.match(MOVE_TO_COORDS_REGEX);
+  if (!match) return null;
+  const x = parseFloat(match[1]!);
+  const z = parseFloat(match[2]!);
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+  if (x < 0 || x > BLOCK_COORD_MAX || z < 0 || z > BLOCK_COORD_MAX) return null;
+  return `Call the approach_position tool with position: '${x},${z}'.`;
+}
+
 /** Fallback when no other context. */
 export const HINT_NO_CONTEXT =
   "No context yet. Call get_occupants or get_chat_history once to gather context, then act or wait.";

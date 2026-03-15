@@ -1,5 +1,5 @@
 /**
- * Claw agent logging. Set CLAW_VERBOSE=1 for chat previews and fuller context.
+ * Claw agent logging. Set CLAW_VERBOSE=1 for chat previews, moveTo coords, and move_to server-driving distance.
  */
 
 export function clawVerbose(): boolean {

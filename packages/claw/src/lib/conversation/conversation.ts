@@ -27,6 +27,36 @@ function getNow(): number {
 }
 
 /**
+ * Result of evaluateSendReply: either send now or queue for the drain step.
+ * Single gate for "can we send this DM or do we queue?" used by chat tool and fallbacks.
+ * @see docs/PLAN-WORKFLOW-PATTERNS.md Phase 6
+ */
+export type SendReplyAction =
+  | { action: "send_now" }
+  | { action: "queue"; pendingDmReply: { text: string; targetSessionId: string } };
+
+/**
+ * Evaluate whether we can send a DM now or must queue it for the 50 ms drain step.
+ * Global chat (targetSessionId null) always returns send_now.
+ *
+ * @param store - Claw store (read via getState()).
+ * @param targetSessionId - DM target session, or null for global (always send_now).
+ * @param text - Message text (stored when queueing).
+ * @param now - Current time (ms); defaults to getNow() for tests.
+ * @returns send_now or queue with pendingDmReply for the caller to setState and let drain apply.
+ */
+export function evaluateSendReply(
+  store: ClawStoreApi,
+  targetSessionId: string | null,
+  text: string,
+  now = getNow()
+): SendReplyAction {
+  if (!targetSessionId) return { action: "send_now" };
+  if (canSendDmTo(store, targetSessionId, now)) return { action: "send_now" };
+  return { action: "queue", pendingDmReply: { text, targetSessionId } };
+}
+
+/**
  * True if we're allowed to send a DM to sessionId.
  * - idle: new conversation, allowed.
  * - can_reply: only to current peer, and only after receiveDelayUntil has passed.

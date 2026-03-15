@@ -1,19 +1,20 @@
 /**
- * OpenRouter via OpenAI-compatible API (AI SDK only — no raw fetch).
+ * OpenRouter via @openrouter/ai-sdk-provider.
  *
- * - Chat tick: cached client .chat(modelId) + generateText + tools.
- * - Build MML: same client + generateText (no tools) — same stack as chat.
+ * - Chat tick: getOpenRouterLanguageModel(config, modelId) + generateText + tools.
+ * - Build MML: same model + generateText (no tools).
  * - Intent: generateObject with same chat model.
+ * All model access goes through getOpenRouterLanguageModel.
  */
 
 import type { LanguageModel } from "ai";
 import type { ClawConfig } from "../../config/index.js";
 import type { LlmProvider, CompletionResult, BuildIntentResult } from "../provider.js";
 import type { Usage } from "../usage.js";
-import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, generateObject } from "ai";
 import { z } from "zod/v4";
 import { usageFromAiSdk } from "../usage.js";
+import { getOpenRouterLanguageModel } from "./openrouter.js";
 
 const intentSchema = z.object({
   proceduralKind: z.enum(["city", "pyramid"]).nullable(),
@@ -29,24 +30,17 @@ Message:`;
 export class OpenRouterProvider implements LlmProvider {
   readonly kind = "openrouter" as const;
 
-  private readonly openrouter: ReturnType<typeof createOpenAI>;
-
-  constructor(private readonly config: ClawConfig) {
-    this.openrouter = createOpenAI({
-      baseURL: "https://openrouter.ai/api/v1",
-      apiKey: config.openRouterApiKey,
-      headers: { "HTTP-Referer": "https://github.com/doppel-sdk" },
-    });
-  }
+  constructor(private readonly config: ClawConfig) {}
 
   usageCostUsdBeforeMarkup(_usage: Usage, _modelId: string): number | null {
     return null;
   }
 
-  getChatModel(modelId: string): LanguageModel {
-    return this.openrouter.chat(modelId);
+  getChatModel(modelId: string): LanguageModel | null {
+    return getOpenRouterLanguageModel(this.config, modelId);
   }
 
+  /** Single generateText call (no tools); used for build MML and similar. */
   async complete(options: {
     model: string;
     system: string;
@@ -54,9 +48,11 @@ export class OpenRouterProvider implements LlmProvider {
     maxOutputTokens?: number;
     temperature?: number;
   }): Promise<CompletionResult> {
+    const model = getOpenRouterLanguageModel(this.config, options.model);
+    if (!model) return { ok: false, error: "OpenRouter API key not set" };
     try {
       const result = await generateText({
-        model: this.openrouter.chat(options.model),
+        model,
         system: options.system,
         prompt: options.user,
         maxOutputTokens: options.maxOutputTokens ?? 8192,
@@ -81,10 +77,12 @@ export class OpenRouterProvider implements LlmProvider {
     };
   }
 
+  /** Classify user message into procedural kind (city/pyramid) and whether build action is required. */
   async classifyBuildIntent(message: string, modelId: string): Promise<BuildIntentResult> {
     const text = message.trim();
     if (!text) return { proceduralKind: null, requiresBuildAction: false };
-    const model = this.getChatModel(modelId);
+    const model = getOpenRouterLanguageModel(this.config, modelId);
+    if (!model) return { proceduralKind: null, requiresBuildAction: false };
     const { object } = await generateObject({
       model,
       schema: intentSchema,

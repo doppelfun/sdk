@@ -32,6 +32,7 @@ const BASE_TEST_CONFIG: ClawConfig = {
   googleCloudLocation: null,
   sessionRefreshIntervalMs: 0,
   voiceId: null,
+  modelRouterEnabled: false,
 };
 
 /** Minimal ClawConfig for unit tests. Override only fields needed by the test. */

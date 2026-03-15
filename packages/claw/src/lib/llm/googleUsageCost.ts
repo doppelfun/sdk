@@ -9,6 +9,8 @@ import type { Usage } from "./usage.js";
 type Rates = { promptPerToken: number; completionPerToken: number };
 
 const RATES: Record<string, Rates> = {
+  "gemini-3.1-flash-lite-preview": { promptPerToken: 0.15e-6, completionPerToken: 1.2e-6 },
+  "gemini-3.1-pro-preview": { promptPerToken: 1.25e-6, completionPerToken: 10e-6 },
   "gemini-2.5-flash": { promptPerToken: 0.3e-6, completionPerToken: 2.5e-6 },
   "gemini-2.5-flash-lite": { promptPerToken: 0.15e-6, completionPerToken: 1.2e-6 },
   "gemini-2.5-pro": { promptPerToken: 1.25e-6, completionPerToken: 10e-6 },
@@ -16,6 +18,9 @@ const RATES: Record<string, Rates> = {
 
 function ratesForModel(modelId: string): Rates {
   if (RATES[modelId]) return RATES[modelId]!;
+  if (modelId.includes("3.1") && (modelId.includes("flash-lite") || modelId.includes("flash_lite")))
+    return RATES["gemini-3.1-flash-lite-preview"]!;
+  if (modelId.includes("3.1") && modelId.includes("pro")) return RATES["gemini-3.1-pro-preview"]!;
   if (modelId.includes("flash-lite") || modelId.includes("flash_lite"))
     return RATES["gemini-2.5-flash-lite"]!;
   if (modelId.includes("pro")) return RATES["gemini-2.5-pro"]!;

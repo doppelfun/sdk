@@ -16,6 +16,7 @@ import { createLlmProvider } from "../llm/index.js";
 import { MOVEMENT_INPUT_INTERVAL_MS, AutonomousManager } from "../movement/index.js";
 import { clawLog, clawDebug, clawVerbose } from "../log.js";
 import { runTick, ownerBuildBlocked } from "./tickRunner.js";
+
 import { looksLikeBuildRequest } from "../tools/shared/gate.js";
 import { buildChatSendOptions } from "../chatSendOptions.js";
 import { getNextTickDelay, createTickScheduler, type TickScheduler } from "./scheduling.js";
@@ -251,9 +252,11 @@ export class DoppelAgent {
       }
     });
 
-    this.client.onMessage("waypoints", (payload: unknown) => {
-      const p = payload as { waypoints?: { x: number; z: number }[] };
-      this.store.setMovementWaypoints(Array.isArray(p?.waypoints) ? p.waypoints : null);
+    this.client.onMessage("move_to_failed", (payload: unknown) => {
+      const p = payload as { x?: number; z?: number };
+      const x = typeof p.x === "number" && Number.isFinite(p.x) ? p.x : 0;
+      const z = typeof p.z === "number" && Number.isFinite(p.z) ? p.z : 0;
+      this.store.setLastMoveToFailed({ x, z });
     });
 
     await this.client.connect();

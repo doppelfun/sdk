@@ -1,67 +1,48 @@
 import type { ToolContext } from "../types.js";
 import { buildChatSendOptions } from "../../chatSendOptions.js";
-import { canSendDmTo, onWeSentDm } from "../../conversation/index.js";
+import { evaluateSendReply, onWeSentDm } from "../../conversation/index.js";
 import { truncatePreview } from "../../log.js";
 
 export async function handleChat(ctx: ToolContext) {
   const { client, store, args, config, logAction } = ctx;
   const state = store.getState();
   const text = typeof args.text === "string" ? args.text.slice(0, 500).trim() : "";
-  let targetSessionId =
-    typeof args.targetSessionId === "string" ? args.targetSessionId.trim() || undefined : undefined;
+  let targetSessionId: string | null =
+    typeof args.targetSessionId === "string" ? args.targetSessionId.trim() || null : null;
   if (text && !targetSessionId && state.lastDmPeerSessionId) {
     targetSessionId = state.lastDmPeerSessionId;
   }
-  const isDm = Boolean(targetSessionId);
 
-  // Only one chat send per tick — avoid double reply when model returns multiple tool calls.
+  // When in a conversation with another agent, only one message per turn — wait for their reply.
+  // When DMing a human (user/owner), allow follow-up messages (e.g. "having trouble with the move command").
   if (text && state.lastTickSentChat) {
-    return {
-      ok: false,
-      summary: "already responded",
-      message: "Already sent a message this turn; wait for the other person to respond.",
-    };
-  }
-
-  // Do not repeat any message we've already sent (use recent history, not just last).
-  if (text) {
-    const norm = (s: string) => s.toLowerCase().trim();
-    const normalized = norm(text);
-    const recentOurs = state.recentAgentChatMessages ?? [];
-    if (recentOurs.some((prev) => norm(prev) === normalized)) {
+    const peerIsAgent =
+      targetSessionId != null &&
+      state.occupants.some((o) => o.clientId === targetSessionId && o.type === "agent");
+    if (peerIsAgent) {
       return {
         ok: false,
-        summary: "repeat blocked",
-        message:
-          "You already said that in this conversation. Send something different or skip chat (e.g. use a different phrase, answer the question, or say goodbye).",
-      };
-    }
-    // Do not repeat what someone else just said (avoids multiple agents saying the same thing).
-    const recentTheirs = state.chat ?? [];
-    if (recentTheirs.some((e) => norm(e.message) === normalized)) {
-      return {
-        ok: false,
-        summary: "repeat blocked",
-        message:
-          "Someone else already said that. Say something different so you don't echo others.",
+        error: "Already sent a message this turn; wait for the other person to respond.",
       };
     }
   }
 
-  // Agent-to-agent: conversation FSM so conversations aren’t spammed and voice can finish.
-  if (text && isDm && targetSessionId && !canSendDmTo(store, targetSessionId)) {
-    store.setState({ pendingDmReply: { text, targetSessionId } });
-    return {
-      ok: true,
-      summary: "queued",
-      message: "Reply will be sent after a short delay (turn-taking).",
-    };
+  // Evaluate send vs queue; conversation FSM so conversations aren’t spammed and voice can finish.
+  if (text && targetSessionId) {
+    const action = evaluateSendReply(store, targetSessionId, text);
+    if (action.action === "queue") {
+      store.setState({ pendingDmReply: action.pendingDmReply });
+      return {
+        ok: true,
+        summary: "queued (reply will be sent after turn-taking delay)",
+      };
+    }
   }
 
   if (text) {
     const voiceId =
       (typeof args.voiceId === "string" ? args.voiceId.trim() : null) || config.voiceId || undefined;
-    client.sendChat(text, buildChatSendOptions({ targetSessionId, voiceId }));
+    client.sendChat(text, buildChatSendOptions({ targetSessionId: targetSessionId ?? undefined, voiceId }));
     store.setLastAgentChatMessage(text);
     store.setLastTickSentChat(true);
     if (targetSessionId) {

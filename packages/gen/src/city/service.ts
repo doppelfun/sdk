@@ -181,7 +181,9 @@ function emitPyramidBlock(parts: string[], idx: number, block: PyramidBlock, cx:
   const by = r2(block.y);
   const bz = r2(block.z + cz);
   let attrs = `id="pyr-${idx}" x="${bx}" y="${by}" z="${bz}"`;
-  attrs += ` width="${s}" height="${s}" depth="${s}" color="${block.color}" collide="true"`;
+  /** Only the base layer (outside perimeter of pyramid) has collision; upper layers are non-colliding. */
+  const collide = block.layer === 0 ? "true" : "false";
+  attrs += ` width="${s}" height="${s}" depth="${s}" color="${block.color}" collide="${collide}"`;
   if (!block.isCorner || !block.emission) {
     parts.push(`  <m-cube ${attrs} />`);
     return;
@@ -282,8 +284,8 @@ function emitAntenna(
   const poleY = roofY + poleH / 2;
   const tipY = roofY + poleH + tipSize / 2;
   parts.push(
-    `  <m-cube id="ant-pole-${idx}" x="${r2(wx)}" y="${r2(poleY)}" z="${r2(wz)}" width="${r2(poleW)}" height="${r2(poleH)}" depth="${r2(poleW)}" color="#666666" />`,
-    `  <m-cube id="ant-tip-${idx}" x="${r2(wx)}" y="${r2(tipY)}" z="${r2(wz)}" width="${r2(tipSize)}" height="${r2(tipSize)}" depth="${r2(tipSize)}" color="${color}" emission="${color}" emission-intensity="${r2(intensity)}" />`,
+    `  <m-cube id="ant-pole-${idx}" x="${r2(wx)}" y="${r2(poleY)}" z="${r2(wz)}" width="${r2(poleW)}" height="${r2(poleH)}" depth="${r2(poleW)}" color="#666666" collide="false" />`,
+    `  <m-cube id="ant-tip-${idx}" x="${r2(wx)}" y="${r2(tipY)}" z="${r2(wz)}" width="${r2(tipSize)}" height="${r2(tipSize)}" depth="${r2(tipSize)}" color="${color}" emission="${color}" emission-intensity="${r2(intensity)}" collide="false" />`,
   );
 }
 
@@ -333,7 +335,7 @@ function emitWindows(
       const wx = geoCX + localX * cosR - localZ * sinR;
       const wz = geoCZ + localX * sinR + localZ * cosR;
       parts.push(
-        `  <m-cube id="win-${idx}-${winIdx}" x="${r2(wx)}" y="${r2(wy)}" z="${r2(wz)}" ry="${deg(face.winRy)}" width="${WIN_W}" height="${WIN_H}" depth="0.05" color="${wColor}" emission="${wColor}" emission-intensity="${WIN_INTENSITY}" />`,
+        `  <m-cube id="win-${idx}-${winIdx}" x="${r2(wx)}" y="${r2(wy)}" z="${r2(wz)}" ry="${deg(face.winRy)}" width="${WIN_W}" height="${WIN_H}" depth="0.05" color="${wColor}" emission="${wColor}" emission-intensity="${WIN_INTENSITY}" collide="false" />`,
       );
       winIdx++;
       w++;
@@ -445,10 +447,10 @@ function emitStreetLights(
       const zSouth = zBase + halfW;
       const idBase = `light-${streetIdx}-${lightIdx}`;
       parts.push(
-        `  <m-cube id="${idBase}-n-pole" x="${r2(xWorld)}" y="${r2(poleBaseY)}" z="${r2(zNorth)}" width="${r2(LIGHT_POLE_W)}" height="${r2(LIGHT_POLE_H)}" depth="${r2(LIGHT_POLE_W)}" color="#222222" />`,
-        `  <m-cube id="${idBase}-n-lamp" x="${r2(xWorld)}" y="${r2(lampY)}" z="${r2(zNorth)}" width="${r2(LIGHT_LAMP_SIZE)}" height="${r2(LIGHT_LAMP_SIZE * 0.6)}" depth="${r2(LIGHT_LAMP_SIZE)}" color="${LIGHT_COLOR}" emission="${LIGHT_COLOR}" emission-intensity="${LIGHT_INTENSITY}" />`,
-        `  <m-cube id="${idBase}-s-pole" x="${r2(xWorld)}" y="${r2(poleBaseY)}" z="${r2(zSouth)}" width="${r2(LIGHT_POLE_W)}" height="${r2(LIGHT_POLE_H)}" depth="${r2(LIGHT_POLE_W)}" color="#222222" />`,
-        `  <m-cube id="${idBase}-s-lamp" x="${r2(xWorld)}" y="${r2(lampY)}" z="${r2(zSouth)}" width="${r2(LIGHT_LAMP_SIZE)}" height="${r2(LIGHT_LAMP_SIZE * 0.6)}" depth="${r2(LIGHT_LAMP_SIZE)}" color="${LIGHT_COLOR}" emission="${LIGHT_COLOR}" emission-intensity="${LIGHT_INTENSITY}" />`,
+        `  <m-cube id="${idBase}-n-pole" x="${r2(xWorld)}" y="${r2(poleBaseY)}" z="${r2(zNorth)}" width="${r2(LIGHT_POLE_W)}" height="${r2(LIGHT_POLE_H)}" depth="${r2(LIGHT_POLE_W)}" color="#222222" collide="false" />`,
+        `  <m-cube id="${idBase}-n-lamp" x="${r2(xWorld)}" y="${r2(lampY)}" z="${r2(zNorth)}" width="${r2(LIGHT_LAMP_SIZE)}" height="${r2(LIGHT_LAMP_SIZE * 0.6)}" depth="${r2(LIGHT_LAMP_SIZE)}" color="${LIGHT_COLOR}" emission="${LIGHT_COLOR}" emission-intensity="${LIGHT_INTENSITY}" collide="false" />`,
+        `  <m-cube id="${idBase}-s-pole" x="${r2(xWorld)}" y="${r2(poleBaseY)}" z="${r2(zSouth)}" width="${r2(LIGHT_POLE_W)}" height="${r2(LIGHT_POLE_H)}" depth="${r2(LIGHT_POLE_W)}" color="#222222" collide="false" />`,
+        `  <m-cube id="${idBase}-s-lamp" x="${r2(xWorld)}" y="${r2(lampY)}" z="${r2(zSouth)}" width="${r2(LIGHT_LAMP_SIZE)}" height="${r2(LIGHT_LAMP_SIZE * 0.6)}" depth="${r2(LIGHT_LAMP_SIZE)}" color="${LIGHT_COLOR}" emission="${LIGHT_COLOR}" emission-intensity="${LIGHT_INTENSITY}" collide="false" />`,
       );
     } else {
       const zWorld = s.startZ + (s.endZ - s.startZ) * u + offsetZ;
@@ -457,10 +459,10 @@ function emitStreetLights(
       const xEast = xBase + halfW;
       const idBase = `light-${streetIdx}-${lightIdx}`;
       parts.push(
-        `  <m-cube id="${idBase}-w-pole" x="${r2(xWest)}" y="${r2(poleBaseY)}" z="${r2(zWorld)}" width="${r2(LIGHT_POLE_W)}" height="${r2(LIGHT_POLE_H)}" depth="${r2(LIGHT_POLE_W)}" color="#222222" />`,
-        `  <m-cube id="${idBase}-w-lamp" x="${r2(xWest)}" y="${r2(lampY)}" z="${r2(zWorld)}" width="${r2(LIGHT_LAMP_SIZE)}" height="${r2(LIGHT_LAMP_SIZE * 0.6)}" depth="${r2(LIGHT_LAMP_SIZE)}" color="${LIGHT_COLOR}" emission="${LIGHT_COLOR}" emission-intensity="${LIGHT_INTENSITY}" />`,
-        `  <m-cube id="${idBase}-e-pole" x="${r2(xEast)}" y="${r2(poleBaseY)}" z="${r2(zWorld)}" width="${r2(LIGHT_POLE_W)}" height="${r2(LIGHT_POLE_H)}" depth="${r2(LIGHT_POLE_W)}" color="#222222" />`,
-        `  <m-cube id="${idBase}-e-lamp" x="${r2(xEast)}" y="${r2(lampY)}" z="${r2(zWorld)}" width="${r2(LIGHT_LAMP_SIZE)}" height="${r2(LIGHT_LAMP_SIZE * 0.6)}" depth="${r2(LIGHT_LAMP_SIZE)}" color="${LIGHT_COLOR}" emission="${LIGHT_COLOR}" emission-intensity="${LIGHT_INTENSITY}" />`,
+        `  <m-cube id="${idBase}-w-pole" x="${r2(xWest)}" y="${r2(poleBaseY)}" z="${r2(zWorld)}" width="${r2(LIGHT_POLE_W)}" height="${r2(LIGHT_POLE_H)}" depth="${r2(LIGHT_POLE_W)}" color="#222222" collide="false" />`,
+        `  <m-cube id="${idBase}-w-lamp" x="${r2(xWest)}" y="${r2(lampY)}" z="${r2(zWorld)}" width="${r2(LIGHT_LAMP_SIZE)}" height="${r2(LIGHT_LAMP_SIZE * 0.6)}" depth="${r2(LIGHT_LAMP_SIZE)}" color="${LIGHT_COLOR}" emission="${LIGHT_COLOR}" emission-intensity="${LIGHT_INTENSITY}" collide="false" />`,
+        `  <m-cube id="${idBase}-e-pole" x="${r2(xEast)}" y="${r2(poleBaseY)}" z="${r2(zWorld)}" width="${r2(LIGHT_POLE_W)}" height="${r2(LIGHT_POLE_H)}" depth="${r2(LIGHT_POLE_W)}" color="#222222" collide="false" />`,
+        `  <m-cube id="${idBase}-e-lamp" x="${r2(xEast)}" y="${r2(lampY)}" z="${r2(zWorld)}" width="${r2(LIGHT_LAMP_SIZE)}" height="${r2(LIGHT_LAMP_SIZE * 0.6)}" depth="${r2(LIGHT_LAMP_SIZE)}" color="${LIGHT_COLOR}" emission="${LIGHT_COLOR}" emission-intensity="${LIGHT_INTENSITY}" collide="false" />`,
       );
     }
     lightIdx++;
@@ -573,14 +575,23 @@ function cityToMml(
   pyramidCell: CellBounds | null,
   vehicleCatalogIds: string[],
   trafficLightCatalogIds: string[],
+  gridRows: number,
+  gridCols: number,
 ): string {
   const parts: string[] = [];
   const rng = mulberry32(seed ^ 0xbeef);
   const roadThickness = 0.1;
-  /** Street slab center Y — slightly below floor so road is recessed; no collision. */
+  /** Street slab center Y — slightly below floor so road is recessed; no collision except perimeter. */
   const roadY = -0.02;
   /** Center line color: yellow for road lines. */
   const centerLineColor = CENTER_LINE_COLOR;
+  /** Only outer street segments (city perimeter) have collision. Indices: first/last row, first/last col. */
+  const perimeterStreetIndices = new Set<number>([
+    0,
+    gridRows - 1,
+    gridRows,
+    gridRows + gridCols - 1,
+  ]);
 
   for (let i = 0; i < streets.length; i++) {
     const s = streets[i]!;
@@ -589,8 +600,9 @@ function cityToMml(
     const len = s.alongX ? Math.abs(s.endX - s.startX) : Math.abs(s.endZ - s.startZ);
     const w = s.alongX ? len : streetWidth;
     const d = s.alongX ? streetWidth : len;
+    const streetCollide = perimeterStreetIndices.has(i);
     parts.push(
-      `  <m-cube id="street-${i}" x="${r2(cx)}" y="${r2(roadY)}" z="${r2(cz)}" width="${r2(w)}" height="${r2(roadThickness)}" depth="${r2(d)}" color="#333333" collide="false" />`,
+      `  <m-cube id="street-${i}" x="${r2(cx)}" y="${r2(roadY)}" z="${r2(cz)}" width="${r2(w)}" height="${r2(roadThickness)}" depth="${r2(d)}" color="#333333" collide="${streetCollide}" />`,
     );
     emitCenterLine(parts, i, s, len, streetWidth, roadY, roadThickness, offsetX, offsetZ, centerLineColor);
     emitStreetLights(parts, i, s, len, streetWidth, roadY, roadThickness, offsetX, offsetZ);
@@ -680,6 +692,8 @@ export function generateCityMml(
     pyramidCell,
     vehicleCatalogIds,
     trafficLightCatalogIds,
+    c.gridRows,
+    c.gridCols,
   );
 }
 

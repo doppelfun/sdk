@@ -1,11 +1,20 @@
 /**
  * Report chat LLM usage to hub (hosted agents; credit deduction).
+ * Local usage tracking for credit deduction is stubbed in recordUsageStub.
  */
 
 import { reportUsage as hubReportUsage } from "../hub/index.js";
 import type { ClawConfig } from "../config/index.js";
 import type { Usage } from "../llm/usage.js";
 import { createLlmProvider } from "../llm/index.js";
+
+/**
+ * Record LLM usage for credit tracking / deduction on the claw server.
+ * Stub: no-op for now; implement when agent accounts and deduction are available.
+ */
+export function recordUsageStub(_usage: Usage): void {
+  // TODO: track usage and deduct from agent's account
+}
 
 /**
  * Report chat LLM usage to hub (fire-and-forget).

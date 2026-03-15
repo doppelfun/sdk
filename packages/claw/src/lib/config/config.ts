@@ -54,6 +54,12 @@ export type ClawConfig = {
    * Set via CLAW_VOICE_ID in .env or process env so each agent process can have a unique voice.
    */
   voiceId: string | null;
+  /**
+   * When true, use a cheap LLM call (chatLlmModel) to classify each tick as TOOLS vs CONVERSATION,
+   * then use buildLlmModel (Pro) for tool-heavy turns and chatLlmModel (Flash) for conversation.
+   * Set CLAW_MODEL_ROUTER=1 to enable. Requires both chat and build models to be set.
+   */
+  modelRouterEnabled: boolean;
 };
 
 const DEFAULT_HUB = "http://localhost:4000";
@@ -128,6 +134,7 @@ export function loadConfig(): ClawConfig {
   );
   // Per-agent TTS voice (e.g. ElevenLabs voice_id); used when sending chat so each agent sounds distinct.
   const voiceId = process.env.CLAW_VOICE_ID?.trim() || null;
+  const modelRouterEnabled = envFlag("CLAW_MODEL_ROUTER");
 
   const gemini = llmProvider === "google" || llmProvider === "google-vertex";
   const defaultModel = gemini ? DEFAULT_GOOGLE_MODEL : "openrouter/auto";
@@ -160,5 +167,6 @@ export function loadConfig(): ClawConfig {
     autonomousSoulTickMs,
     sessionRefreshIntervalMs,
     voiceId,
+    modelRouterEnabled,
   };
 }

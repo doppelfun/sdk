@@ -11,6 +11,7 @@ import { clawLog } from "../../log.js";
 function setApproachTarget(store: ClawStore, x: number, z: number, sprint: boolean): void {
   store.setMovementIntent(null);
   store.setMovementTarget({ x, z });
+  store.setLastMoveToFailed(null);
   store.setMovementSprint(sprint);
   store.setAutonomousEmoteStandStillUntil(0);
 }

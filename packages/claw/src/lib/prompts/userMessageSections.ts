@@ -21,6 +21,8 @@ import {
   HINT_HAVE_OCCUPANTS,
   HINT_HAVE_CATALOG,
   HINT_WHEN_TO_REPLY,
+  HINT_MOVE_COORDINATES,
+  getMoveToCoordsInstruction,
   BUILD_TOOLS_NO_REPEAT,
   MAX_INJECT_CATALOG_CHARS,
   hintAlreadyReplied,
@@ -165,7 +167,7 @@ export function sectionBuildTarget(ctx: UserMessageContext): string[] {
     return [`Build target reached (within ${BUILD_TARGET_STOP_DISTANCE_M} m); do not move further toward it.`];
   }
   return [
-    `Build target (move here then stop when within ~${BUILD_TARGET_STOP_DISTANCE_M} m): (${state.lastBuildTarget.x}, ${state.lastBuildTarget.z}).`,
+    `Build target (move here then stop when within ~${BUILD_TARGET_STOP_DISTANCE_M} m): (${state.lastBuildTarget.x}, ${state.lastBuildTarget.z}). When the user says "move to the pyramid" or "go there", call approach_position with position: "${state.lastBuildTarget.x},${state.lastBuildTarget.z}".`,
   ];
 }
 
@@ -216,7 +218,20 @@ export function sectionChat(ctx: UserMessageContext): string[] {
       ? hintAlreadyReplied(state.lastAgentChatMessage)
       : HINT_WHEN_TO_REPLY
   );
+  parts.push(HINT_MOVE_COORDINATES);
   return parts;
+}
+
+/** When the user said "move to X, Y", inject a concrete tool instruction so the model calls approach_position with position: 'X,Y'. */
+export function sectionMoveToCoordsInstruction(ctx: UserMessageContext): string[] {
+  const { state } = ctx;
+  const lastChat = state.chat[state.chat.length - 1]?.message;
+  const lastOwner = state.ownerMessages[state.ownerMessages.length - 1]?.text;
+  const instruction =
+    (lastChat && getMoveToCoordsInstruction(lastChat)) ||
+    (lastOwner && getMoveToCoordsInstruction(lastOwner)) ||
+    null;
+  return instruction ? [instruction] : [];
 }
 
 /** Active DM peer session id for targetSessionId when replying in thread. */
@@ -283,6 +298,17 @@ export function sectionOccupantsSummary(ctx: UserMessageContext): string[] {
   ];
 }
 
+/** When last move_to had no path: tell agent so they can inform the user. Cleared after injecting once. */
+export function sectionMoveToFailed(ctx: UserMessageContext): string[] {
+  const { state, store } = ctx;
+  const failed = state.lastMoveToFailed;
+  if (!failed) return [];
+  store.setState({ lastMoveToFailed: null });
+  return [
+    `Last move_to to (${failed.x}, ${failed.z}) failed: no path. If the user asked you to go there, tell them you cannot reach that location.`,
+  ];
+}
+
 // -----------------------------------------------------------------------------
 // Section registry (order = order in final user message)
 // -----------------------------------------------------------------------------
@@ -297,7 +323,9 @@ export const USER_MESSAGE_SECTION_DESCRIPTORS: UserMessageSectionDescriptor[] = 
   { id: "occupants", render: sectionOccupants },
   { id: "build_target", render: sectionBuildTarget },
   { id: "engine_error", when: (ctx) => !!ctx.state.lastError, render: sectionEngineError },
+  { id: "move_to_failed", when: (ctx) => !!ctx.state.lastMoveToFailed, render: sectionMoveToFailed },
   { id: "chat", render: sectionChat },
+  { id: "move_to_coords_instruction", render: sectionMoveToCoordsInstruction },
   { id: "dm_peer", render: sectionDmPeer },
   { id: "owner_messages", render: sectionOwnerMessages },
   { id: "cached_documents", render: sectionCachedDocuments },

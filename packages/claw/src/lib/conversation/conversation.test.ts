@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createClawStore } from "../state/index.js";
 import {
   canSendDmTo,
+  evaluateSendReply,
   onWeSentDm,
   onWeReceivedDm,
   checkBreak,
@@ -19,6 +20,28 @@ describe("conversation", () => {
   });
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  describe("evaluateSendReply", () => {
+    it("returns send_now when targetSessionId is null (global chat)", () => {
+      const store = createClawStore("0_0");
+      const action = evaluateSendReply(store, null, "hello");
+      expect(action.action).toBe("send_now");
+    });
+
+    it("returns send_now when idle and targetSessionId set", () => {
+      const store = createClawStore("0_0");
+      const action = evaluateSendReply(store, "peer-1", "hello");
+      expect(action.action).toBe("send_now");
+    });
+
+    it("returns queue when waiting_for_reply", () => {
+      const store = createClawStore("0_0");
+      onWeSentDm(store, "peer-1");
+      const action = evaluateSendReply(store, "peer-1", "reply");
+      expect(action.action).toBe("queue");
+      expect(action.pendingDmReply).toEqual({ text: "reply", targetSessionId: "peer-1" });
+    });
   });
 
   describe("canSendDmTo", () => {

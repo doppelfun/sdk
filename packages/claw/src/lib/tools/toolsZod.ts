@@ -6,27 +6,18 @@
 // Align with AI SDK (ai package uses zod/v4 for tool schemas)
 import { z } from "zod/v4";
 
-export const moveSchema = z.object({
-  moveX: z
-    .number()
-    .describe(
-      "Horizontal component, -0.4 to 0.4. Use 0,0 to stop. Non-zero values are held and sent every 50ms like NPCs until 0,0. Prefer approachSessionId or approachPosition to walk to a block-local target (0–100) until close."
-    ),
-  moveZ: z
-    .number()
-    .describe("Forward/back component, -0.4 to 0.4; 0 to stop auto-approach"),
-  sprint: z.boolean().optional().describe("Sprint when auto-approaching via target"),
-  jump: z.boolean().optional().describe("Jump"),
-  approachSessionId: z
-    .string()
-    .optional()
-    .describe(
-      "Optional. Occupant clientId to walk toward; sets continuous movement until within ~2 m (like NPCs). Requires get_occupants first so position is known."
-    ),
-  approachPosition: z
-    .string()
-    .optional()
-    .describe('Optional. Block-local target "x,z" or "x,y,z" (0–100, same as building) to walk toward until close.'),
+export const approachPositionSchema = z.object({
+  position: z.string().describe('Block-local coordinates "x,z" or "x,y,z" (0–100). Server pathfinds via move_to.'),
+  sprint: z.boolean().optional().describe("Sprint when moving."),
+});
+
+export const approachPersonSchema = z.object({
+  sessionId: z.string().describe("Occupant clientId from get_occupants. Server pathfinds to their position via move_to."),
+  sprint: z.boolean().optional().describe("Sprint when moving."),
+});
+
+export const stopSchema = z.object({
+  jump: z.boolean().optional().describe("Jump (used on stop)."),
 });
 
 export const chatSchema = z.object({
@@ -203,10 +194,21 @@ export const CLAW_TOOL_REGISTRY: Array<{
   schema: z.ZodTypeAny;
 }> = [
   {
-    name: "move",
+    name: "approach_position",
     description:
-      "Move toward a target. Prefer approachSessionId or approachPosition for auto-walk to a block-local point (0–100, same as building; 50ms stream until close). Or moveX/moveZ -0.4..0.4—held and streamed every 50ms like NPCs until move 0,0 stops; 0,0 also clears auto-approach.",
-    schema: moveSchema,
+      "Move to block-local coordinates (0–100). Pass position as 'x,z'. Server pathfinds via move_to. Call once per destination.",
+    schema: approachPositionSchema,
+  },
+  {
+    name: "approach_person",
+    description:
+      "Move to a person's position. Pass sessionId (clientId from get_occupants). Server pathfinds via move_to. Call once per destination.",
+    schema: approachPersonSchema,
+  },
+  {
+    name: "stop",
+    description: "Stop moving. Clears any current move_to target.",
+    schema: stopSchema,
   },
   {
     name: "chat",

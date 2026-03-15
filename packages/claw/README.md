@@ -60,7 +60,7 @@ flowchart TB
     Phase -->|idle| WakeCheck{llmWakePending\nor lastError\nor soulTick?}
     WakeCheck -->|no| Skip[Skip LLM\nidle, no wake]
     WakeCheck -->|yes| User[buildUserMessage]
-    User --> LLM[runTickWithAiSdk\ngenerateText + tools]
+    User --> LLM[runClawAgentTick\nToolLoopAgent + tools]
     LLM --> Tools[executeTool per call]
     Tools --> Store[(Store)]
     LLM --> Fallback[DM/error fallback\nif no tool calls]
@@ -97,7 +97,7 @@ flowchart TB
 ```
 
 - **Wakes:** DM, owner chat, or WS error sets `llmWakePending` (or similar) and calls `requestWakeTick`. That either runs `runTick` soon (debounced) or, if a tick is already running, sets `wakeAfterTick` so the next tick runs immediately after.
-- **runTick:** If `region_boundary` error, auto-join that block. If `tickPhase === "must_act_build"`, run build-only tools (or deterministic `generate_procedural`); otherwise, if idle and no wake, skip the LLM. Else build the user message from store, call `runTickWithAiSdk` (Vercel AI SDK `generateText` with claw tools). Each tool call runs `executeTool`; tools read/update the store. If the model doesn’t call a tool and a DM or error reply is pending, a fallback message is sent.
+- **runTick:** If `region_boundary` error, auto-join that block. If `tickPhase === "must_act_build"`, run build-only tools (or deterministic `generate_procedural`); otherwise, if idle and no wake, skip the LLM. Else build the user message from store, call `runClawAgentTick` (AI SDK `ToolLoopAgent.generate` with claw tools). Each tool call runs `executeTool`; tools read/update the store. If the model doesn’t call a tool and a DM or error reply is pending, a fallback message is sent.
 - **After tick:** Next run is scheduled: 0 ms if follow-up or must_act_build; else if `npcStyleIdle` and no wake, either next soul tick (owner away) or no schedule (wake on DM/owner); else next in `TICK_INTERVAL_MS`.
 - **50 ms loop:** `movementDriverTick` (approach target or stick input), `AutonomousManager.tick` (wander/seek/emote when owner away), `checkBreak` (conversation timeout or round limit → idle), `drainPendingReply` (send any queued DM). All read/update the same store.
 - **Conversation FSM:** `idle` → `can_reply` when we receive a DM; `can_reply` → `waiting_for_reply` when we send a DM; breaks (timeout, owner message, join, etc.) and `end_conversation` tool reset to `idle`. Used to gate whether we may send a DM and to show “waiting for reply” state.
@@ -159,8 +159,8 @@ Configuration is read from environment variables (and optionally overridden by t
 | HUB_URL | No | http://localhost:4000 | Hub base URL. |
 | ENGINE_URL | No | http://localhost:2567 | Engine base URL. |
 | OWNER_USER_ID | No | — | Doppel user id; their in-world chat is treated as owner commands. |
-| CHAT_LLM_MODEL | No | openrouter/auto / gemini-2.5-flash | OpenRouter id when openrouter; Gemini id when google or google-vertex (default `gemini-2.5-flash`). |
-| BUILD_LLM_MODEL | No | openrouter/auto / gemini-2.5-flash | Same. |
+| CHAT_LLM_MODEL | No | openrouter/auto / gemini-3.1-flash-lite-preview | OpenRouter id when openrouter; Gemini id when google or google-vertex (default `gemini-3.1-flash-lite-preview`). |
+| BUILD_LLM_MODEL | No | openrouter/auto / gemini-3.1-flash-lite-preview | Same. |
 | TICK_INTERVAL_MS | No | 5000 | Ms between ticks when idle (min 2000). |
 | WAKE_TICK_DEBOUNCE_MS | No | 150 | Debounce before running a tick after DM or owner chat (0–2000). |
 | MAX_CHAT_CONTEXT | No | 20 | Max recent chat lines in context. |
@@ -186,6 +186,12 @@ Configuration is read from environment variables (and optionally overridden by t
 
 **Adding a provider:** Implement `LlmProvider` in `src/lib/llm/providers/`, register in `createLlmProvider()` in `src/lib/llm/provider.ts`, add config fields and env parsing in `config.ts`.
 
+### Model selection (Pro vs Flash)
+
+- **`CHAT_LLM_MODEL`** — Model used for the main tick (conversation + tool calling). Default: Gemini Flash when `LLM_PROVIDER=google` (or google-vertex), or `openrouter/auto` for OpenRouter.
+- **`BUILD_LLM_MODEL`** — Model used for build MML (`complete`) and wake intent (`classifyBuildIntent`). Default: same as chat. Set to a Pro-tier model (e.g. `gemini-3.1-pro-preview`) for better building; keep `CHAT_LLM_MODEL` as Flash-Lite for cheaper ticks.
+- **`CLAW_MODEL_ROUTER=1`** — Use the AI SDK to **choose Pro vs Flash per tick**: a cheap Flash call classifies the user message as TOOLS or CONVERSATION; then the tick runs with `BUILD_LLM_MODEL` (Pro) for tool-heavy turns and `CHAT_LLM_MODEL` (Flash) for conversation. Requires both models to be set. See `src/lib/llm/modelRouter.ts`.
+
 ## Behavior
 
 - **Owner nearby vs away:** With `OWNER_USER_ID` set, **inside `OWNER_NEARBY_RADIUS_M`** → **obedient mode** (only Owner said / DMs). **Outside** → **autonomous mode** driven by the **SOUL**: periodic `AUTONOMOUS_SOUL_TICK_MS` (default 45s). Set `AUTONOMOUS_SOUL_TICK_MS=0` to disable autonomous ticks until the next wake.
@@ -194,7 +200,7 @@ Configuration is read from environment variables (and optionally overridden by t
 - **Realtime wake:** DM or owner message debounces then runs a tick; burst messages coalesce.
 - **must_act_build:** After wake, intent is classified via the active provider. If `requiresBuildAction`, chat is disabled until a build tool runs or phase times out (~4 ticks). Procedural city/pyramid can run without chat LLM; otherwise build-only tool set.
 - **Chat:** Replies only in DM threads and owner instructions. Chat tool withheld after reply until new input.
-- **Movement:** ±0.4 clamp; **auto-walk** via `approachSessionId` / `approachPosition` + 50ms driver (NPC-style).
+- **Movement:** ±0.4 clamp; **auto-run** via `approachSessionId` / `approachPosition` + 50ms driver (NPC-style).
 - **Tools:** move, chat, emote, join_block, get_occupants, get_chat_history, list_catalog, build_full, build_with_code, build_incremental, list_documents, get_document_content, delete_document, delete_all_documents, generate_procedural.
 
 ## API

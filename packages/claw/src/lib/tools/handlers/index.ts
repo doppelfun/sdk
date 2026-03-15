@@ -1,5 +1,5 @@
 import type { ToolHandler } from "../types.js";
-import { handleMove } from "./move.js";
+import { handleApproachPosition, handleApproachPerson, handleStop } from "./move.js";
 import { handleChat } from "./chat.js";
 import { handleEmote } from "./emote.js";
 import { handleJoinBlock } from "./joinBlock.js";
@@ -18,7 +18,9 @@ import { handleGenerateProcedural } from "./generateProcedural.js";
 import { handleEndConversation } from "./endConversation.js";
 
 export const TOOL_HANDLERS = {
-  move: handleMove,
+  approach_position: handleApproachPosition,
+  approach_person: handleApproachPerson,
+  stop: handleStop,
   chat: handleChat,
   emote: handleEmote,
   end_conversation: handleEndConversation,

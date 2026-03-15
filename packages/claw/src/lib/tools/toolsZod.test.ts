@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { runProceduralMml } from "@doppelfun/gen";
 import {
-  moveSchema,
+  approachPositionSchema,
+  approachPersonSchema,
+  stopSchema,
   chatSchema,
   getToolSchema,
   CLAW_TOOL_REGISTRY,
@@ -10,15 +12,21 @@ import {
 } from "./toolsZod.js";
 
 describe("toolsZod", () => {
-  it("moveSchema accepts numbers", () => {
-    const r = moveSchema.safeParse({ moveX: 0.2, moveZ: -0.1 });
+  it("approachPositionSchema accepts position", () => {
+    const r = approachPositionSchema.safeParse({ position: "50,50" });
     expect(r.success).toBe(true);
-    if (r.success) expect(r.data.moveX).toBe(0.2);
+    if (r.success) expect(r.data.position).toBe("50,50");
   });
 
-  it("moveSchema rejects string moveX (executeTool would coerce; Zod catches bad model output)", () => {
-    const r = moveSchema.safeParse({ moveX: "0.2", moveZ: 0 });
-    expect(r.success).toBe(false);
+  it("approachPersonSchema accepts sessionId", () => {
+    const r = approachPersonSchema.safeParse({ sessionId: "abc123" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.sessionId).toBe("abc123");
+  });
+
+  it("stopSchema accepts empty", () => {
+    const r = stopSchema.safeParse({});
+    expect(r.success).toBe(true);
   });
 
   it("buildFullSchema rejects non-UUID documentId", () => {
@@ -44,7 +52,9 @@ describe("toolsZod", () => {
   });
 
   it("getToolSchema returns schema by name", () => {
-    expect(getToolSchema("move")).toBe(moveSchema);
+    expect(getToolSchema("approach_position")).toBe(approachPositionSchema);
+    expect(getToolSchema("approach_person")).toBe(approachPersonSchema);
+    expect(getToolSchema("stop")).toBe(stopSchema);
     expect(getToolSchema("nonexistent")).toBeUndefined();
   });
 

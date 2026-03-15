@@ -146,9 +146,16 @@ export type AgentWsChatServerMessage = {
   mentions?: Array<{ sessionId?: string; userId?: string; username?: string }>;
 };
 
+/** Sent when move_to had no path; agent can tell the user the location is unreachable. */
+export type AgentWsMoveToFailedMessage = {
+  type: "move_to_failed";
+  x: number;
+  z: number;
+};
+
 /**
  * Inbound Agent WebSocket messages. Movement: client sends move_to(x,z); server pathfinds and drives movement each tick (no waypoints sent back).
- * error (e.g. space_boundary): optional x,z are world; claw typically ignores them and uses blockId to join.
+ * move_to_failed: server sends when no path; agent can inform user.
  */
 export type AgentWsServerMessage =
   | AgentWsAuthenticatedMessage
@@ -156,7 +163,8 @@ export type AgentWsServerMessage =
   | AgentWsErrorMessage
   | AgentWsHeartbeatMessage
   | AgentWsThinkingServerMessage
-  | AgentWsChatServerMessage;
+  | AgentWsChatServerMessage
+  | AgentWsMoveToFailedMessage;
 
 export function isAgentWsAuthenticated(msg: AgentWsServerMessage): msg is AgentWsAuthenticatedMessage {
   return msg.type === "authenticated";

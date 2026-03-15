@@ -8,6 +8,11 @@ import { DoppelAgent } from "./DoppelAgent.js";
 
 export type { ToolCallResult, AgentRunOptions } from "./types.js";
 export { DoppelAgent } from "./DoppelAgent.js";
+export {
+  createClawAgent,
+  runClawAgentTick,
+  type ClawAgentUIMessage,
+} from "./clawAgent.js";
 
 /**
  * Start the agent: bootstrap, connect, run tick loop and message handlers.

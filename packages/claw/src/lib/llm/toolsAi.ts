@@ -1,26 +1,29 @@
 /**
  * Claw tools exposed as Vercel AI SDK tools.
  *
- * Flow: generateText(model, tools) → model may emit tool calls → each tool's execute() runs
- * executeTool() in-process. stopWhen uses multiple steps so one tick can chain tools
- * (e.g. list_documents then delete_document × N, or delete_all_documents after list).
+ * Used by the ToolLoopAgent in clawAgent.ts: buildClawToolSet, resolveTickLanguageModel.
+ * The tick entry point is runClawAgentTick (agent.generate); clawAgent imports usageFromAiSdk from usage.js.
  *
- * Model backends:
- * - OpenRouter: OpenAI-compatible baseURL + API key (default).
- * - Google: provider.getChatModel() → @ai-sdk/google or @ai-sdk/google-vertex (no OpenRouter).
+ * Model backends: @ai-sdk/google, @ai-sdk/google-vertex, @openrouter/ai-sdk-provider.
  */
 
-import { dynamicTool, generateText, stepCountIs, zodSchema, type LanguageModel } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
+import { dynamicTool, zodSchema, type LanguageModel } from "ai";
 import type { DoppelClient } from "@doppelfun/sdk";
 import { CLAW_TOOL_REGISTRY, getToolSchema } from "../tools/toolsZod.js";
 import { executeTool, type ExecuteToolResult } from "../tools/index.js";
 import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
 import { createLlmProvider } from "./provider.js";
-import { usageFromAiSdk, type Usage } from "./usage.js";
+import type { Usage } from "./usage.js";
 import { clawLog, clawDebug } from "../log.js";
-import { delay } from "../../util/delay.js";
+
+/** Coerce unknown (LLM tool args) to a plain object for validation and executeTool. */
+function toRecord(args: unknown): Record<string, unknown> {
+  if (args && typeof args === "object" && !Array.isArray(args)) {
+    return args as Record<string, unknown>;
+  }
+  return {};
+}
 
 /**
  * Wrap one registry entry as an AI SDK tool: Zod → JSON Schema for the model;
@@ -39,22 +42,21 @@ function clawTool(
     description,
     inputSchema: zodSchema(schema),
     execute: async (args: unknown) => {
-      const record =
-        args && typeof args === "object" && !Array.isArray(args)
-          ? (args as Record<string, unknown>)
-          : {};
+      clawLog("tool executing", name);
+      const record = toRecord(args);
       const zodSchemaForTool = getToolSchema(name);
-      let payload: Record<string, unknown> = record;
-      if (zodSchemaForTool) {
-        const parsed = zodSchemaForTool.safeParse(record);
-        if (!parsed.success) {
-          const msg = parsed.error.issues
-            .map((i) => `${i.path.join(".")}: ${i.message}`)
-            .join("; ");
-          throw new Error(`Invalid tool arguments: ${msg}`);
-        }
-        payload = parsed.data as Record<string, unknown>;
-      }
+      const payload = zodSchemaForTool
+        ? (() => {
+            const parsed = zodSchemaForTool.safeParse(record);
+            if (!parsed.success) {
+              const msg = parsed.error.issues
+                .map((i) => `${i.path.join(".")}: ${i.message}`)
+                .join("; ");
+              throw new Error(`Invalid tool arguments: ${msg}`);
+            }
+            return parsed.data as Record<string, unknown>;
+          })()
+        : record;
       const argsJson = JSON.stringify(payload);
       let result: ExecuteToolResult;
       try {
@@ -100,165 +102,28 @@ export function buildClawToolSet(
   let entries = options.omitChat
     ? CLAW_TOOL_REGISTRY.filter((t) => t.name !== "chat")
     : CLAW_TOOL_REGISTRY;
-  if (options.allowOnlyTools && options.allowOnlyTools.length > 0) {
+  if (options.allowOnlyTools?.length) {
     const allow = new Set(options.allowOnlyTools);
     entries = entries.filter((t) => allow.has(t.name));
   }
   const tools: Record<string, ReturnType<typeof dynamicTool>> = {};
   for (const t of entries) {
-    tools[t.name] = clawTool(
-      t.name,
-      t.description,
-      t.schema,
-      client,
-      store,
-      config,
-      options.onToolResult
-    );
+    tools[t.name] = clawTool(t.name, t.description, t.schema, client, store, config, options.onToolResult);
   }
   return tools;
-}
-
-/** OpenRouter via OpenAI-compatible API (shared baseURL). */
-export function createOpenRouterModel(apiKey: string, modelId: string): LanguageModel {
-  const openrouter = createOpenAI({
-    baseURL: "https://openrouter.ai/api/v1",
-    apiKey,
-    headers: { "HTTP-Referer": "https://github.com/doppel-sdk" },
-  });
-  return openrouter.chat(modelId);
 }
 
 export type RunTickLlmResult =
   | { ok: true; usage: Usage | null; hadToolCalls: boolean; replyText?: string | null }
   | { ok: false; error: string };
 
-/** Minimum time (ms) thinking stays true so UIs can show indicator before flash disappears. */
-const MIN_THINKING_MS = 700;
-
 export type RunTickWithAiSdkOptions = {
   omitChat?: boolean;
   allowOnlyTools?: readonly string[];
 };
 
-const NO_CHAT_MODEL_ERROR =
-  "No chat model: LLM_PROVIDER=google needs GOOGLE_API_KEY; google-vertex needs project/location; or set OPENROUTER_API_KEY for OpenRouter.";
-
-/**
- * Max generateText steps per tick. Must be >1 so the model can chain tools
- * (e.g. list_documents then delete_document, or delete_all after one reasoning step).
- * Too high increases token cost if the model loops; 12 is enough for list + ~10 deletes.
- */
-const MAX_LLM_STEPS_PER_TICK = 12;
-
-/**
- * Resolve LanguageModel for one tick: provider first, then OpenRouter fallback if key present.
- */
-function resolveTickLanguageModel(config: ClawConfig): LanguageModel | null {
+/** Resolve LanguageModel for one tick. Optional modelId overrides config.chatLlmModel (e.g. after model router). */
+export function resolveTickLanguageModel(config: ClawConfig, modelId?: string): LanguageModel | null {
   const provider = createLlmProvider(config);
-  const fromProvider = provider.getChatModel(config.chatLlmModel);
-  if (fromProvider) return fromProvider;
-  if (config.openRouterApiKey) {
-    return createOpenRouterModel(config.openRouterApiKey, config.chatLlmModel);
-  }
-  return null;
-}
-
-/**
- * One tick: generateText with tools; may run multiple steps until stopWhen (see MAX_LLM_STEPS_PER_TICK).
- * Each tool execute() is executeTool() in-process (engine/hub side effects).
- */
-export async function runTickWithAiSdk(
-  client: DoppelClient,
-  store: ClawStore,
-  config: ClawConfig,
-  systemContent: string,
-  userContent: string,
-  onToolResult?: (name: string, args: string, result: ExecuteToolResult) => void,
-  sdkOptions?: RunTickWithAiSdkOptions
-): Promise<RunTickLlmResult> {
-  const model = resolveTickLanguageModel(config);
-  if (!model) return { ok: false, error: NO_CHAT_MODEL_ERROR };
-
-  const state = store.getState();
-  const omitChat = sdkOptions?.omitChat ?? state.lastTickSentChat;
-  const tools = buildClawToolSet(client, store, config, {
-    omitChat,
-    allowOnlyTools: sdkOptions?.allowOnlyTools,
-    onToolResult,
-  });
-
-  const toolNames = Object.keys(tools);
-  const mode =
-    sdkOptions?.allowOnlyTools?.length != null
-      ? "build-only"
-      : omitChat
-        ? "omitChat"
-        : "full";
-  clawLog(
-    "LLM call",
-    config.chatLlmModel,
-    "provider=" + config.llmProvider,
-    "tools=" + toolNames.length,
-    mode
-  );
-  clawDebug("tool names:", toolNames.join(", "));
-
-  const t0 = Date.now();
-  client.sendThinking(true);
-  try {
-    const result = await generateText({
-      model,
-      system: systemContent,
-      prompt: userContent,
-      tools,
-      toolChoice: "auto",
-      maxOutputTokens: 1024,
-      temperature: 0.3,
-      stopWhen: stepCountIs(MAX_LLM_STEPS_PER_TICK),
-    });
-
-    const hadToolCalls =
-      (result.toolCalls?.length ?? 0) > 0 ||
-      (result.steps?.some((s) => (s.toolCalls?.length ?? 0) > 0) ?? false);
-    const usage = usageFromAiSdk(result.usage);
-    const ms = Date.now() - t0;
-    // Optional text when model answered without tools (Gemini often does this for DMs)
-    const replyText =
-      typeof result.text === "string" && result.text.trim()
-        ? result.text.trim().slice(0, 500)
-        : null;
-    clawLog(
-      "LLM done",
-      ms + "ms",
-      usage
-        ? `tokens in/out/total=${usage.prompt_tokens}/${usage.completion_tokens}/${usage.total_tokens}`
-        : "no usage",
-      hadToolCalls ? "toolCalls=yes" : "toolCalls=no"
-    );
-    if (hadToolCalls && result.toolCalls?.length) {
-      clawDebug(
-        "toolCalls:",
-        result.toolCalls.map((c) => (c as { toolName?: string }).toolName ?? "?").join(", ")
-      );
-    }
-    return { ok: true, usage, hadToolCalls, replyText };
-  } catch (e) {
-    let msg = e instanceof Error ? e.message : String(e);
-    // HTTP 404 from API often surfaces as "Not Found" — add context so wrong model/provider combo is obvious.
-    const hint =
-      msg === "Not Found" ||
-      /404|not found/i.test(msg) ||
-      /model.*not found/i.test(msg);
-    if (hint) {
-      msg = `${msg} (LLM_PROVIDER=${config.llmProvider} CHAT_LLM_MODEL=${config.chatLlmModel}). ` +
-        "If using OpenRouter, use an OpenRouter model id. If using google/google-vertex, use a Gemini id from the API/Vertex model list.";
-    }
-    clawLog("LLM error", msg);
-    return { ok: false, error: msg };
-  } finally {
-    const elapsed = Date.now() - t0;
-    if (elapsed < MIN_THINKING_MS) await delay(MIN_THINKING_MS - elapsed);
-    client.sendThinking(false);
-  }
+  return provider.getChatModel(modelId ?? config.chatLlmModel);
 }

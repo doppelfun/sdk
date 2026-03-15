@@ -179,3 +179,10 @@ Suggested sequence: **1 → 2 → 3 → 4 → 5**, then **6** only if needed.
 | `src/lib/agent/fastTick.ts` (optional)                    | Handler type + handler array. |
 | `src/lib/agent/wake.ts` or inline in agent (optional)    | requestWake / shared wake logic. |
 | `*.test.ts`                                              | scheduling (getNextTickDelay, TickScheduler), tickRunner (computeTickIntent). |
+
+---
+
+## See also
+
+- **Workflow patterns refactor:** `docs/PLAN-WORKFLOW-PATTERNS.md` — Align tick loop with [AI SDK workflow patterns](https://ai-sdk.dev/docs/agents/workflows) (routing, sequential chains, evaluator–optimizer, orchestrator–worker).
+- **AI SDK ToolLoopAgent refactor:** `docs/PLAN-AI-SDK-REFACTOR.md` — Migrate from raw `generateText` to the AI SDK `ToolLoopAgent` class.

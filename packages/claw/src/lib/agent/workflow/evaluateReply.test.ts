@@ -79,4 +79,33 @@ describe("evaluateReplyAction", () => {
     expect(action.action).toBe("send");
     expect(action.logLabel).toContain("dm fallback");
   });
+
+  it("replaces narration-like replyText with default (dm fallback)", () => {
+    const state = getState({
+      dmReplyPending: true,
+      lastDmPeerSessionId: "peer-1",
+    });
+    const action = evaluateReplyAction(state, {
+      ok: true,
+      hadToolCalls: false,
+      replyText: "OK! I've sent a friendly message and waved hello. I'm feeling very happy today!",
+    });
+    expect(action.action).toBe("send");
+    expect(action.text).toBe("Hey — I'm here.");
+  });
+
+  it("replaces narration-like replyText with default (dm ack after tools)", () => {
+    const state = getState({
+      dmReplyPending: true,
+      lastDmPeerSessionId: "peer-1",
+      lastTickSentChat: false,
+    });
+    const action = evaluateReplyAction(state, {
+      ok: true,
+      hadToolCalls: true,
+      replyText: "OK! I've replied to the DM and waved hello. I'm feeling happy and ready to continue!",
+    });
+    expect(action.action).toBe("send");
+    expect(action.text).toBe("On my way!");
+  });
 });

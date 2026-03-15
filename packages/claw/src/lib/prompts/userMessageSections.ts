@@ -126,7 +126,7 @@ export function sectionOccupants(ctx: UserMessageContext): string[] {
           `${o.username} (${o.type}) at (${(o.position!.x).toFixed(1)}, ${(o.position!.z).toFixed(1)})`
       )
       .join("; ");
-    parts.push(`Other occupants with position (move toward one to approach): ${list}.`);
+    parts.push(`Other occupants with position (use approach_person only when the user asked you to go to someone): ${list}.`);
   }
   const list = state.occupants.map((o) => `${o.username} (${o.type})`).join(", ");
   parts.push(`Occupants (${state.occupants.length}): ${list}.${HINT_HAVE_OCCUPANTS}`);
@@ -222,15 +222,11 @@ export function sectionChat(ctx: UserMessageContext): string[] {
   return parts;
 }
 
-/** When the user said "move to X, Y", inject a concrete tool instruction so the model calls approach_position with position: 'X,Y'. */
+/** When the owner said "move to X, Y", inject a concrete tool instruction so the model calls approach_position with position: 'X,Y'. Only owner can give movement commands. */
 export function sectionMoveToCoordsInstruction(ctx: UserMessageContext): string[] {
   const { state } = ctx;
-  const lastChat = state.chat[state.chat.length - 1]?.message;
   const lastOwner = state.ownerMessages[state.ownerMessages.length - 1]?.text;
-  const instruction =
-    (lastChat && getMoveToCoordsInstruction(lastChat)) ||
-    (lastOwner && getMoveToCoordsInstruction(lastOwner)) ||
-    null;
+  const instruction = lastOwner ? getMoveToCoordsInstruction(lastOwner) : null;
   return instruction ? [instruction] : [];
 }
 

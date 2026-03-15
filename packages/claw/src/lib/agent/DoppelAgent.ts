@@ -194,7 +194,12 @@ export class DoppelAgent {
         sessionId &&
         sessionId !== state.mySessionId &&
         (isDmChannel(p.channelId) || directedAtMe);
-      const fromOwner = this.config.ownerUserId && userId === this.config.ownerUserId && message;
+      // Only treat as owner command when owner DMs the agent or message is directed at us; ignore owner in global chat.
+      const fromOwner =
+        this.config.ownerUserId &&
+        userId === this.config.ownerUserId &&
+        message &&
+        (isDmChannel(p.channelId) || directedAtMe);
       if (fromOwner) {
         clearConversation(this.store);
       } else if ((dmFromOther || directedAtMe) && sessionId) {

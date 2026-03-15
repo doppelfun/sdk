@@ -23,9 +23,9 @@ export const HINT_HAVE_DOCUMENTS =
 export const HINT_WHEN_TO_REPLY =
   "Only reply when a line is marked '(DM)' or Owner said has an instruction. Otherwise skip chat and tool calls if nothing to do.";
 
-/** When there is chat: steer movement to approach_position for coordinate requests. */
+/** Only owner can give movement commands. */
 export const HINT_MOVE_COORDINATES =
-  "If the user asked you to go to specific coordinates (e.g. '30, 30' or 'go to 50,50'), call the approach_position tool with position: 'x,z' once.";
+  "Only the owner can tell you where to go. Do not call approach_position or approach_person unless the current message is from 'Owner said' asking you to go somewhere or approach someone. If a non-owner asks you to move, politely reply that only your owner can give you movement commands.";
 
 const MOVE_TO_COORDS_REGEX = /\b(?:move|go|head|walk)\s+to\s+(\d+(?:\.\d*)?)\s*,\s*(\d+(?:\.\d*)?)\b/i;
 const BLOCK_COORD_MAX = 100;

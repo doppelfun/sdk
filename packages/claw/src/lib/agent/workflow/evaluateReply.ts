@@ -13,6 +13,16 @@ const DEFAULT_DM_ACK = "On my way!";
 const DEFAULT_ERROR_REPLY =
   "Something went wrong on the server. If it keeps happening, try again in a moment.";
 
+/** Heuristic: replyText that describes the agent's actions rather than being a message to the user. */
+function looksLikeNarration(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    /^(ok!?\s*)?i've?\s+(sent|replied|waved|said|responded)/.test(lower) ||
+    /i'm feeling\s+\w+/.test(lower) ||
+    /^(ok!?\s*)?(i've?|we've?)\s+/.test(lower)
+  );
+}
+
 /**
  * Decide whether we should send a reply after this LLM turn and with what text.
  * Input: state (pending flags, last peer) and llmResult (hadToolCalls, replyText).
@@ -27,7 +37,9 @@ export function evaluateReplyAction(
 
   // DM fallback: we owed a DM reply but the model returned no tool calls (e.g. text-only).
   if (state.dmReplyPending && !llmResult.hadToolCalls && state.lastDmPeerSessionId) {
-    const text = hasReplyText ? replyText.slice(0, 500) : DEFAULT_DM_FALLBACK;
+    const raw = hasReplyText ? replyText.slice(0, 500) : "";
+    const text =
+      raw && !looksLikeNarration(raw) ? raw : DEFAULT_DM_FALLBACK;
     return {
       action: "send",
       text,
@@ -37,13 +49,16 @@ export function evaluateReplyAction(
   }
 
   // DM ack: model used tools (e.g. move) but didn't send chat — send brief ack so user sees a response.
+  // If the model's freeform text is meta-narrative ("I've replied...", "I waved hello"), use default ack.
   if (
     state.dmReplyPending &&
     llmResult.hadToolCalls &&
     state.lastDmPeerSessionId &&
     !state.lastTickSentChat
   ) {
-    const text = hasReplyText ? replyText.slice(0, 500) : DEFAULT_DM_ACK;
+    const raw = hasReplyText ? replyText.slice(0, 500) : "";
+    const text =
+      raw && !looksLikeNarration(raw) ? raw : DEFAULT_DM_ACK;
     return {
       action: "send",
       text,

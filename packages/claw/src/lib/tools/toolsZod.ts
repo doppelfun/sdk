@@ -196,13 +196,13 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "approach_position",
     description:
-      "Move to block-local coordinates (0–100). Pass position as 'x,z'. Server pathfinds via move_to. Call once per destination.",
+      "Move to block-local coordinates (0–100) only when the owner explicitly asked you to go there. Pass position as 'x,z'. Server pathfinds via move_to. Call once per destination. Only the owner can give movement commands—do not call for non-owner requests.",
     schema: approachPositionSchema,
   },
   {
     name: "approach_person",
     description:
-      "Move to a person's position. Pass sessionId (clientId from get_occupants). Server pathfinds via move_to. Call once per destination.",
+      "Move to a person's position only when the owner explicitly asked you to approach them. Pass sessionId (clientId from get_occupants). Server pathfinds via move_to. Call once per destination. Only the owner can give movement commands—do not call for non-owner requests.",
     schema: approachPersonSchema,
   },
   {

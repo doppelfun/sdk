@@ -1,8 +1,8 @@
 /**
- * AutonomousManager: when the agent is idle (owner not nearby), mostly seek other agents
- * and go say something when close; otherwise wander and occasional emote. Runs on the
- * same 50ms cadence as the movement driver; when owner is nearby or a movement target
- * is set, it no-ops so the movement driver handles input.
+ * AutonomousManager: when the agent is idle (owner not nearby), prioritize seeking other
+ * agents or players and talking to them (via move_to); only wander when no one to seek or
+ * in cooldown. Wandering uses move_to(random x, z) so the server pathfinds. Runs on the same
+ * 50ms cadence as the movement driver; when owner is nearby or a movement target is set, it no-ops.
  */
 
 import type { DoppelClient } from "@doppelfun/sdk";
@@ -13,61 +13,34 @@ import { isInConversation } from "../conversation/index.js";
 import { clawLog } from "../log.js";
 import { isOwnerNearby } from "./ownerProximity.js";
 import { BLOCK_SIZE_M } from "../../util/blockBounds.js";
-import { normalizeAngle, lerpAngle, randomRange } from "../../util/math.js";
+import { randomRange } from "../../util/math.js";
 
-/** When idle, probability per “idle tick” to try seeking another agent (vs wander/emote). */
-const SEEK_AGENT_PROBABILITY = 0.2;
-/** Min/max interval (ms) between consider-seeking moments; random per agent to desync. */
-const SEEK_INTERVAL_MS = { min: 30_000, max: 90_000 };
-/** Short greetings when autonomously approaching another agent. */
+/** Min/max interval (ms) between consider-seeking moments. When others are present, seeking is preferred over wandering. */
+const SEEK_INTERVAL_MS = { min: 10_000, max: 45_000 };
+/** Short greetings when autonomously approaching another agent or player. */
 const OPENING_GREETINGS = ["Hi!", "Hey there!", "Hello!", "What's up?", "Hi there!"] as const;
 
 /** Emote ids matching engine catalog (see toolsZod / @doppel-engine/schema EMOTES). */
 const EMOTES = ["wave", "heart", "thumbs", "clap", "dance", "shocked"] as const;
 
-/** Chance per tick to trigger an emote when wandering; lower = less frequent. */
-const EMOTE_PROBABILITY = 0.005;
+/** Chance per tick to trigger an emote when wandering or in conversation; kept low so emotes are rare. */
+const EMOTE_PROBABILITY = 0.0004;
+/** Minimum ms between autonomous emotes (hard cap so we never spam). */
+const EMOTE_MIN_INTERVAL_MS = 60_000;
 /** Duration (ms) agent stands still while emote plays. */
 const EMOTE_STAND_STILL_MS = 3000;
-/** Keep agent this many meters inside block edges. Positions are block-local 0–100. */
-const BOUNDS_MARGIN = 2;
-const LOCAL_X_MIN = BOUNDS_MARGIN;
-const LOCAL_X_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
-const LOCAL_Z_MIN = BOUNDS_MARGIN;
-const LOCAL_Z_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
-const HEADING_RETARGET_MS = { min: 800, max: 2800 };
-const SPEED_RETARGET_MS = { min: 600, max: 2200 };
-
-type BotState = {
-  heading: number;
-  targetHeading: number;
-  speed: number;
-  targetSpeed: number;
-  nextHeadingRetargetAt: number;
-  nextSpeedRetargetAt: number;
-};
-
-function randomWeightedSpeed(): number {
-  const r = Math.random();
-  if (r < 0.25) return 0;
-  if (r < 0.55) return randomRange(0.15, 0.35);
-  return randomRange(0.35, 0.6);
-}
-
-function createBotState(now: number): BotState {
-  const heading = randomRange(-Math.PI, Math.PI);
-  return {
-    heading,
-    targetHeading: heading,
-    speed: randomWeightedSpeed(),
-    targetSpeed: randomWeightedSpeed(),
-    nextHeadingRetargetAt: now + randomRange(HEADING_RETARGET_MS.min, HEADING_RETARGET_MS.max),
-    nextSpeedRetargetAt: now + randomRange(SPEED_RETARGET_MS.min, SPEED_RETARGET_MS.max),
-  };
-}
+/** Keep wander targets this many meters inside block edges. Positions are block-local 0–100. */
+const WANDER_BOUNDS_MARGIN = 5;
+const WANDER_X_MIN = WANDER_BOUNDS_MARGIN;
+const WANDER_X_MAX = BLOCK_SIZE_M - WANDER_BOUNDS_MARGIN;
+const WANDER_Z_MIN = WANDER_BOUNDS_MARGIN;
+const WANDER_Z_MAX = BLOCK_SIZE_M - WANDER_BOUNDS_MARGIN;
+/** Min/max ms before picking a new random wander destination (when idle and no one to seek). */
+const WANDER_INTERVAL_MS = { min: 15_000, max: 45_000 };
 
 export class AutonomousManager {
-  private botState: BotState = createBotState(Date.now());
+  private lastAutonomousEmoteAt = 0;
+  private nextWanderConsiderAt = 0;
 
   /**
    * One tick: when owner is not nearby (or no owner configured), run autonomous behavior
@@ -99,7 +72,12 @@ export class AutonomousManager {
     // In conversation with another agent here: don’t wander or seek others — stay put (optional in-place emote only).
     if (isInConversationWithAgentInRoom(state)) {
       store.setMovementIntent(null);
-      if (Math.random() < EMOTE_PROBABILITY && EMOTES.length > 0) {
+      const mayEmoteConv =
+        now - this.lastAutonomousEmoteAt >= EMOTE_MIN_INTERVAL_MS &&
+        Math.random() < EMOTE_PROBABILITY &&
+        EMOTES.length > 0;
+      if (mayEmoteConv) {
+        this.lastAutonomousEmoteAt = now;
         const emote = EMOTES[Math.floor(Math.random() * EMOTES.length)]!;
         client.sendEmote(emote);
         store.setAutonomousEmoteStandStillUntil(now + EMOTE_STAND_STILL_MS);
@@ -108,7 +86,7 @@ export class AutonomousManager {
       return;
     }
 
-    // Consider seeking at most every SEEK_INTERVAL_MS (random range); then roll SEEK_AGENT_PROBABILITY so agents don't sync.
+    // Prioritize seeking: when it's time to consider and we're not in cooldown, if anyone is available, seek them (no random roll).
     const inCooldown =
       (state.autonomousSeekCooldownUntil > 0 && now < state.autonomousSeekCooldownUntil) ||
       (state.conversationEndedSeekCooldownUntil > 0 && now < state.conversationEndedSeekCooldownUntil);
@@ -118,55 +96,55 @@ export class AutonomousManager {
         SEEK_INTERVAL_MS.min + Math.random() * (SEEK_INTERVAL_MS.max - SEEK_INTERVAL_MS.min);
       store.setNextSeekConsiderAt(now + intervalMs);
     }
-    if (
-      mayConsiderSeek &&
-      !inCooldown &&
-      !isInConversation(store) &&
-      Math.random() < SEEK_AGENT_PROBABILITY
-    ) {
-      const others = state.occupants.filter(
-        (o) =>
-          o.type === "agent" &&
-          o.clientId !== state.mySessionId &&
-          o.position != null
-      );
-      if (others.length > 0) {
-        const occ = others[Math.floor(Math.random() * others.length)]!;
-        const openingMessage =
-          OPENING_GREETINGS[Math.floor(Math.random() * OPENING_GREETINGS.length)]!;
-        store.setMovementIntent(null);
-        store.setMovementTarget({ x: occ.position!.x, z: occ.position!.z });
-        store.setMovementSprint(true);
-        store.setPendingGoTalkToAgent({ targetSessionId: occ.clientId, openingMessage });
-        client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
-        clawLog("agent", `autonomous seek ${occ.username ?? occ.clientId} — will say "${openingMessage}" when close`);
-        return;
-      }
+    const others = state.occupants.filter(
+      (o) =>
+        o.clientId !== state.mySessionId &&
+        o.position != null &&
+        (o.type === "agent" || o.type === "user")
+    );
+    if (mayConsiderSeek && !inCooldown && !isInConversation(store) && others.length > 0) {
+      const occ = others[Math.floor(Math.random() * others.length)]!;
+      const toX = occ.position!.x;
+      const toZ = occ.position!.z;
+      const openingMessage =
+        OPENING_GREETINGS[Math.floor(Math.random() * OPENING_GREETINGS.length)]!;
+      store.setMovementIntent(null);
+      store.setMovementTarget({ x: toX, z: toZ });
+      store.setMovementSprint(true);
+      store.setPendingGoTalkToAgent({ targetSessionId: occ.clientId, openingMessage });
+      store.setLastMoveToFailed(null);
+      store.setAutonomousEmoteStandStillUntil(0);
+      client.moveTo(toX, toZ);
+      clawLog("agent", `autonomous seek ${occ.username ?? occ.clientId} → (${toX.toFixed(1)}, ${toZ.toFixed(1)}) — will say "${openingMessage}" when close`);
+      return;
     }
 
-    const bs = this.botState;
-    if (now >= bs.nextHeadingRetargetAt) {
-      const maxTurn = Math.random() < 0.12 ? Math.PI * 0.7 : Math.PI * 0.2;
-      bs.targetHeading = normalizeAngle(bs.heading + randomRange(-maxTurn, maxTurn));
-      bs.nextHeadingRetargetAt = now + randomRange(HEADING_RETARGET_MS.min, HEADING_RETARGET_MS.max);
+    // Wander: move_to a random point when it's time. Server pathfinds; on arrival we idle until next interval.
+    const mayWander = now >= this.nextWanderConsiderAt;
+    if (mayWander) {
+      const wanderX = randomRange(WANDER_X_MIN, WANDER_X_MAX);
+      const wanderZ = randomRange(WANDER_Z_MIN, WANDER_Z_MAX);
+      const intervalMs =
+        WANDER_INTERVAL_MS.min + Math.random() * (WANDER_INTERVAL_MS.max - WANDER_INTERVAL_MS.min);
+      this.nextWanderConsiderAt = now + intervalMs;
+      store.setMovementIntent(null);
+      store.setMovementTarget({ x: wanderX, z: wanderZ });
+      store.setMovementSprint(false);
+      store.setLastMoveToFailed(null);
+      store.setAutonomousEmoteStandStillUntil(0);
+      client.moveTo(wanderX, wanderZ);
+      clawLog("agent", `autonomous wander → (${wanderX.toFixed(1)}, ${wanderZ.toFixed(1)})`);
+      return;
     }
-    if (now >= bs.nextSpeedRetargetAt) {
-      bs.targetSpeed = randomWeightedSpeed();
-      bs.nextSpeedRetargetAt = now + randomRange(SPEED_RETARGET_MS.min, SPEED_RETARGET_MS.max);
-    }
-    bs.heading = lerpAngle(bs.heading, bs.targetHeading, 0.22);
-    bs.speed += (bs.targetSpeed - bs.speed) * 0.18;
-    let moveX = Math.cos(bs.heading) * bs.speed;
-    let moveZ = Math.sin(bs.heading) * bs.speed;
 
-    if (my.x <= LOCAL_X_MIN && moveX < 0) moveX = 0;
-    if (my.x >= LOCAL_X_MAX && moveX > 0) moveX = 0;
-    if (my.z <= LOCAL_Z_MIN && moveZ < 0) moveZ = 0;
-    if (my.z >= LOCAL_Z_MAX && moveZ > 0) moveZ = 0;
+    store.setMovementIntent(null);
 
-    store.setMovementIntent({ moveX, moveZ, sprint: false });
-
-    if (Math.random() < EMOTE_PROBABILITY && EMOTES.length > 0) {
+    const mayEmote =
+      now - this.lastAutonomousEmoteAt >= EMOTE_MIN_INTERVAL_MS &&
+      Math.random() < EMOTE_PROBABILITY &&
+      EMOTES.length > 0;
+    if (mayEmote) {
+      this.lastAutonomousEmoteAt = now;
       const emote = EMOTES[Math.floor(Math.random() * EMOTES.length)]!;
       client.sendEmote(emote);
       store.setAutonomousEmoteStandStillUntil(now + EMOTE_STAND_STILL_MS);

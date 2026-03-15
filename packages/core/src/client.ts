@@ -12,7 +12,7 @@ import type {
   AgentWsJoinMessage,
   AgentWsEmoteMessage,
   AgentWsSpeakMessage,
-  AgentWsRequestPathMessage,
+  AgentWsMoveToMessage,
 } from "./agentWs.js";
 import type { ChatHistoryMessage, GetChatHistoryOptions, GetChatHistoryResult } from "./chat.js";
 
@@ -334,13 +334,20 @@ export class DoppelClient {
   }
 
   /**
-   * Request pathfinding waypoints from server (current position → toX, toZ).
-   * Server responds with a "waypoints" message; register with onMessage("waypoints", ...) to receive.
+   * Server-driven move to (x, z). Block-local 0–100. Server pathfinds and moves the agent each tick; no waypoints sent.
    */
-  sendRequestPath(toX: number, toZ: number): void {
+  moveTo(x: number, z: number): void {
     if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
-    const msg: AgentWsRequestPathMessage = { type: "request_path", toX, toZ };
+    const msg: AgentWsMoveToMessage = { type: "move_to", x, z };
     this.ws.send(JSON.stringify(msg));
+  }
+
+  /**
+   * Cancel current server-driven move_to (e.g. when owner tells agent to stop). Use with sendInput(0,0) from the stop tool.
+   */
+  cancelMove(): void {
+    if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
+    this.ws.send(JSON.stringify({ type: "cancel_move" }));
   }
 
   /**

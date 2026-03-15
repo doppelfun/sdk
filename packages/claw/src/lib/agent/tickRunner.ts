@@ -5,20 +5,20 @@
 
 import type { DoppelClient } from "@doppelfun/sdk";
 import { buildChatSendOptions } from "../chatSendOptions.js";
-import {
-  canSendDmTo,
-  onWeSentDm,
-} from "../conversation/index.js";
+import { evaluateSendReply, onWeSentDm } from "../conversation/index.js";
 import type { ClawStore } from "../state/index.js";
 import type { ClawState } from "../state/state.js";
 import type { ClawConfig } from "../config/index.js";
 import { buildUserMessage } from "../prompts/index.js";
-import { runTickWithAiSdk, MUST_ACT_BUILD_TOOL_NAMES } from "../llm/toolsAi.js";
+import { runClawAgentTick } from "./clawAgent.js";
+import { MUST_ACT_BUILD_TOOL_NAMES } from "../llm/toolsAi.js";
+import { getTickModelForMessage } from "../llm/modelRouter.js";
 import { executeTool } from "../tools/index.js";
 import { isOwnerNearby } from "../movement/index.js";
-import { clawLog, clawDebug, truncatePreview } from "../log.js";
+import { clawLog, clawDebug } from "../log.js";
 import type { ToolCallResult } from "./types.js";
-import { reportChatUsageToHub } from "./usage.js";
+import { reportChatUsageToHub, recordUsageStub } from "./usage.js";
+import { evaluateReplyAction } from "./workflow/index.js";
 
 /** Max ticks in must_act_build before forcing back to idle. */
 const MUST_ACT_MAX_TICKS = 4;
@@ -42,8 +42,9 @@ export type TickIntent =
   | { kind: "llm_tick"; soulTick?: boolean };
 
 /**
- * Compute what to do this tick from current state. Call after boundary handling and,
- * when in must_act_build, after incrementing pendingBuildTicks.
+ * Workflow router: compute which step to run this tick from state and config.
+ * Call after boundary handling and, when in must_act_build, after incrementing pendingBuildTicks.
+ * @see docs/PLAN-WORKFLOW-PATTERNS.md Phase 1
  */
 export function computeTickIntent(state: ClawState, config: ClawConfig): TickIntent {
   if (state.tickPhase === "must_act_build") {
@@ -125,8 +126,7 @@ type TickContext = {
 };
 
 /**
- * Send a fallback reply (DM or global). If dmTarget is set but we can't send yet (e.g. receive delay),
- * queue to pendingDmReply for the 50ms loop to drain. Otherwise send now and optionally log.
+ * Send a fallback reply (DM or global). Uses evaluateSendReply: queue for drain or send now.
  */
 function sendFallbackReply(
   ctx: TickContext,
@@ -134,9 +134,9 @@ function sendFallbackReply(
   dmTarget: string | null,
   logLabel?: string
 ): void {
-  const blocked = dmTarget != null && !canSendDmTo(ctx.store, dmTarget);
-  if (blocked && dmTarget) {
-    ctx.store.setState({ pendingDmReply: { text, targetSessionId: dmTarget } });
+  const action = evaluateSendReply(ctx.store, dmTarget, text);
+  if (action.action === "queue") {
+    ctx.store.setState({ pendingDmReply: action.pendingDmReply });
     return;
   }
   if (dmTarget) {
@@ -174,13 +174,14 @@ async function handleBuildProcedural(
     ctx.options.onTick?.(`deterministic generate_procedural failed: ${execResult.error}`);
     ctx.store.setPendingBuildKind(null);
   }
+  ctx.store.setLlmWakePending(false);
   ctx.store.setLastTickToolNames(null);
 }
 
 /** Build phase: LLM with build-only tools (no chat). Used when pendingBuildKind is unset. */
 async function handleBuildLlm(ctx: TickContext): Promise<void> {
   const userContent = buildUserMessage(ctx.store, ctx.config) + MUST_ACT_BUILD_SUFFIX;
-  const result = await runTickWithAiSdk(
+  const result = await runClawAgentTick(
     ctx.client,
     ctx.store,
     ctx.config,
@@ -191,24 +192,51 @@ async function handleBuildLlm(ctx: TickContext): Promise<void> {
   );
   if (!result.ok) ctx.options.onTick?.(`LLM error: ${result.error}`);
   else if (ctx.config.hosted) reportChatUsageToHub(ctx.config, result.usage, ctx.options.onTick);
+  if (result.ok && result.usage) recordUsageStub(result.usage);
   if (result.ok && !result.hadToolCalls) ctx.options.onTick?.("must_act_build: no tool calls");
+  ctx.store.setLlmWakePending(false);
   ctx.store.setLastTickToolNames(null);
 }
 
 /**
- * Normal LLM tick: build user message, run LLM with tools, then apply DM/error fallbacks
- * if the model didn't call tools but we owed a reply. Clears wake flags and lastError when done.
+ * Build workflow: run the chosen worker (procedural or build-only LLM).
+ * Orchestrator (classify) runs in wake; here we only execute the selected worker.
+ * @see docs/PLAN-WORKFLOW-PATTERNS.md Phase 4
+ */
+async function runBuildWorkflow(
+  ctx: TickContext,
+  intent: Extract<TickIntent, { kind: "build_procedural" } | { kind: "build_llm" }>
+): Promise<void> {
+  if (intent.kind === "build_procedural") {
+    await handleBuildProcedural(ctx, intent.proceduralKind);
+  } else {
+    await handleBuildLlm(ctx);
+  }
+}
+
+/**
+ * LLM tick as a short chain: Act (build message + run agent) → Respond (evaluate reply + apply once).
+ * When config.modelRouterEnabled (CLAW_MODEL_ROUTER=1), use a Flash classifier to pick Pro vs Flash for this tick.
+ * @see docs/PLAN-WORKFLOW-PATTERNS.md Phase 2–3
  */
 async function handleLlmTick(ctx: TickContext, soulTick: boolean): Promise<void> {
   if (soulTick) ctx.store.setAutonomousSoulTickDue(false);
+
+  // —— Act step: build user message and run LLM with tools ——
   const userContent = buildUserMessage(ctx.store, ctx.config);
-  const result = await runTickWithAiSdk(
+  const tickModel =
+    ctx.config.modelRouterEnabled
+      ? await getTickModelForMessage(ctx.config, userContent)
+      : null;
+  const result = await runClawAgentTick(
     ctx.client,
     ctx.store,
     ctx.config,
     ctx.systemContent,
     userContent,
-    ctx.onToolResult
+    ctx.onToolResult,
+    undefined,
+    tickModel ?? undefined
   );
 
   ctx.store.setLlmWakePending(false);
@@ -221,35 +249,26 @@ async function handleLlmTick(ctx: TickContext, soulTick: boolean): Promise<void>
   }
 
   if (ctx.config.hosted) reportChatUsageToHub(ctx.config, result.usage, ctx.options.onTick);
+  if (result.usage) recordUsageStub(result.usage);
 
+  // —— Respond step: evaluate whether we owe a reply, then apply once ——
   const state = ctx.store.getState();
-  const replyText = "replyText" in result ? (result.replyText ?? "") : "";
+  const llmResultForReply = {
+    ok: true as const,
+    hadToolCalls: result.hadToolCalls,
+    replyText: "replyText" in result ? result.replyText : undefined,
+  };
+  const replyAction = evaluateReplyAction(state, llmResultForReply);
 
-  // DM fallback: we owed a DM reply but the model returned no tool calls (e.g. text-only).
-  if (state.dmReplyPending && !result.hadToolCalls && state.lastDmPeerSessionId) {
-    const text = replyText.length > 0 ? replyText : "Hey — I'm here.";
+  if (replyAction.action === "send") {
     sendFallbackReply(
       ctx,
-      text,
-      state.lastDmPeerSessionId,
-      `dm fallback chat: ${truncatePreview(text)}`
+      replyAction.text,
+      replyAction.targetSessionId ?? null,
+      replyAction.logLabel
     );
   } else if (!result.hadToolCalls) {
     ctx.options.onTick?.("no tool calls");
-  }
-
-  // Error fallback: summarize lastError in plain language and send (DM or global).
-  if (state.errorReplyPending && !result.hadToolCalls) {
-    const text =
-      replyText.trim().length > 0
-        ? replyText.trim().slice(0, 500)
-        : "Something went wrong on the server. If it keeps happening, try again in a moment.";
-    sendFallbackReply(
-      ctx,
-      text,
-      state.lastDmPeerSessionId ?? null,
-      `error-reply fallback chat: ${truncatePreview(text)}`
-    );
   }
 
   if (ctx.store.getState().lastError && ctx.store.getState().lastTickSentChat) {
@@ -261,7 +280,8 @@ async function handleLlmTick(ctx: TickContext, soulTick: boolean): Promise<void>
 }
 
 /**
- * Run one tick: optional boundary auto-join, then intent-based handlers (build procedural/LLM, idle skip, LLM tick with fallbacks).
+ * Run one tick: optional boundary auto-join, then router (computeTickIntent) → step handlers
+ * (build procedural/LLM, idle skip, LLM tick with reply evaluation).
  *
  * @param client - Doppel client (sendJoin, sendChat, etc.).
  * @param store - Claw store (reads via getState(), writes via actions/setState).
@@ -297,7 +317,7 @@ export async function runTick(
   const onToolResult = (name: string, args: string, execResult: ToolCallResult) => {
     store.pushLastTickToolName(name);
     options.onToolCallResult?.(name, args, execResult);
-    options.onTick?.(`${name}: ${execResult.ok ? execResult.summary ?? "ok" : execResult.error}`);
+    options.onTick?.(`${name}: ${execResult.ok ? execResult.summary ?? "ok" : execResult.error ?? "(no error message)"}`);
     store.setLastToolRun(name);
     if (execResult.ok && BUILD_TOOLS.has(name)) {
       store.clearMustActBuild();
@@ -326,10 +346,8 @@ export async function runTick(
       await handleIdleSkip(ctx);
       return;
     case "build_procedural":
-      await handleBuildProcedural(ctx, intent.proceduralKind);
-      return;
     case "build_llm":
-      await handleBuildLlm(ctx);
+      await runBuildWorkflow(ctx, intent);
       return;
     case "llm_tick":
       await handleLlmTick(ctx, intent.soulTick ?? false);

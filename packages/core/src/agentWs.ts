@@ -73,11 +73,16 @@ export type AgentWsSpeakMessage = {
   voiceId?: string;
 };
 
-/** Request pathfinding waypoints from current position to (toX, toZ). toX, toZ are block-local 0–100. Server responds with waypoints in block-local coords. */
-export type AgentWsRequestPathMessage = {
-  type: "request_path";
-  toX: number;
-  toZ: number;
+/** Server-driven move to (x, z). x, z are block-local 0–100. Server pathfinds and applies movement each tick; no waypoints sent to client. */
+export type AgentWsMoveToMessage = {
+  type: "move_to";
+  x: number;
+  z: number;
+};
+
+/** Cancel current server-driven move_to (e.g. when owner tells agent to stop). */
+export type AgentWsCancelMoveMessage = {
+  type: "cancel_move";
 };
 
 /** All outbound Agent WebSocket message types. Send as JSON after receiving `authenticated`. */
@@ -88,7 +93,8 @@ export type AgentWsClientMessage =
   | AgentWsEmoteMessage
   | AgentWsThinkingMessage
   | AgentWsSpeakMessage
-  | AgentWsRequestPathMessage;
+  | AgentWsMoveToMessage
+  | AgentWsCancelMoveMessage;
 
 // --- Inbound (server → client) ---
 
@@ -122,7 +128,7 @@ export type AgentWsThinkingServerMessage = {
   thinking: boolean;
 };
 
-/** Server-authored pathfinding waypoints (block-local x,z, 0–100). Set movementWaypoints when received. */
+/** @deprecated Server no longer sends waypoints; movement is driven by move_to (server pathfinds and applies input each tick). */
 export type AgentWsWaypointsMessage = {
   type: "waypoints";
   waypoints: { x: number; z: number }[];
@@ -141,9 +147,8 @@ export type AgentWsChatServerMessage = {
 };
 
 /**
- * Inbound Agent WebSocket messages. Position data:
- * - waypoints: block-local 0–100 (matches GET /api/occupants and approachPosition).
- * - error (e.g. space_boundary): optional x,z are world; claw typically ignores them and uses blockId to join.
+ * Inbound Agent WebSocket messages. Movement: client sends move_to(x,z); server pathfinds and drives movement each tick (no waypoints sent back).
+ * error (e.g. space_boundary): optional x,z are world; claw typically ignores them and uses blockId to join.
  */
 export type AgentWsServerMessage =
   | AgentWsAuthenticatedMessage

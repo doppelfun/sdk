@@ -36,12 +36,14 @@ function minimalConfig(): ClawConfig {
 }
 
 describe("executeTool", () => {
-  it("move with empty args coerces to 0,0 and calls sendInput", async () => {
+  it("stop calls cancelMove and sendInput with 0,0", async () => {
     const sendInput = vi.fn();
-    const client = { sendInput } as unknown as DoppelClient;
+    const cancelMove = vi.fn();
+    const client = { sendInput, cancelMove } as unknown as DoppelClient;
     const store = createClawStore("0_0");
-    const res = await executeTool(client, store, minimalConfig(), { name: "move", args: {} });
+    const res = await executeTool(client, store, minimalConfig(), { name: "stop", args: {} });
     expect(res.ok).toBe(true);
+    expect(cancelMove).toHaveBeenCalled();
     expect(sendInput).toHaveBeenCalledWith(
       expect.objectContaining({ moveX: 0, moveZ: 0 })
     );

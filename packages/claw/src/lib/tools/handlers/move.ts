@@ -1,72 +1,88 @@
+/**
+ * Movement tool handlers: approach_position, approach_person, stop.
+ * All use server-driven move_to (pathfinding on server); stop sends cancel_move + input 0,0.
+ */
 import type { ToolContext } from "../types.js";
+import type { ClawStore } from "../../state/index.js";
 import { parsePositionHint } from "../../../util/position.js";
+import { clawLog } from "../../log.js";
 
-const MAX_MOVE = 0.4;
+/** Set target for approach; server drives movement via move_to. Client only checks arrival. */
+function setApproachTarget(store: ClawStore, x: number, z: number, sprint: boolean): void {
+  store.setMovementIntent(null);
+  store.setMovementTarget({ x, z });
+  store.setMovementSprint(sprint);
+  store.setAutonomousEmoteStandStillUntil(0);
+}
 
-export async function handleMove(ctx: ToolContext) {
+/** Clear target and tell server to stop. */
+function clearMovement(store: ClawStore): void {
+  store.setMovementTarget(null);
+  store.setMovementIntent(null);
+  store.setMovementSprint(false);
+}
+
+/**
+ * approach_position: move to block-local coordinates. Server pathfinds via move_to.
+ * @see ../../movement/MOVEMENT.md
+ */
+export async function handleApproachPosition(ctx: ToolContext) {
+  const { client, store, args, logAction } = ctx;
+  const sprint = args.sprint === true;
+  const position = typeof args.position === "string" ? args.position.trim() : "";
+  if (!position) {
+    return { ok: false, error: 'approach_position requires position: "x,z" (block-local 0–100).' };
+  }
+  const parsed = parsePositionHint(position);
+  if (!parsed) {
+    return { ok: false, error: 'position must be like "x,z" or "x,y,z" (block-local 0–100).' };
+  }
+  setApproachTarget(store, parsed.x, parsed.z, sprint);
+  store.setLastBuildTarget({ x: parsed.x, z: parsed.z });
+  client.moveTo(parsed.x, parsed.z);
+  clawLog("approach_position: move_to", parsed.x.toFixed(1), parsed.z.toFixed(1), "→ server drives");
+  logAction(`approach (${parsed.x.toFixed(1)}, ${parsed.z.toFixed(1)}) — server pathfinding until within ~1 m`);
+  return { ok: true, summary: `approach (${parsed.x.toFixed(1)}, ${parsed.z.toFixed(1)})` };
+}
+
+/**
+ * approach_person: move to an occupant's position. Server pathfinds via move_to.
+ * @see ../../movement/MOVEMENT.md
+ */
+export async function handleApproachPerson(ctx: ToolContext) {
   const { client, store, args, logAction } = ctx;
   const state = store.getState();
-  const rawX = typeof args.moveX === "number" ? args.moveX : 0;
-  const rawZ = typeof args.moveZ === "number" ? args.moveZ : 0;
   const sprint = args.sprint === true;
-  const jump = args.jump === true;
-
-  const approachSessionId =
-    typeof args.approachSessionId === "string" ? args.approachSessionId.trim() : "";
-  const approachPosition =
-    typeof args.approachPosition === "string" ? args.approachPosition.trim() : "";
-
-  if (approachSessionId) {
-    const occ = state.occupants.find((o) => o.clientId === approachSessionId);
-    if (!occ?.position) {
-      return {
-        ok: false,
-        error:
-          "approachSessionId requires occupant with position—call get_occupants first and use clientId from context.",
-      };
-    }
-    store.setMovementIntent(null);
-    store.setMovementTarget({ x: occ.position.x, z: occ.position.z });
-    store.setMovementSprint(sprint);
-    client.sendRequestPath(occ.position.x, occ.position.z);
-    client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
-    const summary = `approach ${occ.username} at (${occ.position.x.toFixed(1)}, ${occ.position.z.toFixed(1)}) local — auto-walk until close`;
-    logAction(summary);
-    return { ok: true, summary };
+  const sessionId = typeof args.sessionId === "string" ? args.sessionId.trim() : "";
+  if (!sessionId) {
+    return { ok: false, error: "approach_person requires sessionId (clientId from get_occupants)." };
   }
-
-  if (approachPosition) {
-    const parsed = parsePositionHint(approachPosition);
-    if (!parsed) {
-      return { ok: false, error: 'approachPosition must be like "x,z" or "x,y,z" (block-local 0–100, same as building)' };
-    }
-    store.setMovementIntent(null);
-    store.setMovementTarget({ x: parsed.x, z: parsed.z });
-    store.setLastBuildTarget({ x: parsed.x, z: parsed.z });
-    store.setMovementSprint(sprint);
-    client.sendRequestPath(parsed.x, parsed.z);
-    client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump: false });
-    const summary = `approach (${parsed.x.toFixed(1)}, ${parsed.z.toFixed(1)}) local — auto-walk until within ~2 m`;
-    logAction(summary);
-    return { ok: true, summary };
+  const occ = state.occupants.find((o) => o.clientId === sessionId);
+  if (!occ?.position) {
+    return {
+      ok: false,
+      error: "approach_person requires an occupant with position—call get_occupants first and use clientId.",
+    };
   }
+  const toX = occ.position.x;
+  const toZ = occ.position.z;
+  setApproachTarget(store, toX, toZ, sprint);
+  client.moveTo(toX, toZ);
+  clawLog("approach_person: move_to", toX.toFixed(1), toZ.toFixed(1), "→ server drives");
+  logAction(`approach ${occ.username} at (${toX.toFixed(1)}, ${toZ.toFixed(1)}) — server pathfinding`);
+  return { ok: true, summary: `approach ${occ.username} at (${toX.toFixed(1)}, ${toZ.toFixed(1)})` };
+}
 
-  if (rawX === 0 && rawZ === 0) {
-    store.setMovementTarget(null);
-    store.setMovementWaypoints(null);
-    store.setMovementIntent(null);
-    store.setMovementSprint(false);
-    client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump });
-    logAction("move stop");
-    return { ok: true, summary: "move stop" };
-  }
-
-  const moveX = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, rawX));
-  const moveZ = Math.max(-MAX_MOVE, Math.min(MAX_MOVE, rawZ));
-  store.setMovementIntent({ moveX, moveZ, sprint });
-  store.setMovementTarget(null);
-  client.sendInput({ moveX, moveZ, sprint, jump: false });
-  const summary = `move ${moveX},${moveZ} (held until move 0,0 or approach*)`;
-  logAction(summary);
-  return { ok: true, summary };
+/**
+ * stop: clear movement target and tell server to stop (cancel_move so server drops path; then 0,0 input).
+ * @see ../../movement/MOVEMENT.md
+ */
+export async function handleStop(ctx: ToolContext) {
+  const { client, store, logAction } = ctx;
+  const jump = ctx.args.jump === true;
+  clearMovement(store);
+  client.cancelMove();
+  client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump });
+  logAction("stop");
+  return { ok: true, summary: "stop" };
 }

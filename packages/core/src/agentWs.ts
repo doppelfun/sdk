@@ -8,10 +8,21 @@ import { toWsBase } from "./utils.js";
 export const AGENT_WS_DEFAULT_PATH = "/connect";
 
 /**
+ * Build the Agent WebSocket URL without token (auth via { type: "auth", token } after connect).
+ * Use this to avoid the engine creating two sessions (one from ?token=, one from auth message).
+ */
+export function getAgentWsUrlWithoutToken(
+  engineUrl: string,
+  path: string = AGENT_WS_DEFAULT_PATH
+): string {
+  const wsBase = toWsBase(engineUrl);
+  const pathNorm = path.startsWith("/") ? path : `/${path}`;
+  return `${wsBase}${pathNorm}`;
+}
+
+/**
  * Build the Agent WebSocket URL with JWT in query. Use with any WebSocket client (browser or Node).
- * @param engineUrl - Engine base URL (e.g. https://your-app.railway.app or http://localhost:2567)
- * @param path - WS path (default AGENT_WS_DEFAULT_PATH)
- * @param token - Hub-issued JWT; added as ?token=...
+ * Prefer connecting without token and sending auth after connect to avoid duplicate sessions.
  */
 export function getAgentWsUrl(
   engineUrl: string,

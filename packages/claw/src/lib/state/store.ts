@@ -1,30 +1,24 @@
 /**
- * Zustand store for claw agent state.
- *
- * One store per agent run (created in agent bootstrap). All reads go through getState(),
- * all writes through setState() or the actions below. Uses zustand/vanilla (no React).
+ * Zustand store for wake-driven agent state.
+ * One store per agent; tree and agents read/write via getState/setState and actions.
  */
 
 import { createStore } from "zustand/vanilla";
 import type { Occupant } from "@doppelfun/sdk";
 import {
   createInitialState,
-  computeMainDocumentForBlock,
   type ClawState,
   type ChatEntry,
-  type BlockDocument,
-  type TickPhase,
+  type PendingScheduledTask,
   type BuildTarget,
+  type BlockDocument,
 } from "./state.js";
 
 export type ClawStore = ReturnType<typeof createClawStore>;
 
-/** Minimal store API for conversation module: getState + setState only. */
 export type ClawStoreApi = {
   getState: () => ClawState;
-  setState: (
-    partial: Partial<ClawState> | ((s: ClawState) => Partial<ClawState>)
-  ) => void;
+  setState: (partial: Partial<ClawState> | ((s: ClawState) => Partial<ClawState>)) => void;
 };
 
 function createClawStore(blockSlotId: string) {
@@ -36,196 +30,92 @@ function createClawStore(blockSlotId: string) {
     getState,
     setState,
 
+    // --- Wake (requestWake, tree consumes) ---
+    setWakePending(value: boolean) {
+      setState({ wakePending: value });
+    },
+    clearWake() {
+      setState({ wakePending: false });
+    },
+    setLastTriggerUserId(id: string | null) {
+      setState({ lastTriggerUserId: id });
+    },
+    setPendingScheduledTask(task: PendingScheduledTask | null) {
+      setState({ pendingScheduledTask: task });
+    },
+    clearPendingScheduledTask() {
+      setState({ pendingScheduledTask: null });
+    },
+    setLastAutonomousRunAt(ts: number) {
+      setState({ lastAutonomousRunAt: ts });
+    },
+
     // --- Chat / owner ---
     pushChat(entry: ChatEntry, max: number) {
-      setState((s) => ({
-        chat: [...s.chat, entry].slice(-max),
-      }));
+      setState((s) => ({ chat: [...s.chat, entry].slice(-max) }));
     },
-
     pushOwnerMessage(text: string, max: number) {
       setState((s) => ({
-        ownerMessages: [...s.ownerMessages, { text, at: Date.now() }].slice(
-          -max
-        ),
+        ownerMessages: [...s.ownerMessages, { text, at: Date.now() }].slice(-max),
       }));
     },
 
-    // --- Errors ---
-    setLastError(code: string, message: string, blockSlotId?: string) {
-      setState({
-        lastError: { code, message, blockSlotId },
-        llmWakePending: true,
-        errorReplyPending: true,
-      });
-    },
-
-    clearLastError() {
-      setState({ lastError: null, errorReplyPending: false });
-    },
-
-    syncMainDocumentForBlock() {
-      setState((s) => computeMainDocumentForBlock(s));
-    },
-
-    /** Reset state for join_block: slot, clear error/movement/docs/caches. Caller must clearConversation(store, { skipSeekCooldown: true }). */
-    resetForJoinBlock(blockSlotId: string) {
-      setState({
-        blockSlotId,
-        lastError: null,
-        myPosition: null,
-        lastBuildTarget: null,
-        movementTarget: null,
-        lastMoveToFailed: null,
-        movementIntent: null,
-        pendingGoTalkToAgent: null,
-        autonomousSeekCooldownUntil: 0,
-        lastToolRun: null,
-        lastCatalogContext: null,
-        lastDocumentsList: null,
-        lastOccupantsSummary: null,
-      });
-      store.syncMainDocumentForBlock();
-    },
-
-    // --- Core identity / occupants ---
+    // --- Core ---
     setBlockSlotId(slot: string) {
       setState({ blockSlotId: slot });
     },
-
     setMySessionId(sessionId: string | null) {
       setState({ mySessionId: sessionId });
     },
-
     setOccupants(list: Occupant[], mySessionId: string | null) {
       const self = list.find((o) => o.clientId === mySessionId);
       setState({ occupants: list, myPosition: self?.position ?? null });
     },
 
-    // --- Tick / build phase ---
-    setTickPhase(phase: TickPhase) {
-      setState({ tickPhase: phase });
-    },
-
-    setPendingBuildKind(kind: "city" | "pyramid" | null) {
-      setState({ pendingBuildKind: kind });
-    },
-
-    setPendingBuildTicks(ticks: number) {
-      setState({ pendingBuildTicks: ticks });
-    },
-
-    clearMustActBuild() {
-      setState({ tickPhase: "idle", pendingBuildKind: null, pendingBuildTicks: 0 });
-    },
-
-    setLastTickToolNames(names: string[] | null) {
-      setState({ lastTickToolNames: names });
-    },
-
-    pushLastTickToolName(name: string) {
-      setState((s) => ({
-        lastTickToolNames:
-          s.lastTickToolNames === null ? [name] : [...s.lastTickToolNames, name],
-      }));
-    },
-
-    setLastToolRun(name: string | null) {
-      setState({ lastToolRun: name });
-    },
-
-    // --- Wake flags (DM, error, soul tick) ---
-    setLlmWakePending(value: boolean) {
-      setState({ llmWakePending: value });
-    },
-
-    setDmReplyPending(value: boolean) {
-      setState({ dmReplyPending: value });
-    },
-
-    setErrorReplyPending(value: boolean) {
-      setState({ errorReplyPending: value });
-    },
-
-    setAutonomousSoulTickDue(value: boolean) {
-      setState({ autonomousSoulTickDue: value });
-    },
-
-    // --- Chat/DM display (last message, sent flag) ---
-    setLastAgentChatMessage(text: string | null) {
-      setState({ lastAgentChatMessage: text != null && text.trim() ? text.trim() : null });
-    },
-
-    setLastTickSentChat(value: boolean) {
-      setState({ lastTickSentChat: value });
-    },
-
-    setLastTriggerUserId(id: string | null) {
-      setState({ lastTriggerUserId: id });
-    },
-
-    // --- Catalog / documents cache (cleared on join_block) ---
-    setLastCatalogContext(s: string | null) {
-      setState({ lastCatalogContext: s });
-    },
-
-    setLastDocumentsList(s: string | null) {
-      setState({ lastDocumentsList: s });
-    },
-
-    setLastOccupantsSummary(s: string | null) {
-      setState({ lastOccupantsSummary: s });
-    },
-
-    // --- Movement / autonomous ---
+    // --- Movement ---
     setMovementTarget(target: { x: number; z: number } | null) {
       setState({ movementTarget: target });
     },
-
     setLastMoveToFailed(p: { x: number; z: number } | null) {
       setState({ lastMoveToFailed: p });
     },
-
-    setMovementIntent(intent: {
-      moveX: number;
-      moveZ: number;
-      sprint: boolean;
-    } | null) {
+    setMovementIntent(intent: { moveX: number; moveZ: number; sprint: boolean } | null) {
       setState({ movementIntent: intent });
     },
-
-    setMovementSprint(value: boolean) {
-      setState({ movementSprint: value });
-    },
-
     setLastBuildTarget(target: BuildTarget | null) {
       setState({ lastBuildTarget: target });
     },
-
+    setMovementSprint(value: boolean) {
+      setState({ movementSprint: value });
+    },
     setAutonomousEmoteStandStillUntil(ts: number) {
       setState({ autonomousEmoteStandStillUntil: ts });
     },
-
-    setPendingGoTalkToAgent(p: {
-      targetSessionId: string;
-      openingMessage: string;
-    } | null) {
+    setPendingGoTalkToAgent(p: { targetSessionId: string; openingMessage: string } | null) {
       setState({ pendingGoTalkToAgent: p });
     },
-
     setAutonomousSeekCooldownUntil(ts: number) {
       setState({ autonomousSeekCooldownUntil: ts });
     },
-
     setNextSeekConsiderAt(ts: number) {
       setState({ nextSeekConsiderAt: ts });
     },
-
     setConversationEndedSeekCooldownUntil(ts: number) {
       setState({ conversationEndedSeekCooldownUntil: ts });
     },
+    setLastOccupantsSummary(s: string | null) {
+      setState({ lastOccupantsSummary: s });
+    },
+    /** Update cached balance (e.g. after hub checkBalance or reportUsage). */
+    setCachedBalance(balance: number) {
+      setState({ cachedBalance: balance });
+    },
+    /** Update daily spend (e.g. from hub or after reportUsage). */
+    setDailySpend(spend: number) {
+      setState({ dailySpend: spend });
+    },
 
-    // --- Documents by block slot (tracked doc + MML cache) ---
+    // --- Documents (build tools) ---
     setDocumentsByBlockSlot(blockSlotId: string, doc: BlockDocument | null) {
       setState((s) => {
         const next = { ...s.documentsByBlockSlot };
@@ -234,11 +124,73 @@ function createClawStore(blockSlotId: string) {
         return { documentsByBlockSlot: next };
       });
     },
-
     mergeDocumentsByBlockSlot(blockSlotId: string, doc: BlockDocument) {
       setState((s) => ({
         documentsByBlockSlot: { ...s.documentsByBlockSlot, [blockSlotId]: doc },
       }));
+    },
+    setLastDocumentsList(summary: string | null) {
+      setState({ lastDocumentsList: summary });
+    },
+    setLastCatalogContext(compact: string | null) {
+      setState({ lastCatalogContext: compact });
+    },
+
+    // --- Conversation ---
+    setConversationPhase(phase: ClawState["conversationPhase"]) {
+      setState({ conversationPhase: phase });
+    },
+    setConversationPeerSessionId(id: string | null) {
+      setState({ conversationPeerSessionId: id });
+    },
+    setReceiveDelayUntil(ts: number) {
+      setState({ receiveDelayUntil: ts });
+    },
+    setWaitingForReplySince(ts: number) {
+      setState({ waitingForReplySince: ts });
+    },
+    setPendingDmReply(p: ClawState["pendingDmReply"]) {
+      setState({ pendingDmReply: p });
+    },
+    setLastDmPeerSessionId(id: string | null) {
+      setState({ lastDmPeerSessionId: id });
+    },
+    setConversationRoundCount(n: number) {
+      setState({ conversationRoundCount: n });
+    },
+    setLastAgentChatMessage(text: string | null) {
+      setState({ lastAgentChatMessage: text != null && text.trim() ? text.trim() : null });
+    },
+    setLastTickSentChat(value: boolean) {
+      setState({ lastTickSentChat: value });
+    },
+
+    // --- Errors ---
+    setLastError(code: string, message: string, blockSlotId?: string) {
+      setState({ lastError: { code, message, blockSlotId } });
+    },
+    clearLastError() {
+      setState({ lastError: null });
+    },
+
+    // --- Build subagent context ---
+    appendBuildSubagentExchange(agentSummary: string, userMessage: string) {
+      const max = 10;
+      setState((s) => {
+        const next = [...s.buildSubagentContext, { agentSummary, userMessage }];
+        return { buildSubagentContext: next.slice(-max) };
+      });
+    },
+    clearBuildSubagentContext() {
+      setState({ buildSubagentContext: [] });
+    },
+
+    // --- Tool tracking ---
+    setLastToolRun(name: string | null) {
+      setState({ lastToolRun: name });
+    },
+    setLastTickToolNames(names: string[] | null) {
+      setState({ lastTickToolNames: names });
     },
   };
 

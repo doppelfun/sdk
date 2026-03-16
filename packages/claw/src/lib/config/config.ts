@@ -1,10 +1,9 @@
 /**
- * Claw config from ENV. Call loadConfig() after dotenv.
+ * Claw config from ENV. Hub profile (soul, voiceEnabled, dailyCreditBudget) merged at bootstrap.
  */
 
 import { parseIntEnv, envFlag } from "../../util/env.js";
 import { normalizeUrl } from "../../util/url.js";
-import { DEFAULT_GOOGLE_MODEL } from "../llm/constants.js";
 
 export type LlmProviderId = "openrouter" | "google" | "google-vertex";
 
@@ -18,57 +17,38 @@ export type ClawConfig = {
   chatLlmModel: string;
   buildLlmModel: string;
   ownerUserId: string | null;
-  tickIntervalMs: number;
-  wakeTickDebounceMs: number;
   maxChatContext: number;
   maxOwnerMessages: number;
   hosted: boolean;
   tokensPerCredit: number;
-  buildCreditMultiplier: number;
   skillIds: string[];
-  allowBuildWithoutCredits: boolean;
   llmProvider: LlmProviderId;
   googleApiKey: string | null;
   googleCloudProject: string | null;
   googleCloudLocation: string | null;
-  /**
-   * When true, no periodic LLM ticks when idle — same cadence as block NPCs: 50ms movement
-   * driver only until DM/owner wake. When false, runTick is scheduled every tickIntervalMs even idle.
-   */
-  npcStyleIdle: boolean;
-  /** Meters — owner within this distance ⇒ obedient mode (only Owner said / DMs). */
+  /** Meters — owner within this distance for "owner nearby" checks. */
   ownerNearbyRadiusM: number;
   /**
-   * When > 0 and owner is away: schedule LLM ticks this often so autonomous behavior
-   * follows the SOUL (and skills). When 0, no autonomous ticks until wake.
+   * When > 0 and owner is away: request autonomous wake this often (ms).
+   * Tree condition TimeForAutonomousWake uses this.
    */
   autonomousSoulTickMs: number;
-  /**
-   * If > 0, periodically POST joinBlock to refresh hub JWT, POST /api/session to refresh
-   * HTTP session token, and reconnect WS so the socket URL stays valid (avoids expiry drops).
-   * Default 20 minutes. Set 0 to disable.
-   */
-  sessionRefreshIntervalMs: number;
-  /**
-   * Optional TTS voice id for this agent (e.g. ElevenLabs voice_id).
-   * Set via CLAW_VOICE_ID in .env or process env so each agent process can have a unique voice.
-   */
   voiceId: string | null;
-  /**
-   * When true, use a cheap LLM call (chatLlmModel) to classify each tick as TOOLS vs CONVERSATION,
-   * then use buildLlmModel (Pro) for tool-heavy turns and chatLlmModel (Flash) for conversation.
-   * Set CLAW_MODEL_ROUTER=1 to enable. Requires both chat and build models to be set.
-   */
-  modelRouterEnabled: boolean;
+  /** From hub profile: voice enabled. */
+  voiceEnabled: boolean;
+  /** From hub profile: daily credit budget (enforced when hosted). */
+  dailyCreditBudget: number;
+  /** From hub profile: personality/backstory for system prompt. */
+  soul: string | null;
+  /** When true, skip balance check and report-usage (local dev). */
+  skipCreditReport: boolean;
 };
 
 const DEFAULT_HUB = "http://localhost:4000";
 const DEFAULT_ENGINE = "http://localhost:2567";
-const DEFAULT_TICK_MS = 5000;
 const DEFAULT_MAX_CHAT = 20;
 const DEFAULT_MAX_OWNER = 10;
 
-/** LLM_PROVIDER → LlmProviderId. Underscores normalized to hyphens (google_vertex → google-vertex). */
 function parseLlmProvider(): LlmProviderId {
   const raw = (process.env.LLM_PROVIDER?.trim().toLowerCase() || "google").replace(/_/g, "-");
   if (raw === "google-vertex") return "google-vertex";
@@ -83,62 +63,38 @@ export function loadConfig(): ClawConfig {
   const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim() || "";
   const llmProvider = parseLlmProvider();
   if (!openRouterApiKey && llmProvider === "openrouter") {
-    throw new Error("OPENROUTER_API_KEY is required when LLM_PROVIDER is openrouter (default)");
+    throw new Error("OPENROUTER_API_KEY is required when LLM_PROVIDER is openrouter");
+  }
+  if (llmProvider === "google" && !process.env.GOOGLE_API_KEY) {
+    throw new Error("GOOGLE_API_KEY is required when LLM_PROVIDER is google");
+  }
+  if (llmProvider === "google-vertex" && !process.env.GOOGLE_CLOUD_PROJECT) {
+    throw new Error("GOOGLE_CLOUD_PROJECT is required when LLM_PROVIDER is google-vertex");
+  }
+  if (llmProvider === "google-vertex" && !process.env.GOOGLE_CLOUD_LOCATION) {
+    throw new Error("GOOGLE_CLOUD_LOCATION is required when LLM_PROVIDER is google-vertex");
   }
 
   const hubUrl = normalizeUrl(process.env.HUB_URL?.trim() || DEFAULT_HUB);
   const agentApiUrl = normalizeUrl(process.env.AGENT_API_URL?.trim() || hubUrl);
   const engineUrl = normalizeUrl(process.env.ENGINE_URL?.trim() || DEFAULT_ENGINE);
-  // Optional fallback only: profile default_space_id (GET /api/agents/me defaultBlock) is preferred at join time.
   const blockId = process.env.BLOCK_ID?.trim() || null;
   const ownerUserId = process.env.OWNER_USER_ID?.trim() || null;
   const skillIdsRaw = process.env.SKILL_IDS?.trim() || "doppel-claw";
   const skillIds =
-    skillIdsRaw != null && skillIdsRaw !== ""
+    skillIdsRaw !== ""
       ? skillIdsRaw.split(",").map((s) => s.trim()).filter(Boolean)
       : [];
 
-  const tickIntervalMs = Math.max(2000, parseIntEnv("TICK_INTERVAL_MS", DEFAULT_TICK_MS));
-  const wakeTickDebounceMs = parseIntEnv("WAKE_TICK_DEBOUNCE_MS", 150, 0, 2000);
   const maxChatContext = parseIntEnv("MAX_CHAT_CONTEXT", DEFAULT_MAX_CHAT, 5, 100);
   const maxOwnerMessages = parseIntEnv("MAX_OWNER_MESSAGES", DEFAULT_MAX_OWNER, 1, 50);
   const tokensPerCredit = parseIntEnv("TOKENS_PER_CREDIT", 1000, 1);
-  const rawMultiplier = process.env.BUILD_CREDIT_MULTIPLIER;
-  const parsedMultiplier = rawMultiplier != null ? parseFloat(rawMultiplier) : NaN;
-  const buildCreditMultiplier =
-    Number.isFinite(parsedMultiplier) && parsedMultiplier > 0 ? parsedMultiplier : 1.5;
-  const allowBuildWithoutCredits =
-    envFlag("ALLOW_BUILD_WITHOUT_CREDITS");
-  // Default true: match NpcDriver (no polling LLM). Set CLAW_NPC_STYLE=0 to restore periodic idle ticks.
-  const npcStyleIdle =
-    process.env.CLAW_NPC_STYLE === undefined ? true : envFlag("CLAW_NPC_STYLE");
-  const ownerNearbyRadiusM = parseIntEnv(
-    "OWNER_NEARBY_RADIUS_M",
-    14,
-    4,
-    80
-  );
-  // Soul-driven autonomous LLM when owner away; 0 = no autonomous ticks between wakes
-  const autonomousSoulTickMs = parseIntEnv(
-    "AUTONOMOUS_SOUL_TICK_MS",
-    45000,
-    0,
-    300000
-  );
-  // 0 = disabled; default 20m so hub JWT + WS stay ahead of typical 30m expiry
-  const sessionRefreshIntervalMs = parseIntEnv(
-    "SESSION_REFRESH_INTERVAL_MS",
-    20 * 60 * 1000,
-    0,
-    24 * 60 * 60 * 1000
-  );
-  // Per-agent TTS voice (e.g. ElevenLabs voice_id); used when sending chat so each agent sounds distinct.
+  const ownerNearbyRadiusM = parseIntEnv("OWNER_NEARBY_RADIUS_M", 14, 4, 80);
+  const autonomousSoulTickMs = parseIntEnv("AUTONOMOUS_SOUL_TICK_MS", 45000, 0, 300000);
   const voiceId = process.env.CLAW_VOICE_ID?.trim() || null;
-  const modelRouterEnabled = envFlag("CLAW_MODEL_ROUTER");
 
-  const gemini = llmProvider === "google" || llmProvider === "google-vertex";
-  const defaultModel = gemini ? DEFAULT_GOOGLE_MODEL : "openrouter/auto";
-
+  const defaultChatModel = llmProvider === "openrouter" ? "openrouter/auto" : "gemini-3-flash-preview";
+  const defaultBuildModel = llmProvider === "openrouter" ? "openrouter/auto" : "gemini-3.1-pro-preview";
   return {
     apiKey,
     hubUrl,
@@ -146,27 +102,24 @@ export function loadConfig(): ClawConfig {
     engineUrl,
     blockId,
     openRouterApiKey,
-    chatLlmModel: process.env.CHAT_LLM_MODEL?.trim() || defaultModel,
-    buildLlmModel: process.env.BUILD_LLM_MODEL?.trim() || defaultModel,
+    chatLlmModel: process.env.CHAT_LLM_MODEL?.trim() || defaultChatModel,
+    buildLlmModel: process.env.BUILD_LLM_MODEL?.trim() || defaultBuildModel,
     ownerUserId,
-    tickIntervalMs,
-    wakeTickDebounceMs,
     maxChatContext,
     maxOwnerMessages,
     hosted: false,
     tokensPerCredit,
-    buildCreditMultiplier,
     skillIds,
-    allowBuildWithoutCredits,
     llmProvider,
     googleApiKey: process.env.GOOGLE_API_KEY?.trim() || null,
     googleCloudProject: process.env.GOOGLE_CLOUD_PROJECT?.trim() || null,
     googleCloudLocation: process.env.GOOGLE_CLOUD_LOCATION?.trim() || null,
-    npcStyleIdle,
     ownerNearbyRadiusM,
     autonomousSoulTickMs,
-    sessionRefreshIntervalMs,
     voiceId,
-    modelRouterEnabled,
+    voiceEnabled: true,
+    dailyCreditBudget: 0,
+    soul: null,
+    skipCreditReport: envFlag("ALLOW_BUILD_WITHOUT_CREDITS"),
   };
 }

@@ -1,12 +1,5 @@
-/**
- * Position/coordinate parsing. Accepts "x,z" or "x,y,z" (world coords).
- * Used by approach_position and build_incremental (position hint).
- */
-
-export type Position3 = { x: number; y: number; z: number };
-
 /** Parse "x,z" or "x,y,z" into { x, y, z }; y defaults to 0. Returns null if invalid. */
-export function parsePositionHint(hint: string): Position3 | null {
+export function parsePositionHint(hint: string): { x: number; y: number; z: number } | null {
   const parts = hint.split(",").map((s) => s.trim()).filter(Boolean);
   if (parts.length < 2) return null;
   const x = Number(parts[0]);

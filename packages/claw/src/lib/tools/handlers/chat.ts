@@ -1,7 +1,9 @@
 import type { ToolContext } from "../types.js";
 import { buildChatSendOptions } from "../../chatSendOptions.js";
-import { evaluateSendReply, onWeSentDm } from "../../conversation/index.js";
-import { truncatePreview } from "../../log.js";
+import { evaluateSendReply, onWeSentDm } from "../../conversation.js";
+import { isOwnerNearby } from "../../movement/index.js";
+import { reportVoiceUsageToHub } from "../../credits/index.js";
+import { clawLog } from "../../log.js";
 
 export async function handleChat(ctx: ToolContext) {
   const { client, store, args, config, logAction } = ctx;
@@ -13,45 +15,37 @@ export async function handleChat(ctx: ToolContext) {
     targetSessionId = state.lastDmPeerSessionId;
   }
 
-  // When in a conversation with another agent, only one message per turn — wait for their reply.
-  // When DMing a human (user/owner), allow follow-up messages (e.g. "having trouble with the move command").
-  if (text && state.lastTickSentChat) {
-    const peerIsAgent =
-      targetSessionId != null &&
-      state.occupants.some((o) => o.clientId === targetSessionId && o.type === "agent");
-    if (peerIsAgent) {
-      return {
-        ok: false,
-        error: "Already sent a message this turn; wait for the other person to respond.",
-      };
-    }
+  const autonomous =
+    (config.ownerUserId && state.myPosition && !isOwnerNearby(state, config)) || !config.ownerUserId;
+  if (text && !targetSessionId && autonomous) {
+    return {
+      ok: false,
+      error:
+        "You must send a DM only. Call chat with targetSessionId set to the person you're talking to.",
+    };
   }
 
-  // Evaluate send vs queue; conversation FSM so conversations aren’t spammed and voice can finish.
   if (text && targetSessionId) {
     const action = evaluateSendReply(store, targetSessionId, text);
     if (action.action === "queue") {
       store.setState({ pendingDmReply: action.pendingDmReply });
-      return {
-        ok: true,
-        summary: "queued (reply will be sent after turn-taking delay)",
-      };
+      return { ok: true as const, summary: "queued (reply after turn-taking delay)" };
     }
   }
 
   if (text) {
     const voiceId =
       (typeof args.voiceId === "string" ? args.voiceId.trim() : null) || config.voiceId || undefined;
+    clawLog("chat tool: sendChat", targetSessionId ? "DM" : "global", text.slice(0, 50));
     client.sendChat(text, buildChatSendOptions({ targetSessionId: targetSessionId ?? undefined, voiceId }));
+    if (voiceId && config.voiceEnabled) {
+      reportVoiceUsageToHub(config, store, text.length);
+    }
     store.setLastAgentChatMessage(text);
     store.setLastTickSentChat(true);
-    if (targetSessionId) {
-      onWeSentDm(store, targetSessionId);
-    } else {
-      store.setState({ lastDmPeerSessionId: null });
-    }
+    if (targetSessionId) onWeSentDm(store, targetSessionId);
+    else store.setState({ lastDmPeerSessionId: null });
   }
-  const summary = targetSessionId ? "sent DM" : "sent chat";
-  if (text) logAction(`${summary}: ${truncatePreview(text)}`);
-  return { ok: true, summary };
+  logAction(text ? (targetSessionId ? "sent DM" : "sent chat") : "no text");
+  return { ok: true as const, summary: targetSessionId ? "sent DM" : "sent chat" };
 }

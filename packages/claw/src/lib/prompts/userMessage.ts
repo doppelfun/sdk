@@ -1,32 +1,46 @@
 /**
- * Build the per-tick user message for the Chat LLM.
- * Composes sections from the registry (userMessageSections) and joins with newlines.
+ * Minimal buildUserMessage: chat, owner messages, optional scheduled task.
  */
 import type { ClawConfig } from "../config/index.js";
-import type { ClawStoreApi } from "../state/store.js";
-import { HINT_NO_CONTEXT } from "./hints.js";
-import { USER_MESSAGE_SECTION_DESCRIPTORS } from "./userMessageSections.js";
+import type { ClawStoreApi } from "../state/index.js";
 
-/**
- * Build the user message for one tick: block slot, occupants, errors, chat, owner messages, cached data.
- * When build target is reached, clears it via store.setState.
- */
-export function buildUserMessage(
-  store: ClawStoreApi,
-  config: ClawConfig
-): string {
+export function buildUserMessage(store: ClawStoreApi, config: ClawConfig): string {
   const state = store.getState();
-  const ctx = { state, config, store };
-
   const parts: string[] = [];
-  for (const section of USER_MESSAGE_SECTION_DESCRIPTORS) {
-    if (section.when && !section.when(ctx)) continue;
-    parts.push(...section.render(ctx));
+
+  parts.push(`Block: ${state.blockSlotId}`);
+
+  if (state.occupants.length > 0) {
+    parts.push(
+      `Occupants (${state.occupants.length}): ${state.occupants.map((o) => `${o.username} (${o.clientId})`).join(", ")}`
+    );
   }
 
-  if (parts.length === 1) {
-    parts.push(HINT_NO_CONTEXT);
+  if (state.lastError) {
+    parts.push(`Error: ${state.lastError.code} — ${state.lastError.message}`);
   }
 
+  if (state.pendingScheduledTask) {
+    parts.push(`Scheduled task: ${state.pendingScheduledTask.instruction}`);
+  }
+
+  const ownerMsgs = state.ownerMessages.slice(-(config.maxOwnerMessages || 5));
+  if (ownerMsgs.length > 0) {
+    parts.push("Owner said: " + ownerMsgs.map((m) => m.text).join(" | "));
+  }
+
+  const chatSlice = state.chat.slice(-(config.maxChatContext || 10));
+  if (chatSlice.length > 0) {
+    parts.push(
+      "Recent chat: " +
+        chatSlice.map((c) => `[${c.username}]: ${c.message}`).join(" ")
+    );
+  }
+
+  if (state.lastDmPeerSessionId) {
+    parts.push(`Reply in DM to session: ${state.lastDmPeerSessionId}`);
+  }
+
+  if (parts.length <= 1) parts.push("No recent context. Say hello or ask what to do.");
   return parts.join("\n");
 }

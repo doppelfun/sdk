@@ -1,30 +1,59 @@
 /**
- * @doppelfun/claw — LLM-driven agent runtime.
- *
- * **Library entrypoint:** `import { runAgent } from "@doppelfun/claw"` (or this file).
- * To run the agent programmatically, call `runAgent(options)` or `new AgentRunner().run(options)`.
- *
- * **CLI entrypoint:** `doppel-claw` (bin) or `node dist/cli.js` — see README.
- * Public API below; implementation lives under lib/ and util/.
+ * @doppelfun/claw — Wake-driven agent with Mistreevous behaviour tree.
+ * @see docs/PLAN-AGENT-WAKE-DRIVEN.md
  */
 
-export const CLAW_VERSION = "0.1.0";
-
-export { runAgent, DoppelAgent, type AgentRunOptions, type ToolCallResult } from "./lib/agent/index.js";
-export { AgentRunner } from "./lib/agent/AgentRunner.js";
+export { createAgentLoop, createTreeAgent, TREE_DEFINITION, type AgentLoop, type TreeAgentContext } from "./lib/tree/index.js";
+export { requestWake, requestCronWake, type WakeType, type WakePayload } from "./lib/wake.js";
 export { loadConfig, type ClawConfig, type LlmProviderId } from "./lib/config/index.js";
-export { joinBlock, createBlock, HubClient } from "./lib/hub/index.js";
 export {
-  createInitialState,
   createClawStore,
+  createInitialState,
   type ClawState,
   type ClawStore,
   type ClawStoreApi,
+  type ChatEntry,
+  type OwnerMessage,
+  type PendingScheduledTask,
+  type BuildSubagentExchange,
+  type Position3,
+  type BuildTarget,
+  type BlockDocument,
 } from "./lib/state/index.js";
-export { executeTool, type ToolInvocation, type ExecuteToolResult } from "./lib/tools/index.js";
+export { createRunner, type RunnerOptions } from "./lib/runner.js";
+export { handleChatMessage, type ChatPayload } from "./lib/handlers/index.js";
+export { buildSystemContent, buildUserMessage } from "./lib/prompts/index.js";
+export { runObedientAgentTick } from "./lib/agent/obedientAgent.js";
+export { runAutonomousAgentTick } from "./lib/agent/autonomousAgent.js";
 export {
-  createLlmProvider,
-  type LlmProvider,
-  type LlmProviderKind,
-  type BuildIntentResult,
-} from "./lib/llm/index.js";
+  getAgentProfile,
+  reportUsage,
+  reportVoiceUsage,
+  checkBalance,
+  joinBlock,
+  applyHubProfileToConfig,
+  setCachedBalance,
+  type HubAgentProfile,
+  type ReportUsageResult,
+  type CheckBalanceResult,
+  type JoinBlockResult,
+} from "./lib/hub/index.js";
+export {
+  reportUsageToHub,
+  reportVoiceUsageToHub,
+  hasEnoughCredits,
+  refreshBalance,
+  MIN_BALANCE_THRESHOLD,
+} from "./lib/credits/index.js";
+export {
+  bootstrapAgent,
+  createSession,
+  getDefaultBlockId,
+  type BootstrapResult,
+  type SessionResult,
+} from "./lib/bootstrap.js";
+export {
+  startCronScheduler,
+  type CronTaskDef,
+  type CronSchedulerOptions,
+} from "./lib/cron/index.js";

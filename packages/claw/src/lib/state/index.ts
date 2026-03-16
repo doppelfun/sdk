@@ -1,19 +1,12 @@
-/**
- * Claw state: types, initial state, pure helpers, and Zustand store.
- * One store per agent run (created in agent bootstrap); reads via getState(), writes via setState/actions.
- */
-
+export { createClawStore, type ClawStore, type ClawStoreApi } from "./store.js";
 export {
   createInitialState,
-  computeMainDocumentForBlock,
-  isInConversationWithAgentInRoom,
-  getFacingTowardNearestOccupant,
   type ClawState,
   type ChatEntry,
   type OwnerMessage,
-  type BlockDocument,
+  type PendingScheduledTask,
+  type BuildSubagentExchange,
   type Position3,
   type BuildTarget,
-  type TickPhase,
+  type BlockDocument,
 } from "./state.js";
-export { createClawStore, type ClawStore, type ClawStoreApi } from "./store.js";

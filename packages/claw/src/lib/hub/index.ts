@@ -1,16 +1,12 @@
-/**
- * Hub API: blocks, agents/me, credits, report-usage.
- */
 export {
-  joinBlock,
-  createBlock,
   getAgentProfile,
   reportUsage,
+  reportVoiceUsage,
   checkBalance,
-  HubClient,
-  type JoinBlockResult,
-  type CreateBlockResult,
-  type AgentProfile,
+  joinBlock,
+  type HubAgentProfile,
   type ReportUsageResult,
   type CheckBalanceResult,
+  type JoinBlockResult,
 } from "./hub.js";
+export { applyHubProfileToConfig, setCachedBalance } from "./profile.js";

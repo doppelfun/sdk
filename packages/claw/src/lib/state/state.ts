@@ -1,182 +1,94 @@
 /**
- * In-memory claw state for the agent loop.
- * Holds block slot, occupants, chat, errors, owner messages, and build state.
- * documentsByBlockSlot tracks which document id + cached MML this agent uses for the next replace/append. The block engine loads all agent documents—agent-side bookkeeping only.
+ * Wake-driven agent state. No tickPhase, pendingBuildKind, or pendingBuildTicks.
+ * @see docs/PLAN-AGENT-WAKE-DRIVEN.md
  */
 
 import type { Occupant } from "@doppelfun/sdk";
 
-/** One chat message (from engine WS). Mentions are not tracked in Claw—use DM or owner for directed replies. */
 export type ChatEntry = {
   username: string;
   message: string;
   createdAt: number;
   userId?: string;
   sessionId?: string;
-  /** "global" or dm:sessionA:sessionB. Omitted for older payloads. */
   channelId?: string;
 };
 
-/** One owner command (in-world chat from owner user). */
 export type OwnerMessage = { text: string; at: number };
 
-export type BlockDocument = { documentId: string; mml: string };
-
-/** Block-local position 0–100 (e.g. from occupants API). */
 export type Position3 = { x: number; y: number; z: number };
 
-/** Build target to walk toward (x,z only). */
 export type BuildTarget = { x: number; z: number };
 
-/**
- * Tick phase for long-term build routing.
- * must_act_build: chat is withheld until a build tool runs or phase times out—avoids chat-only promises.
- */
-export type TickPhase = "idle" | "must_act_build";
+/** Scheduled task from cron wake; consumed by Obedient agent. */
+export type PendingScheduledTask = {
+  taskId: string;
+  instruction: string;
+  [k: string]: unknown;
+};
+
+export type BuildSubagentExchange = { agentSummary: string; userMessage: string };
+
+/** Tracked document per block for replace/append (build tools). */
+export type BlockDocument = { documentId: string; mml: string };
 
 export type ClawState = {
-  /** Block slot id (e.g. "0_0"). Engine WS may still call this regionId in payloads. */
   blockSlotId: string;
   mySessionId: string | null;
   occupants: Occupant[];
   chat: ChatEntry[];
-  /** Engine may send regionId on boundary errors; we store as blockSlotId hint for join_block. */
   lastError: { code: string; message: string; blockSlotId?: string } | null;
   ownerMessages: OwnerMessage[];
-  /** Which doc id + cached MML to target for builds in this block slot; engine loads every document. */
-  documentsByBlockSlot: Record<string, BlockDocument>;
-  /** Tracked document id for current block slot. */
-  mainDocumentId: string | null;
-  /** Cached MML for tracked doc. */
-  mainDocumentMml: string;
-  lastTickSentChat: boolean;
-  /** Last chat message we sent; used in prompt hint to avoid repeating. */
-  lastAgentChatMessage: string | null;
-  /** UserId of whoever last spoke in a DM to you or as owner; used for owner-gating builds. */
   lastTriggerUserId: string | null;
-  /** Agent's block-local position 0–100 when in same block (set from get_occupants when self has position). */
   myPosition: Position3 | null;
-  /** Last build location to walk toward; stop when close (~2 m). */
-  lastBuildTarget: BuildTarget | null;
-  /**
-   * When set, movementDriverTick sends input every ~50ms toward this world (x,z)
-   * until within movementStopDistanceM—NPC-style continuous motion without LLM spam.
-   */
   movementTarget: { x: number; z: number } | null;
-  /** When set, last move_to had no path; agent can tell user. Cleared when injected into prompt or on new approach. */
   lastMoveToFailed: { x: number; z: number } | null;
-  /** Stop distance for movementTarget (default 2 m). */
   movementStopDistanceM: number;
-  /** Sprint while auto-approaching. */
   movementSprint: boolean;
-  /**
-   * When set (and no movementTarget), movementDriverTick sends this input every ~50ms—
-   * same cadence as NpcDriver so motion stays smooth instead of one-shot jerk per LLM tick.
-   */
   movementIntent: { moveX: number; moveZ: number; sprint: boolean } | null;
-  /**
-   * When > 0 and now < this timestamp, AutonomousManager is in "emote stand still" — movement
-   * driver sends 0,0. Set by AutonomousManager when it triggers an emote; cleared when owner
-   * nearby or when time expires.
-   */
-  autonomousEmoteStandStillUntil: number;
-  /**
-   * When set, we are autonomously approaching this agent to say openingMessage. Movement driver
-   * clears movementTarget on arrive and then sends chat + speak with openingMessage to targetSessionId.
-   */
+  lastBuildTarget: BuildTarget | null;
+  /** When set, movement driver sends greeting then clears. */
   pendingGoTalkToAgent: { targetSessionId: string; openingMessage: string } | null;
-  /**
-   * When > 0 and now < this timestamp, AutonomousManager will not start a new "seek agent" — avoids
-   * immediately re-targeting after we just said something. Set when we fire chat/speak on arrive.
-   */
+  /** When > 0 and now < this timestamp, movement driver sends 0,0 (e.g. after emote). */
+  autonomousEmoteStandStillUntil: number;
   autonomousSeekCooldownUntil: number;
-  /**
-   * When > 0 and now < this timestamp, do not start a new seek (set when a conversation ends).
-   * Several-minute cooldown so agents don't immediately start another conversation.
-   */
+  /** When > 0, do not start new seek until after this time (e.g. after conversation end). */
   conversationEndedSeekCooldownUntil: number;
-  /**
-   * Next time we're allowed to consider seeking another agent (throttle + random desync).
-   * Set after we consider (whether we seek or not) to now + random(SEEK_INTERVAL_MIN_MS, SEEK_INTERVAL_MAX_MS).
-   */
   nextSeekConsiderAt: number;
-  /** Last tool name that was run. */
-  lastToolRun: string | null;
-  /** Tool names invoked this tick (for follow-up when chat-only promised a build). Cleared at tick start. */
-  lastTickToolNames: string[] | null;
-  /** When set, last inbound was a DM from this session id — use as targetSessionId when replying. Kept in sync with conversation module. */
   lastDmPeerSessionId: string | null;
-  /** Conversation FSM phase (idle | can_reply | waiting_for_reply). Updated only via conversation module. */
   conversationPhase: "idle" | "can_reply" | "waiting_for_reply";
-  /** Current DM peer session id when in a conversation. */
   conversationPeerSessionId: string | null;
-  /** Timestamp until we're allowed to send (receive delay so TTS can finish). 0 = no delay. */
   receiveDelayUntil: number;
-  /** When we entered waiting_for_reply (for timeout break). */
   waitingForReplySince: number;
-  /** Queued DM reply when we tried to send but were in receive delay. Drained in the 50ms loop. */
   pendingDmReply: { text: string; targetSessionId: string } | null;
-  /** Number of full exchanges with current peer; used for CONVERSATION_MAX_ROUNDS break. */
   conversationRoundCount: number;
-  /** idle = normal tick; must_act_build = run build tool before chat (deterministic or build-only LLM). */
-  tickPhase: TickPhase;
-  /** When set with must_act_build, executeTool(generate_procedural) runs without LLM. */
-  pendingBuildKind: "city" | "pyramid" | null;
-  /** Ticks spent in must_act_build without clearing; escape to idle to avoid stuck. */
-  pendingBuildTicks: number;
-  /**
-   * When false, idle interval ticks skip the LLM (no 15k-token burn every 5s).
-   * Set true on DM/owner wake, setLastError, must_act_build, and once on connect.
-   * Cleared after an idle LLM run — next reaction only when something wakes again.
-   */
-  llmWakePending: boolean;
-  /**
-   * When true, the next idle LLM run is a soul-driven autonomous tick (owner away).
-   * Set by scheduler; cleared when runTick starts LLM. buildUserMessage uses this to inject soul-first instructions.
-   */
-  autonomousSoulTickDue: boolean;
-  /**
-   * True when the wake was from a DM — next LLM turn must reply in thread; cleared after tick.
-   * Used to force/fallback chat when the model returns no tool calls (e.g. Gemini text-only).
-   */
-  dmReplyPending: boolean;
-  /**
-   * True when setLastError just ran — next LLM turn should summarize the failure in plain language
-   * and call chat (DM thread or global once). Cleared after chat is sent or lastError cleared.
-   */
-  errorReplyPending: boolean;
-  /**
-   * Compact catalog snapshot from last list_catalog (bounded size)—injected into buildUserMessage.
-   * Full JSON was only in that tool turn; re-call list_catalog if more entries needed. Cleared on join_block.
-   */
-  lastCatalogContext: string | null;
-  /**
-   * Cached list_documents summary (e.g. "3 document(s): id1, id2") — injected into user message.
-   * Cleared on join_block.
-   */
-  lastDocumentsList: string | null;
-  /**
-   * Short summary from last get_occupants (e.g. "4 occupants") — occupants array is already in state;
-   * this flags that a fetch happened so prompts can say not to re-call unnecessarily.
-   */
+  lastTickSentChat: boolean;
+  lastAgentChatMessage: string | null;
+  /** Wake-driven: true when there is work (DM, autonomous, cron). */
+  wakePending: boolean;
+  /** Set by requestWake("cron", { task }); cleared after RunObedientAgent. */
+  pendingScheduledTask: PendingScheduledTask | null;
+  /** Last time we ran the autonomous agent (for TimeForAutonomousWake). */
+  lastAutonomousRunAt: number;
+  lastToolRun: string | null;
+  lastTickToolNames: string[] | null;
   lastOccupantsSummary: string | null;
+  buildSubagentContext: BuildSubagentExchange[];
+  /** Cached balance from hub (when hosted). */
+  cachedBalance: number;
+  /** Daily spend so far (when hosted); reset by hub. */
+  dailySpend: number;
+  /** Document id + MML per block for build replace/append. */
+  documentsByBlockSlot: Record<string, BlockDocument>;
+  /** Cached list_documents result for build subagent. */
+  lastDocumentsList: string | null;
+  /** Cached list_catalog compact for build subagent. */
+  lastCatalogContext: string | null;
 };
 
-/** True if we have a DM peer and that peer is an agent with position in the current block (so we stay put). */
-export function isInConversationWithAgentInRoom(state: ClawState): boolean {
-  if (state.lastDmPeerSessionId == null) return false;
-  return state.occupants.some(
-    (o) =>
-      o.type === "agent" &&
-      o.clientId === state.lastDmPeerSessionId &&
-      o.position != null
-  );
-}
-
-/** Max distance (m) to consider for facing toward a nearby occupant. */
 const FACE_NEARBY_RADIUS_M = 12;
 
-/** Y rotation (radians) to face the nearest occupant (player or agent) with position, or undefined if none in range. */
+/** Y rotation (radians) to face the nearest occupant with position, or undefined if none in range. */
 export function getFacingTowardNearestOccupant(state: ClawState): number | undefined {
   const my = state.myPosition;
   if (!my) return undefined;
@@ -196,7 +108,6 @@ export function getFacingTowardNearestOccupant(state: ClawState): number | undef
   return Math.atan2(nearest.x - my.x, nearest.z - my.z);
 }
 
-/** Create initial state for a block slot (e.g. "0_0"). Used by createClawStore. */
 export function createInitialState(blockSlotId: string): ClawState {
   return {
     blockSlotId,
@@ -205,26 +116,19 @@ export function createInitialState(blockSlotId: string): ClawState {
     chat: [],
     lastError: null,
     ownerMessages: [],
-    documentsByBlockSlot: {},
-    mainDocumentId: null,
-    mainDocumentMml: "",
-    lastTickSentChat: false,
-    lastAgentChatMessage: null,
     lastTriggerUserId: null,
     myPosition: null,
-    lastBuildTarget: null,
     movementTarget: null,
     lastMoveToFailed: null,
     movementStopDistanceM: 2,
     movementSprint: false,
     movementIntent: null,
-    autonomousEmoteStandStillUntil: 0,
+    lastBuildTarget: null,
     pendingGoTalkToAgent: null,
+    autonomousEmoteStandStillUntil: 0,
     autonomousSeekCooldownUntil: 0,
     conversationEndedSeekCooldownUntil: 0,
     nextSeekConsiderAt: 0,
-    lastToolRun: null,
-    lastTickToolNames: null,
     lastDmPeerSessionId: null,
     conversationPhase: "idle",
     conversationPeerSessionId: null,
@@ -232,30 +136,19 @@ export function createInitialState(blockSlotId: string): ClawState {
     waitingForReplySince: 0,
     pendingDmReply: null,
     conversationRoundCount: 0,
-    tickPhase: "idle",
-    pendingBuildKind: null,
-    pendingBuildTicks: 0,
-    llmWakePending: true,
-    autonomousSoulTickDue: false,
-    dmReplyPending: false,
-    errorReplyPending: false,
-    lastCatalogContext: null,
-    lastDocumentsList: null,
+    lastTickSentChat: false,
+    lastAgentChatMessage: null,
+    wakePending: true,
+    pendingScheduledTask: null,
+    lastAutonomousRunAt: 0,
+    lastToolRun: null,
+    lastTickToolNames: null,
     lastOccupantsSummary: null,
-  };
-}
-
-/**
- * Pure helper: compute next state for mainDocumentId/mainDocumentMml from documentsByBlockSlot.
- * Used by store.syncMainDocumentForBlock(); callers should use the store action.
- */
-export function computeMainDocumentForBlock(state: ClawState): {
-  mainDocumentId: string | null;
-  mainDocumentMml: string;
-} {
-  const doc = state.documentsByBlockSlot[state.blockSlotId];
-  return {
-    mainDocumentId: doc?.documentId ?? null,
-    mainDocumentMml: doc?.mml ?? "",
+    buildSubagentContext: [],
+    cachedBalance: 0,
+    dailySpend: 0,
+    documentsByBlockSlot: {},
+    lastDocumentsList: null,
+    lastCatalogContext: null,
   };
 }

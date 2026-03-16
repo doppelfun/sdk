@@ -1,37 +1,94 @@
 #!/usr/bin/env node
 /**
- * CLI entrypoint — run the claw agent from the command line.
- * Invoked as: `doppel-claw` (package bin) or `pnpm start` / `node dist/cli.js`.
- * For programmatic use, import from "@doppelfun/claw" and call runAgent().
+ * CLI — run the wake-driven claw agent. Requires DOPPEL_AGENT_API_KEY and a block (BLOCK_ID or profile default).
+ * Optional: dotenv to load .env; OPENROUTER_API_KEY for LLM.
  */
-
-import { config } from "dotenv";
+import { config as loadDotenv } from "dotenv";
 import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { runAgent } from "./lib/agent/index.js";
+import WebSocket from "ws";
+import { createClient } from "@doppelfun/sdk";
+import {
+  bootstrapAgent,
+  createSession,
+  getDefaultBlockId,
+  createRunner,
+  handleChatMessage,
+  startCronScheduler,
+} from "./index.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+// Load .env from cwd, package dir, and parent dir (monorepo root when running from packages/claw)
+const cwd = process.cwd();
+loadDotenv({ path: resolve(cwd, ".env") });
+loadDotenv({ path: resolve(cwd, "..", "..", ".env") });
 
-config({ path: resolve(__dirname, "..", "..", "..", ".env") });
-config({ path: resolve(process.cwd(), ".env") });
-config({ path: resolve(__dirname, "..", ".env") });
+async function main(): Promise<void> {
+  const { config, profile } = await bootstrapAgent();
+  const blockId = getDefaultBlockId(profile, config, "0_0");
 
-runAgent({
-  onConnected: (blockSlotId, engineUrl) => {
+  const session = await createSession(config, blockId, { refreshBalance: true });
+  if (!session.ok) {
+    console.error("[agent] Session failed:", session.error);
+    process.exit(1);
+  }
+  const { store, jwt, engineUrl, blockSlotId } = session;
+
+  const getJwt = () => jwt;
+  const client = createClient({
+    engineUrl,
+    getJwt,
+    WebSocket: WebSocket as unknown as typeof globalThis.WebSocket,
+    agentWsPath: "/connect",
+  });
+
+  client.onMessage("authenticated", (payload: unknown) => {
+    const p = payload as { blockId?: string; regionId?: string; sessionId?: string };
+    const slot = typeof p.blockId === "string" ? p.blockId : p.regionId;
+    if (typeof slot === "string") store.setBlockSlotId(slot);
+    if (typeof p.sessionId === "string") store.setMySessionId(p.sessionId);
     console.log("[agent] Connected — engine:", engineUrl, "block slot:", blockSlotId);
-    console.log("[agent] Open the block at this engine URL; block slot", blockSlotId, "to see the agent.");
-  },
-  onDisconnect: (err) => {
-    console.error("[agent] Disconnected:", err?.message ?? "unknown");
-  },
-  onTick: (summary) => {
-    console.log("[tick]", summary);
-  },
-  onToolCallResult: (name, args, result) => {
-    const out = result.ok ? result.summary ?? "ok" : result.error ?? "(no error message)";
-    console.log("[tool]", name, "args:", args, "->", out);
-  },
-}).catch((err) => {
+  });
+
+  client.onMessage("chat", (payload: unknown) => {
+    handleChatMessage(store, config, payload as Parameters<typeof handleChatMessage>[2]);
+  });
+
+  const loop = createRunner({
+    store,
+    config,
+    client,
+    onUsageReportFailure: (msg) => console.warn("[credits]", msg),
+  });
+  loop.start();
+
+  const cronTasks = profile?.cronTasks;
+  const cronScheduler =
+    Array.isArray(cronTasks) && cronTasks.length > 0
+      ? startCronScheduler(
+          store,
+          () =>
+            cronTasks.map((t) => ({
+              taskId: t.id,
+              instruction: t.instruction,
+              intervalMs: (t as { intervalMs?: number }).intervalMs ?? 300_000,
+            })),
+          { checkIntervalMs: 60_000 }
+        )
+      : null;
+
+  await client.connect();
+
+  const shutdown = (): void => {
+    loop.stop();
+    cronScheduler?.stop();
+    const d = (client as unknown as { disconnect?: () => void }).disconnect;
+    if (typeof d === "function") d.call(client);
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+main().catch((err) => {
   console.error(err);
   process.exit(1);
 });

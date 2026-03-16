@@ -1,7 +1,3 @@
-/**
- * Environment variable helpers. Used by config loading.
- */
-
 /** Parse env[key] as int; use defaultVal if missing/invalid. Clamp to [min, max] when provided. */
 export function parseIntEnv(
   key: string,

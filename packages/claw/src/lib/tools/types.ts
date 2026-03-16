@@ -1,7 +1,3 @@
-/**
- * Tool execution types. Handlers receive ToolContext and return ExecuteToolResult.
- */
-
 import type { DoppelClient } from "@doppelfun/sdk";
 import type { ClawConfig } from "../config/index.js";
 import type { ClawStore } from "../state/index.js";

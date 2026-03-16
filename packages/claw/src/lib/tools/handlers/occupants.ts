@@ -8,5 +8,5 @@ export async function handleGetOccupants(ctx: ToolContext) {
   const summary = `${occupants.length} occupants`;
   store.setLastOccupantsSummary(summary);
   logAction(summary);
-  return { ok: true, summary };
+  return { ok: true as const, summary };
 }

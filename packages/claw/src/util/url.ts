@@ -1,4 +1,4 @@
-/** Trim string and remove trailing slash. Use for normalizing hub/engine/base URLs. */
+/** Trim string and remove trailing slash. */
 export function normalizeUrl(s: string): string {
   return s.trim().replace(/\/$/, "");
 }

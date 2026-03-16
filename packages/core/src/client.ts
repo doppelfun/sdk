@@ -4,7 +4,7 @@
  */
 
 import { fetchJson, normalizeBaseUrl } from "./utils.js";
-import { getAgentWsUrl, AGENT_WS_DEFAULT_PATH } from "./agentWs.js";
+import { getAgentWsUrl, getAgentWsUrlWithoutToken, AGENT_WS_DEFAULT_PATH } from "./agentWs.js";
 import type {
   AgentWsInputMessage,
   AgentWsChatMessage,
@@ -133,7 +133,8 @@ export class DoppelClient {
   }
 
   /**
-   * Build the Agent WebSocket URL with current JWT. Use this if you manage the socket yourself.
+   * Build the Agent WebSocket URL with the hub-issued JWT (from getJwt).
+   * The engine validates this JWT for the WebSocket; use the same JWT returned by joinBlock/hub.
    */
   async getAgentWsUrl(): Promise<string> {
     const jwt = await Promise.resolve(this.getJwt());
@@ -169,16 +170,27 @@ export class DoppelClient {
 
   /**
    * Internal: open socket, wait for authenticated, attach close handler for reconnect.
+   * Connects without token in URL and sends { type: "auth", token } after auth_required
+   * so the engine creates only one session (one avatar).
    */
   private async doConnect(): Promise<void> {
     const Ws = this.WsConstructor;
     if (!Ws) {
       throw new Error("DoppelClient: pass options.WebSocket (e.g. from 'ws' in Node) or use in a browser with global WebSocket");
     }
-    const url = await this.getAgentWsUrl();
+    const url = getAgentWsUrlWithoutToken(this.base, this.agentWsPath);
     return new Promise((resolve, reject) => {
-      const socket = new Ws(url) as WebSocket & { on?: (ev: string, fn: (e: unknown) => void) => void; off?: (ev: string, fn: (e: unknown) => void) => void };
+      const socket = new Ws(url) as WebSocket & { on?: (ev: string, fn: (e: unknown) => void) => void; off?: (ev: string, fn: (e: unknown) => void) => void; send?: (data: string) => void };
       this.ws = socket;
+      let authenticatedDone = false;
+
+      const sendAuth = (): void => {
+        Promise.resolve(this.getJwt()).then((jwt) => {
+          if (socket.readyState === socket.OPEN && typeof socket.send === "function") {
+            socket.send(JSON.stringify({ type: "auth", token: jwt }));
+          }
+        }).catch(() => {});
+      };
 
       const onMessage = (raw: unknown) => {
         const text =
@@ -187,14 +199,16 @@ export class DoppelClient {
             : new TextDecoder().decode(
                 raw instanceof Uint8Array ? raw : new Uint8Array((raw as ArrayBuffer) || [])
               );
-        let msg: { type?: string; [k: string]: unknown };
+        let msg: { type?: string; code?: string; error?: string; [k: string]: unknown };
         try {
-          msg = JSON.parse(text) as { type?: string; [k: string]: unknown };
+          msg = JSON.parse(text) as { type?: string; code?: string; error?: string; [k: string]: unknown };
         } catch {
           return;
         }
         const type = typeof msg.type === "string" ? msg.type : "";
         if (type === "authenticated") {
+          if (authenticatedDone) return;
+          authenticatedDone = true;
           removeErrorListener();
           this.reconnectAttempt = 0;
           resolve();
@@ -202,8 +216,15 @@ export class DoppelClient {
           return;
         }
         if (type === "error") {
+          const code = typeof msg.code === "string" ? msg.code : "";
+          const errText = String(msg.error ?? "");
+          const isAuthRequired = code === "auth_required" || /auth_required/i.test(errText);
+          if (isAuthRequired) {
+            sendAuth();
+            return;
+          }
           removeErrorListener();
-          reject(new Error(`Agent WS error: ${String((msg as { code?: string; error?: string }).code ?? "")} ${String((msg as { error?: string }).error ?? "")}`));
+          reject(new Error(`Agent WS error: ${code} ${errText}`));
           return;
         }
         this.emitMessage(type, msg);

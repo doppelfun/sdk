@@ -4,7 +4,6 @@ node_modules/
 # Build output (any dist folder at any depth)
 **/dist/
 dist/
-build/
 *.tsbuildinfo
 
 # Environment

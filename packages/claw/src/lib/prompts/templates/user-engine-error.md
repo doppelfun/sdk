@@ -1,1 +1,0 @@
-[ENGINE ERROR — REPLY REQUIRED] The server/engine reported a problem. Summarize in simple, friendly language what went wrong (not raw codes—explain like to a player). Then call chat once with that summary so the user knows what happened. Technical detail for you: code={{code}} message={{message}}.{{fix}}

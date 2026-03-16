@@ -1,0 +1,95 @@
+/**
+ * Handle incoming chat message from engine WS: push to store, set lastTriggerUserId if owner/DM, request wake.
+ * Wire this to your client's onMessage("chat", ...) so the behaviour tree sees the wake and runs Obedient or Autonomous.
+ */
+import type { ClawStore } from "../state/index.js";
+import type { ClawConfig } from "../config/index.js";
+import { clearConversation, onWeReceivedDm } from "../conversation.js";
+import { requestWake } from "../wake.js";
+import { isDmChannel } from "../../util/dm.js";
+
+export type ChatPayload = {
+  username?: string;
+  message?: string;
+  text?: string;
+  createdAt?: number;
+  timestamp?: number;
+  userId?: string;
+  sessionId?: string;
+  targetSessionId?: string;
+  channelId?: string;
+  audioDurationMs?: number;
+};
+
+/**
+ * Process one chat message: update store (chat, owner, conversation) and request wake when the agent should reply.
+ * Call from your WebSocket chat handler.
+ */
+export function handleChatMessage(
+  store: ClawStore,
+  config: ClawConfig,
+  payload: ChatPayload
+): void {
+  const state = store.getState();
+  if (state.mySessionId && payload.sessionId === state.mySessionId) return;
+
+  const username = typeof payload.username === "string" ? payload.username : "?";
+  const message =
+    typeof payload.message === "string" ? payload.message : typeof payload.text === "string" ? payload.text : "";
+  const createdAt =
+    typeof payload.createdAt === "number" ? payload.createdAt : (payload.timestamp ?? Date.now()) as number;
+  const userId = typeof payload.userId === "string" && payload.userId.trim() ? payload.userId.trim() : undefined;
+  const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : undefined;
+  const targetSessionId =
+    typeof payload.targetSessionId === "string" && payload.targetSessionId.trim()
+      ? payload.targetSessionId.trim()
+      : undefined;
+  const directedAtMe = state.mySessionId != null && targetSessionId === state.mySessionId;
+  const dmFromOther =
+    state.mySessionId != null &&
+    sessionId != null &&
+    sessionId !== state.mySessionId &&
+    (isDmChannel(payload.channelId) || directedAtMe);
+  const fromOwner =
+    config.ownerUserId != null &&
+    userId === config.ownerUserId &&
+    message.length > 0 &&
+    (isDmChannel(payload.channelId) || directedAtMe);
+
+  if (fromOwner) {
+    clearConversation(store);
+  } else if (dmFromOther && sessionId) {
+    onWeReceivedDm(store, sessionId, {
+      audioDurationMs: payload.audioDurationMs,
+      messageLength: message.length,
+    });
+  } else if (payload.channelId === "global") {
+    clearConversation(store);
+  }
+
+  const shouldWake = fromOwner || dmFromOther;
+  if (shouldWake) {
+    store.setState({ lastAgentChatMessage: null, lastTickSentChat: false });
+    if (userId) store.setLastTriggerUserId(userId);
+  }
+
+  store.pushChat(
+    {
+      username,
+      message,
+      createdAt,
+      userId,
+      sessionId,
+      channelId: typeof payload.channelId === "string" ? payload.channelId : undefined,
+    },
+    config.maxChatContext
+  );
+
+  if (fromOwner) {
+    store.pushOwnerMessage(message, config.maxOwnerMessages);
+  }
+
+  if (shouldWake && message.trim()) {
+    requestWake(store, "dm");
+  }
+}

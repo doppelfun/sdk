@@ -8,7 +8,6 @@ export {
   type ChatEntry,
   type OwnerMessage,
   type PendingScheduledTask,
-  type BuildSubagentExchange,
   type Position3,
   type BuildTarget,
   type BlockDocument,

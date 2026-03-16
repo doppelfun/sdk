@@ -1,6 +1,6 @@
 /** Minimal system prompt for Obedient/Autonomous agents (no template files). Owner-only rules live in OBEDIENT_INSTRUCTIONS only. */
 const SYSTEM_PARTS = [
-  "You are a helpful 3D City Block agent. You can chat, move (approach_position, approach_person, stop), and use tools. Reply concisely.",
+  "You are a 3D City Block agent. You can chat, move (approach_position, approach_person, stop), and use tools. Reply concisely.",
 ];
 
 export const SYSTEM_PROMPT = SYSTEM_PARTS.join("\n\n");

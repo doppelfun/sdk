@@ -4,7 +4,7 @@
  */
 
 export { createAgentLoop, createTreeAgent, TREE_DEFINITION, type AgentLoop, type TreeAgentContext } from "./lib/tree/index.js";
-export { requestWake, requestCronWake, type WakeType, type WakePayload } from "./lib/wake.js";
+export { requestWake, requestCronWake, type WakeType, type WakePayload } from "./wake.js";
 export { loadConfig, type ClawConfig, type LlmProviderId } from "./lib/config/index.js";
 export {
   createClawStore,
@@ -15,13 +15,12 @@ export {
   type ChatEntry,
   type OwnerMessage,
   type PendingScheduledTask,
-  type BuildSubagentExchange,
   type Position3,
   type BuildTarget,
   type BlockDocument,
 } from "./lib/state/index.js";
-export { createRunner, type RunnerOptions } from "./lib/runner.js";
-export { handleChatMessage, type ChatPayload } from "./lib/handlers/index.js";
+export { createRunner, type RunnerOptions } from "./runner.js";
+export { handleChatMessage, type ChatPayload } from "./lib/chat/chatHandler.js";
 export { buildSystemContent, buildUserMessage } from "./lib/prompts/index.js";
 export { runObedientAgentTick } from "./lib/agent/obedientAgent.js";
 export { runAutonomousAgentTick } from "./lib/agent/autonomousAgent.js";
@@ -51,7 +50,7 @@ export {
   getDefaultBlockId,
   type BootstrapResult,
   type SessionResult,
-} from "./lib/bootstrap.js";
+} from "./bootstrap.js";
 export {
   startCronScheduler,
   type CronTaskDef,

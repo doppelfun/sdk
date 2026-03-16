@@ -1,5 +1,5 @@
 /**
- * Obedient agent: owner or cron wake. Chat, move, or (stubbed) build.
+ * Obedient agent: owner or cron wake. Chat, move, or build (direct tools).
  */
 import { ToolLoopAgent, stepCountIs, hasToolCall } from "ai";
 import type { DoppelClient } from "@doppelfun/sdk";
@@ -10,8 +10,7 @@ import {
   resolveTickLanguageModel,
   type RunTickLlmResult,
 } from "../llm/toolsAi.js";
-import type { ExecuteToolResult } from "../tools/index.js";
-import { createRunBuildTool } from "./subagents/build/index.js";
+import type { ExecuteToolResult } from "../../tools/index.js";
 import { NO_CHAT_MODEL_ERROR } from "./shared/constants.js";
 import { runAgentTick, type AgentLike } from "./shared/runAgentTick.js";
 
@@ -21,18 +20,27 @@ const OBEDIENT_TOOL_NAMES = [
   "approach_position",
   "approach_person",
   "stop",
-  "run_build",
+  "list_catalog",
+  "list_documents",
+  "get_document_content",
+  "list_recipes",
+  "run_recipe",
+  "build_full",
+  "build_incremental",
+  "build_with_code",
+  "delete_document",
+  "delete_all_documents",
 ] as const;
 
 const OBEDIENT_INSTRUCTIONS = `
 [OBEDIENT MODE] Do exactly one of:
 1) Conversation: reply once with the chat tool (targetSessionId = owner / last DM peer), then stop.
 2) Move: use get_occupants if needed, then approach_position or approach_person; reply with chat saying where you're moving. Then stop.
-3) Build: call run_build with the owner's request. The build subagent will ask premade or custom and guide them. Then stop.
+3) Build: use list_recipes to see options. Use run_recipe with kind city/pyramid/grass/trees and optional params. For custom scenes use build_full with an instruction; use build_incremental to add to existing. Use list_catalog, list_documents, get_document_content, delete_document, delete_all_documents as needed. Then stop.
 Only the owner can ask you to move or build. If someone else asks, reply "Sorry, I only perform tasks for my owner." Do one action then stop.`;
 
 /**
- * Create the Obedient agent (ToolLoopAgent): chat, get_occupants, approach_*, stop, run_build.
+ * Create the Obedient agent (ToolLoopAgent): chat, move, build/recipe tools.
  * Used when HasOwnerWake (owner DM, cron task, or DM to reply).
  *
  * @param client - Engine client for sendChat, sendThinking, etc.
@@ -52,14 +60,10 @@ export function createObedientAgent(
   const model = resolveTickLanguageModel(config);
   if (!model) throw new Error(NO_CHAT_MODEL_ERROR);
 
-  const baseTools = buildClawToolSet(client, store, config, {
-    allowOnlyTools: OBEDIENT_TOOL_NAMES.filter((n) => n !== "run_build"),
+  const tools = buildClawToolSet(client, store, config, {
+    allowOnlyTools: [...OBEDIENT_TOOL_NAMES],
     onToolResult,
   });
-  const tools = {
-    ...baseTools,
-    run_build: createRunBuildTool(client, store, config, onToolResult),
-  };
 
   return new ToolLoopAgent({
     model,
@@ -70,7 +74,13 @@ export function createObedientAgent(
       hasToolCall("chat"),
       hasToolCall("approach_position"),
       hasToolCall("approach_person"),
-      hasToolCall("run_build"),
+      hasToolCall("list_recipes"),
+      hasToolCall("run_recipe"),
+      hasToolCall("build_full"),
+      hasToolCall("build_incremental"),
+      hasToolCall("build_with_code"),
+      hasToolCall("delete_document"),
+      hasToolCall("delete_all_documents"),
     ],
     maxOutputTokens: 1024,
     temperature: 0.3,

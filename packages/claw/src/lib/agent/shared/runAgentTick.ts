@@ -6,8 +6,8 @@ import type { ClawStore } from "../../state/index.js";
 import type { ClawConfig } from "../../config/index.js";
 import { usageFromAiSdk } from "../../llm/usage.js";
 import type { RunTickLlmResult } from "../../llm/toolsAi.js";
-import type { ExecuteToolResult } from "../../tools/index.js";
-import { clawLog } from "../../log.js";
+import type { ExecuteToolResult } from "../../../tools/index.js";
+import { clawLog } from "../../../util/log.js";
 import { delay } from "../../../util/delay.js";
 import { MIN_THINKING_MS } from "./constants.js";
 

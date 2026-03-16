@@ -1,48 +1,8 @@
-# @doppelfun/claw
+# DoppelClaw
 
-Wake-driven agent runtime with a **Mistreevous** behaviour tree. One loop (50ms), one tree; wakes (DM, autonomous, cron) drive which agent runs (Obedient or Autonomous).
+**DoppelClaw** is a lightweight agent runtime that runs a single behaviour tree (Mistreevous) on a 50ms tick. Wakes—from chat (DM), cron, or an autonomous scheduler—decide whether the **Obedient** agent (user-driven) or **Autonomous** agent runs each tick. One loop, one tree, plug in your LLM and tools.
 
 See [docs/PLAN-AGENT-WAKE-DRIVEN.md](docs/PLAN-AGENT-WAKE-DRIVEN.md) for the design.
-
-## Architecture
-
-```mermaid
-flowchart TB
-  subgraph sources["Wake sources"]
-    WS["WebSocket chat"]
-    Cron["Cron scheduler"]
-  end
-
-  Store[("Store\nwakePending, pendingScheduledTask")]
-
-  subgraph loop["50ms tick loop"]
-    Step["behaviourTree.step()"]
-  end
-
-  subgraph tree["Behaviour tree (sequence → selector)"]
-    Move["ExecuteMovementAndDrain"]
-    Move --> Branch["Selector"]
-    Branch --> O1{"Owner wake?"}
-    O1 -->|yes| C1{"Enough credits?"}
-    C1 -->|yes| Obedient["RunObedientAgent"]
-    C1 -->|no| Clear["ClearWakeInsufficientCredits"]
-    O1 -->|no| A1{"Autonomous wake?"}
-    A1 -->|yes| C2{"Enough credits?"}
-    C2 -->|yes| Autonomous["RunAutonomousAgent"]
-    C2 -->|no| Clear
-    A1 -->|no| T1{"Time for autonomous?"}
-    T1 -->|yes| ReqAuto["RequestAutonomousWake"]
-    T1 -->|no| Idle["ClearWakeIdle"]
-  end
-
-  WS -->|"handleChatMessage → requestWake('dm')"| Store
-  Cron -->|"requestCronWake(task)"| Store
-  ReqAuto --> Store
-  Store --> Step
-  Step --> Move
-  Obedient --> LLM[("LLM + tools\n(chat, move, run_build)")]
-  Autonomous --> LLM
-```
 
 ## Usage
 
@@ -96,6 +56,55 @@ The CLI bootstraps, joins a block (from profile default or `BLOCK_ID`), connects
 
 **Cron scheduler (optional):** If the hub profile includes `cronTasks` with `intervalMs`, use `startCronScheduler(store, getTasks, { checkIntervalMs })` so that when a task is due the scheduler calls `requestCronWake(store, task)`. The behaviour tree routes cron wakes to the Obedient agent.
 
+## Recipes
+
+The Obedient agent can generate procedural MML via **recipes** from [@doppelfun/recipes](https://github.com/doppelfun/doppel-sdk/tree/main/packages/recipes). Recipes are pure generators (no LLM): params in → MML out. Claw wires two tools:
+
+- **`list_recipes`** — No args. Returns available recipe names (e.g. `city`, `pyramid`, `grass`, `trees`) so the agent can choose before calling `run_recipe`.
+- **`run_recipe`** — `kind` (city / pyramid / grass / trees), optional `documentMode` (new / replace / append), `documentId`, and `params` per recipe (e.g. `rows`, `cols`, `blockSize` for city). Writes MML via the build document API (new document, or replace/append by id).
+
+Recipes live in the recipes package; claw depends on `@doppelfun/recipes` and calls `listProceduralKinds()` and `runProceduralMml()` in the tool handlers. For custom scenes the agent uses `build_full` / `build_incremental` instead.
+
+## Architecture
+
+```mermaid
+flowchart TB
+  subgraph sources["Wake sources"]
+    WS["WebSocket chat"]
+    Cron["Cron scheduler"]
+  end
+
+  Store[("Store\nwakePending, pendingScheduledTask")]
+
+  subgraph loop["50ms tick loop"]
+    Step["behaviourTree.step()"]
+  end
+
+  subgraph tree["Behaviour tree (sequence → selector)"]
+    Move["ExecuteMovementAndDrain"]
+    Move --> Branch["Selector"]
+    Branch --> O1{"Owner wake?"}
+    O1 -->|yes| C1{"Enough credits?"}
+    C1 -->|yes| Obedient["RunObedientAgent"]
+    C1 -->|no| Clear["ClearWakeInsufficientCredits"]
+    O1 -->|no| A1{"Autonomous wake?"}
+    A1 -->|yes| C2{"Enough credits?"}
+    C2 -->|yes| Autonomous["RunAutonomousAgent"]
+    C2 -->|no| Clear
+    A1 -->|no| T1{"Time for autonomous?"}
+    T1 -->|yes| ReqAuto["RequestAutonomousWake"]
+    T1 -->|no| Idle["ClearWakeIdle"]
+  end
+
+  WS -->|"handleChatMessage → requestWake('dm')"| Store
+  Cron -->|"requestCronWake(task)"| Store
+  ReqAuto --> Store
+  Store --> Step
+  Step --> Move
+  Obedient --> LLM[("LLM + tools\n(chat, move, build/recipe tools)")]
+  Autonomous --> LLM
+```
+
 ## Exports
 
 - **Loop:** `createAgentLoop`, `createRunner`, `createTreeAgent`, `TREE_DEFINITION`
@@ -105,7 +114,7 @@ The CLI bootstraps, joins a block (from profile default or `BLOCK_ID`), connects
 - **Config:** `loadConfig`, `ClawConfig`
 - **Prompts:** `buildSystemContent`, `buildUserMessage`
 - **Agents:** `runObedientAgentTick`, `runAutonomousAgentTick`
-- **Build:** `createRunBuildTool`, `createRunBuildStubTool`, `createBuildSubagent` (from subagents/build)
+- **Build:** `createRunBuildStubTool` (from lib/build; Obedient uses direct build/recipe tools from the tool registry)
 - **Hub:** `getAgentProfile`, `reportUsage`, `checkBalance`, `applyHubProfileToConfig`, `HubAgentProfile`
 - **Credits:** `reportUsageToHub`, `reportVoiceUsageToHub`, `hasEnoughCredits`, `refreshBalance`, `MIN_BALANCE_THRESHOLD`
 - **Cron:** `requestCronWake(store, task)`, `startCronScheduler(store, getTasks, options)` — tree routes cron to Obedient

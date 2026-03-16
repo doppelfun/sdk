@@ -2,12 +2,12 @@
  * Movement driver: apply movementIntent or check arrival for movementTarget (server-driven move_to).
  */
 import type { DoppelClient } from "@doppelfun/sdk";
-import { buildChatSendOptions } from "../chatSendOptions.js";
+import { buildChatSendOptions } from "../../util/chatSendOptions.js";
 import { canSendDmTo, onWeSentDm } from "../conversation.js";
 import { getFacingTowardNearestOccupant } from "../state/state.js";
 import type { ClawStore } from "../state/index.js";
 import { BLOCK_SIZE_M } from "../../util/blockBounds.js";
-import { clawLog } from "../log.js";
+import { clawLog } from "../../util/log.js";
 
 export const MOVEMENT_INPUT_INTERVAL_MS = 50;
 const BOUNDS_MARGIN = 2;

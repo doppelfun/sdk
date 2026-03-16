@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createGeminiClient } from "./geminiCodeExec.js";
-import { testConfig } from "../testHelpers.js";
+import { testConfig } from "../../util/testHelpers.js";
 
 describe("createGeminiClient", () => {
   it("returns null when llmProvider is openrouter", () => {

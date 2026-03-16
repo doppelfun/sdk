@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { hasEnoughCredits, MIN_BALANCE_THRESHOLD } from "./usage.js";
 import { createClawStore } from "../state/index.js";
-import { testConfig } from "../testHelpers.js";
+import { testConfig } from "../../util/testHelpers.js";
 
 describe("hasEnoughCredits", () => {
   it("returns true when not hosted", () => {

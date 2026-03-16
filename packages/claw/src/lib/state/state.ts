@@ -27,8 +27,6 @@ export type PendingScheduledTask = {
   [k: string]: unknown;
 };
 
-export type BuildSubagentExchange = { agentSummary: string; userMessage: string };
-
 /** Tracked document per block for replace/append (build tools). */
 export type BlockDocument = { documentId: string; mml: string };
 
@@ -73,7 +71,6 @@ export type ClawState = {
   lastToolRun: string | null;
   lastTickToolNames: string[] | null;
   lastOccupantsSummary: string | null;
-  buildSubagentContext: BuildSubagentExchange[];
   /** Cached balance from hub (when hosted). */
   cachedBalance: number;
   /** Daily spend so far (when hosted); reset by hub. */
@@ -155,7 +152,6 @@ export function createInitialState(blockSlotId: string): ClawState {
     lastToolRun: null,
     lastTickToolNames: null,
     lastOccupantsSummary: null,
-    buildSubagentContext: [],
     cachedBalance: 0,
     dailySpend: 0,
     documentsByBlockSlot: {},

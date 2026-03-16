@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createTreeAgent } from "./agent.js";
 import { createClawStore } from "../state/index.js";
-import { testConfig } from "../testHelpers.js";
+import { testConfig } from "../../util/testHelpers.js";
 
 function createTestContext(overrides?: { ownerUserId?: string | null; hosted?: boolean }) {
   const store = createClawStore("0_0");

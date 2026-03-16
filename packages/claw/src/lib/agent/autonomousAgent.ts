@@ -10,8 +10,8 @@ import {
   resolveTickLanguageModel,
   type RunTickLlmResult,
 } from "../llm/toolsAi.js";
-import type { ExecuteToolResult } from "../tools/index.js";
-import { createRunBuildStubTool } from "./subagents/build/index.js";
+import type { ExecuteToolResult } from "../../tools/index.js";
+import { createRunBuildStubTool } from "../build/index.js";
 import { NO_CHAT_MODEL_ERROR } from "./shared/constants.js";
 import { runAgentTick, type AgentLike } from "./shared/runAgentTick.js";
 

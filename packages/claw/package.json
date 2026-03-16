@@ -25,7 +25,7 @@
   "dependencies": {
     "@ai-sdk/google": "^3.0.43",
     "@google/genai": "^1.44.0",
-    "@doppelfun/gen": "workspace:*",
+    "@doppelfun/recipes": "workspace:*",
     "@doppelfun/sdk": "workspace:*",
     "@openrouter/ai-sdk-provider": "^2.3.1",
     "ai": "^6.0.116",

@@ -1,0 +1,38 @@
+/**
+ * Map of tool name to handler. Used by executeTool in tools/index.
+ */
+import type { ToolHandler } from "../types.js";
+import { handleApproachPosition, handleApproachPerson, handleStop } from "./move.js";
+import { handleChat } from "./chat.js";
+import { handleGetOccupants } from "./occupants.js";
+import {
+  handleListCatalogTool,
+  handleListDocumentsTool,
+  handleGetDocumentContentTool,
+  handleListRecipes,
+  handleRunRecipeTool,
+  handleBuildFullTool,
+  handleBuildIncrementalTool,
+  handleBuildWithCodeTool,
+  handleDeleteDocumentTool,
+  handleDeleteAllDocumentsTool,
+} from "./build.js";
+
+/** Registry of tool name → handler for chat, move, get_occupants, build/recipe. */
+export const TOOL_HANDLERS: Record<string, ToolHandler> = {
+  approach_position: handleApproachPosition,
+  approach_person: handleApproachPerson,
+  stop: handleStop,
+  chat: handleChat,
+  get_occupants: handleGetOccupants,
+  list_catalog: handleListCatalogTool,
+  list_documents: handleListDocumentsTool,
+  get_document_content: handleGetDocumentContentTool,
+  list_recipes: handleListRecipes,
+  run_recipe: handleRunRecipeTool,
+  build_full: handleBuildFullTool,
+  build_incremental: handleBuildIncrementalTool,
+  build_with_code: handleBuildWithCodeTool,
+  delete_document: handleDeleteDocumentTool,
+  delete_all_documents: handleDeleteAllDocumentsTool,
+};

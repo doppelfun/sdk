@@ -5,7 +5,7 @@
 import { GoogleGenAI } from "@google/genai";
 import type { ClawConfig } from "../config/index.js";
 import type { Usage } from "./usage.js";
-import { clawLog } from "../log.js";
+import { clawLog } from "../../util/log.js";
 
 export type CodeExecResult =
   | { ok: true; content: string; usage: Usage | null }

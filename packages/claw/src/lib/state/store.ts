@@ -179,18 +179,6 @@ function createClawStore(blockSlotId: string) {
       setState({ lastError: null });
     },
 
-    // --- Build subagent context ---
-    appendBuildSubagentExchange(agentSummary: string, userMessage: string) {
-      const max = 10;
-      setState((s) => {
-        const next = [...s.buildSubagentContext, { agentSummary, userMessage }];
-        return { buildSubagentContext: next.slice(-max) };
-      });
-    },
-    clearBuildSubagentContext() {
-      setState({ buildSubagentContext: [] });
-    },
-
     // --- Tool tracking ---
     setLastToolRun(name: string | null) {
       setState({ lastToolRun: name });

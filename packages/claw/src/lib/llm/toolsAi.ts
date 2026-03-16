@@ -3,13 +3,13 @@
  */
 import { dynamicTool, zodSchema, type LanguageModel } from "ai";
 import type { DoppelClient } from "@doppelfun/sdk";
-import { CLAW_TOOL_REGISTRY, getToolSchema } from "../tools/toolsZod.js";
-import { executeTool, type ExecuteToolResult } from "../tools/index.js";
+import { CLAW_TOOL_REGISTRY, getToolSchema } from "../../tools/toolsZod.js";
+import { executeTool, type ExecuteToolResult } from "../../tools/index.js";
 import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
 import { createLlmProvider } from "./provider.js";
 import type { Usage } from "./usage.js";
-import { clawLog } from "../log.js";
+import { clawLog } from "../../util/log.js";
 
 /** Coerce args to a record for tool execution. */
 function toRecord(args: unknown): Record<string, unknown> {

@@ -8,7 +8,7 @@ import { State } from "mistreevous";
 import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
 import { hasEnoughCredits } from "../credits/index.js";
-import { clawLog } from "../log.js";
+import { clawLog } from "../../util/log.js";
 
 export type TreeAgentContext = {
   store: ClawStore;

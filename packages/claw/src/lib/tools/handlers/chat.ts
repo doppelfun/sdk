@@ -1,3 +1,6 @@
+/**
+ * Chat tool handler: send global chat or DM, queue reply with turn-taking, report voice usage.
+ */
 import type { ToolContext } from "../types.js";
 import { buildChatSendOptions } from "../../chatSendOptions.js";
 import { evaluateSendReply, onWeSentDm } from "../../conversation.js";
@@ -5,6 +8,12 @@ import { isOwnerNearby } from "../../movement/index.js";
 import { reportVoiceUsageToHub } from "../../credits/index.js";
 import { clawLog } from "../../log.js";
 
+/**
+ * Handle chat tool: validate text, resolve targetSessionId (DM vs global), send or queue reply.
+ *
+ * @param ctx - Tool context (client, store, config, args: text, targetSessionId?, voiceId?)
+ * @returns ExecuteToolResult
+ */
 export async function handleChat(ctx: ToolContext) {
   const { client, store, args, config, logAction } = ctx;
   const state = store.getState();

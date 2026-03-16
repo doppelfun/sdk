@@ -19,6 +19,9 @@ export const DEFAULT_STOP_DISTANCE_M = 1;
 
 export type MovementDriverOptions = { voiceId?: string | null };
 
+/**
+ * On arrival at movement target: send zero input, clear target, optionally send pendingGoTalkToAgent DM and clear lastBuildTarget.
+ */
 function applyArrival(
   client: DoppelClient,
   store: ClawStore,
@@ -51,6 +54,15 @@ function applyArrival(
   }
 }
 
+/**
+ * One movement driver tick: apply movementIntent (client.sendInput), or check arrival at movementTarget (clear, optional pendingGoTalkToAgent).
+ * Respects autonomousEmoteStandStillUntil (send zero input until then).
+ *
+ * @param client - Engine client (sendInput, sendChat)
+ * @param store - Claw store
+ * @param options - voiceId for DM on arrival
+ * @returns True if we sent input or handled arrival
+ */
 export function movementDriverTick(
   client: DoppelClient,
   store: ClawStore,

@@ -6,6 +6,7 @@ import { isUuid } from "../../util/uuid.js";
 import type { ClawState } from "../state/state.js";
 import type { ClawStore } from "../state/store.js";
 
+/** True if id is a valid UUID (for documentId from list_documents). */
 export function isDocumentIdUuid(id: string): boolean {
   return isUuid(id);
 }
@@ -16,6 +17,13 @@ export const DOCUMENT_ID_UUID_HINT =
 const DOC_LIST_CACHE_MAX_CHARS = 6000;
 export const DOC_LIST_TOOL_RETURN_MAX_CHARS = 4000;
 
+/**
+ * Cache document list in store and return a summary string for the build tool.
+ *
+ * @param store - Claw store (setLastDocumentsList)
+ * @param ids - Document UUIDs from client.listDocuments()
+ * @returns summaryForTool for the LLM
+ */
 export function cacheDocumentsList(
   store: ClawStore,
   ids: string[]
@@ -35,6 +43,15 @@ export function cacheDocumentsList(
   return { summaryForTool };
 }
 
+/**
+ * Resolve documentId or target (current|last) to a single document id for get/delete/append.
+ *
+ * @param args - documentId or target
+ * @param state - Claw state (documentsByBlockSlot)
+ * @param client - Engine client (listDocuments for target last)
+ * @param toolName - For error messages
+ * @returns id or error
+ */
 export async function resolveDocumentIdTarget(
   args: { documentId?: string; target?: string },
   state: ClawState,
@@ -67,6 +84,7 @@ export async function resolveDocumentIdTarget(
   return { ok: false, error: `${toolName} requires documentId or target current|last` };
 }
 
+/** If the deleted document was the tracked one for this block, clear it from store. */
 export function clearTrackedDocumentIfDeleted(store: ClawStore, deletedId: string): void {
   const state = store.getState();
   const blockDoc = state.documentsByBlockSlot[state.blockSlotId];

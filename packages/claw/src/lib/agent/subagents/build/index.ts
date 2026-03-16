@@ -1,3 +1,6 @@
+/**
+ * Build subagent: createBuildSubagent (ToolLoopAgent) and run_build tool (real + stub).
+ */
 export { createBuildSubagent } from "./buildSubagent.js";
 export {
   createRunBuildTool,

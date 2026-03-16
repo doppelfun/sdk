@@ -1,3 +1,6 @@
+/**
+ * Claw tools: executeTool dispatches to handlers (chat, move, get_occupants). Used by Obedient/Autonomous agents.
+ */
 import type { DoppelClient } from "@doppelfun/sdk";
 import { clawLog } from "../log.js";
 import type { ClawConfig } from "../config/index.js";
@@ -7,6 +10,15 @@ import { TOOL_HANDLERS } from "./handlers/index.js";
 
 export type { ToolInvocation, ExecuteToolResult } from "./types.js";
 
+/**
+ * Execute one tool by name. Looks up handler from TOOL_HANDLERS and runs it with client, store, config, args.
+ *
+ * @param client - Engine client
+ * @param store - Claw store
+ * @param config - Claw config
+ * @param tool - { name, args }
+ * @returns ExecuteToolResult (ok + summary, or ok: false + error)
+ */
 export async function executeTool(
   client: DoppelClient,
   store: ClawStore,

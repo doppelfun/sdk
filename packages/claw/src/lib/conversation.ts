@@ -11,10 +11,20 @@ function getNow(): number {
   return Date.now();
 }
 
+/** Result of evaluating whether we can send a DM now or must queue. */
 export type SendReplyAction =
   | { action: "send_now" }
   | { action: "queue"; pendingDmReply: { text: string; targetSessionId: string } };
 
+/**
+ * Decide whether to send a DM now or queue it (turn-taking / receive delay).
+ *
+ * @param store - Claw store
+ * @param targetSessionId - DM recipient
+ * @param text - Message text
+ * @param now - Current timestamp (default Date.now())
+ * @returns send_now or queue with pendingDmReply
+ */
 export function evaluateSendReply(
   store: ClawStoreApi,
   targetSessionId: string | null,
@@ -26,6 +36,9 @@ export function evaluateSendReply(
   return { action: "queue", pendingDmReply: { text, targetSessionId } };
 }
 
+/**
+ * True if we can send a DM to this session (phase allows it and receive delay elapsed).
+ */
 export function canSendDmTo(
   store: ClawStoreApi,
   sessionId: string,
@@ -42,6 +55,7 @@ export function canSendDmTo(
   return false;
 }
 
+/** Update store after we sent a DM: phase waiting_for_reply, set peer and lastDmPeerSessionId. */
 export function onWeSentDm(store: ClawStoreApi, targetSessionId: string, now = getNow()): void {
   store.setState({
     conversationPhase: "waiting_for_reply",
@@ -52,6 +66,7 @@ export function onWeSentDm(store: ClawStoreApi, targetSessionId: string, now = g
   });
 }
 
+/** Update store when we received a DM: phase can_reply, set receiveDelayUntil and conversation peer. */
 export function onWeReceivedDm(
   store: ClawStoreApi,
   fromSessionId: string,
@@ -75,8 +90,10 @@ export function onWeReceivedDm(
   });
 }
 
+/** Cooldown after conversation end before autonomous agent can seek again (ms). */
 export const CONVERSATION_END_SEEK_COOLDOWN_MS = 3 * 60 * 1000;
 
+/** Reset conversation state to idle; optionally set conversationEndedSeekCooldownUntil. */
 export function clearConversation(
   store: ClawStoreApi,
   options?: { skipSeekCooldown?: boolean }
@@ -94,6 +111,13 @@ export function clearConversation(
   });
 }
 
+/**
+ * If we can reply now and there is a pending DM, clear it and return it for sending.
+ *
+ * @param store - Claw store
+ * @param now - Current timestamp
+ * @returns Pending reply to send, or null
+ */
 export function drainPendingReply(
   store: ClawStoreApi,
   now = getNow()

@@ -1,3 +1,6 @@
+/**
+ * LLM + tools for Obedient/Autonomous agents: build tool set from registry, resolve chat/build models.
+ */
 import { dynamicTool, zodSchema, type LanguageModel } from "ai";
 import type { DoppelClient } from "@doppelfun/sdk";
 import { CLAW_TOOL_REGISTRY, getToolSchema } from "../tools/toolsZod.js";
@@ -8,11 +11,15 @@ import { createLlmProvider } from "./provider.js";
 import type { Usage } from "./usage.js";
 import { clawLog } from "../log.js";
 
+/** Coerce args to a record for tool execution. */
 function toRecord(args: unknown): Record<string, unknown> {
   if (args && typeof args === "object" && !Array.isArray(args)) return args as Record<string, unknown>;
   return {};
 }
 
+/**
+ * Create one dynamicTool that parses args with the given schema, calls executeTool, returns summary or throws.
+ */
 function clawTool(
   name: string,
   description: string,
@@ -54,6 +61,16 @@ function clawTool(
   });
 }
 
+/**
+ * Build the claw tool set (chat, get_occupants, approach_*, stop, etc.) for Obedient/Autonomous agents.
+ * Optionally filter by allowOnlyTools and register onToolResult.
+ *
+ * @param client - Engine client
+ * @param store - Claw store
+ * @param config - Claw config
+ * @param options - allowOnlyTools (e.g. OBEDIENT_TOOL_NAMES), onToolResult callback
+ * @returns Record of tool name to AI SDK dynamicTool
+ */
 export function buildClawToolSet(
   client: DoppelClient,
   store: ClawStore,
@@ -75,16 +92,29 @@ export function buildClawToolSet(
   return tools;
 }
 
+/** Result of one agent tick: usage, whether tools were called, optional reply text or error. */
 export type RunTickLlmResult =
   | { ok: true; usage: Usage | null; hadToolCalls: boolean; replyText?: string | null }
   | { ok: false; error: string };
 
+/**
+ * Resolve the chat/tick language model (Obedient/Autonomous). Uses config.chatLlmModel by default.
+ *
+ * @param config - Claw config (llmProvider, chatLlmModel, API keys)
+ * @param modelId - Optional override model id
+ * @returns LanguageModel or null if provider/model not configured
+ */
 export function resolveTickLanguageModel(config: ClawConfig, modelId?: string): LanguageModel | null {
   const provider = createLlmProvider(config);
   return provider.getChatModel(modelId ?? config.chatLlmModel);
 }
 
-/** Resolve build (Pro) model for the Build subagent. */
+/**
+ * Resolve the build language model for the Build subagent (build_full, build_incremental).
+ *
+ * @param config - Claw config (llmProvider, buildLlmModel)
+ * @returns LanguageModel or null
+ */
 export function resolveBuildLanguageModel(config: ClawConfig): LanguageModel | null {
   const provider = createLlmProvider(config);
   return provider.getChatModel(config.buildLlmModel);

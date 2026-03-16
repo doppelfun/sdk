@@ -42,6 +42,9 @@ export const BUILD_TOOL_NAMES = [
   "delete_all_documents",
 ] as const;
 
+/**
+ * Dispatch to the correct build handler by tool name. Returns result; caller throws on ok: false.
+ */
 function runHandler(
   name: string,
   client: DoppelClient,
@@ -73,6 +76,16 @@ function runHandler(
   }
 }
 
+/**
+ * Build the map of Build subagent tools (list_catalog, list_documents, build_full, etc.).
+ * Each tool executes the corresponding handler and throws on error so the LLM sees the message.
+ *
+ * @param client - Engine client
+ * @param store - Claw store
+ * @param config - Claw config
+ * @param onToolResult - Optional callback(name, args, result)
+ * @returns Record of tool name to AI SDK tool
+ */
 export function buildBuildToolSet(
   client: DoppelClient,
   store: ClawStore,

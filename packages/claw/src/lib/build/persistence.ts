@@ -5,10 +5,20 @@ import type { DoppelClient } from "@doppelfun/sdk";
 import type { ClawStore } from "../state/store.js";
 import { isDocumentIdUuid, DOCUMENT_ID_UUID_HINT } from "./documents.js";
 
+/** Result of persisting a full-scene MML (create or update document). */
 export type PersistBuildResult =
   | { ok: true; summary: string }
   | { ok: false; error: string };
 
+/**
+ * Persist full-scene MML: create new document or update existing (documentTarget replace + documentId).
+ *
+ * @param client - Engine client (createDocument, updateDocument)
+ * @param store - Claw store (mergeDocumentsByBlockSlot)
+ * @param mml - Full MML string
+ * @param args - documentTarget?, documentId?
+ * @returns PersistBuildResult
+ */
 export async function persistFullBuildMml(
   client: DoppelClient,
   store: ClawStore,

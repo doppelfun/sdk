@@ -1,3 +1,6 @@
+/**
+ * Shared agent tick: run one LLM generate with the given agent factory, log, return usage and reply.
+ */
 import type { DoppelClient } from "@doppelfun/sdk";
 import type { ClawStore } from "../../state/index.js";
 import type { ClawConfig } from "../../config/index.js";
@@ -8,6 +11,7 @@ import { clawLog } from "../../log.js";
 import { delay } from "../../../util/delay.js";
 import { MIN_THINKING_MS } from "./constants.js";
 
+/** Minimal agent interface: generate(prompt) and tools. Implemented by ToolLoopAgent. */
 export type AgentLike = {
   generate(params: { prompt: string; options?: Record<string, unknown> }): Promise<{
     text?: string;
@@ -18,6 +22,7 @@ export type AgentLike = {
   tools: Record<string, unknown>;
 };
 
+/** Factory that creates an AgentLike given client, store, config, systemContent, optional onToolResult. */
 export type CreateAgentFn = (
   client: DoppelClient,
   store: ClawStore,
@@ -26,6 +31,20 @@ export type CreateAgentFn = (
   onToolResult?: (name: string, args: string, result: ExecuteToolResult) => void
 ) => unknown;
 
+/**
+ * Run one agent tick: create agent via createAgent, call generate(userContent), map usage and reply.
+ * Sends thinking true/false around the call; enforces MIN_THINKING_MS in finally.
+ *
+ * @param client - Engine client (for sendThinking)
+ * @param store - Claw store
+ * @param config - Claw config
+ * @param systemContent - Full system prompt
+ * @param userContent - User message for this tick
+ * @param createAgent - Factory (e.g. createObedientAgent)
+ * @param label - Log label (e.g. "obedient")
+ * @param onToolResult - Optional tool result callback
+ * @returns RunTickLlmResult (ok, usage?, hadToolCalls, replyText?) or (ok: false, error)
+ */
 export async function runAgentTick(
   client: DoppelClient,
   store: ClawStore,

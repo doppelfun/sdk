@@ -21,6 +21,12 @@ export type ClawStoreApi = {
   setState: (partial: Partial<ClawState> | ((s: ClawState) => Partial<ClawState>)) => void;
 };
 
+/**
+ * Create the Zustand-backed Claw store for one agent. Holds wake state, chat, movement, documents, build context.
+ *
+ * @param blockSlotId - Initial block slot id (e.g. from join block)
+ * @returns Store with getState, setState, and named actions (setWakePending, pushChat, etc.)
+ */
 function createClawStore(blockSlotId: string) {
   const vanillaStore = createStore<ClawState>(() => createInitialState(blockSlotId));
   const getState = vanillaStore.getState;

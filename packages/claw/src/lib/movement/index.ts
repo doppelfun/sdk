@@ -1,3 +1,6 @@
+/**
+ * Movement: driver tick (apply intent / check arrival), owner proximity check.
+ */
 export { isOwnerNearby } from "./ownerProximity.js";
 export {
   movementDriverTick,

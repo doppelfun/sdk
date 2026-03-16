@@ -14,7 +14,15 @@ import {
 import { clawLog } from "../../../../log.js";
 import type { BuildToolResult } from "../buildSteps.js";
 
-/** List document UUIDs in the block (for replace/append/delete targeting). */
+/**
+ * List document UUIDs in the block. Caches result in store for replace/append/delete targeting.
+ *
+ * @param client - Engine client (listDocuments)
+ * @param store - Claw store (cacheDocumentsList)
+ * @param _config - Unused
+ * @param _args - Unused
+ * @returns BuildToolResult with summary of document ids
+ */
 export async function handleListDocuments(
   client: DoppelClient,
   store: ClawStore,
@@ -28,7 +36,15 @@ export async function handleListDocuments(
   return { ok: true, summary: summaryForTool };
 }
 
-/** Read stored MML for a document (documentId or target current|last). */
+/**
+ * Read stored MML for a document. Pass documentId or target "current"|"last".
+ *
+ * @param client - Engine client (getDocumentContent)
+ * @param store - Claw store (for resolving target)
+ * @param _config - Unused
+ * @param args - documentId or target
+ * @returns BuildToolResult with MML content preview
+ */
 export async function handleGetDocumentContent(
   client: DoppelClient,
   store: ClawStore,
@@ -52,7 +68,15 @@ export async function handleGetDocumentContent(
   return { ok: true, summary };
 }
 
-/** Delete one document (documentId or target current|last). */
+/**
+ * Delete one document. Pass documentId or target "current"|"last". Clears store cache for that doc.
+ *
+ * @param client - Engine client (deleteDocument)
+ * @param store - Claw store (resolve target, clearTrackedDocumentIfDeleted)
+ * @param _config - Unused
+ * @param args - documentId or target
+ * @returns BuildToolResult with "deleted document <id>"
+ */
 export async function handleDeleteDocument(
   client: DoppelClient,
   store: ClawStore,
@@ -73,7 +97,15 @@ export async function handleDeleteDocument(
   return { ok: true, summary: `deleted document ${resolved.id}` };
 }
 
-/** Delete every agent-owned document in the block. */
+/**
+ * Delete every agent-owned document in the block. Clears tracked document cache.
+ *
+ * @param client - Engine client (listDocuments, deleteDocument)
+ * @param store - Claw store
+ * @param _config - Unused
+ * @param _args - Unused
+ * @returns BuildToolResult with count deleted
+ */
 export async function handleDeleteAllDocuments(
   client: DoppelClient,
   store: ClawStore,

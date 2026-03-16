@@ -11,6 +11,7 @@ export type CodeExecResult =
   | { ok: true; content: string; usage: Usage | null }
   | { ok: false; error: string };
 
+/** Map @google/genai response metadata to our Usage type. */
 function usageFromGenai(meta: {
   promptTokenCount?: number;
   candidatesTokenCount?: number;
@@ -26,7 +27,9 @@ function usageFromGenai(meta: {
 
 /**
  * Create a GoogleGenAI client when config.llmProvider is google or google-vertex.
- * Returns null for openrouter or when Google credentials are missing.
+ *
+ * @param config - Claw config (llmProvider, googleApiKey or googleCloudProject/location)
+ * @returns GoogleGenAI instance or null if openrouter or credentials missing
  */
 export function createGeminiClient(config: ClawConfig): GoogleGenAI | null {
   if (config.llmProvider === "openrouter") return null;
@@ -56,7 +59,13 @@ export function createGeminiClient(config: ClawConfig): GoogleGenAI | null {
 
 /**
  * Run Gemini generateContent with code execution tool (Python sandbox).
- * Use for build_with_code so the model can run Python then emit MML.
+ *
+ * @param ai - GoogleGenAI client from createGeminiClient
+ * @param modelId - Model id (e.g. gemini-2.0-flash-exp)
+ * @param system - System instruction (MML rules, coords)
+ * @param user - User message (instruction)
+ * @param options - maxOutputTokens, temperature
+ * @returns CodeExecResult (content = model output or code execution result, usage)
  */
 export async function runCodeExecution(
   ai: GoogleGenAI,

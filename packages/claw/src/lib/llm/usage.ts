@@ -1,9 +1,16 @@
+/** Token counts for reporting to hub / credits. */
 export type Usage = {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
 };
 
+/**
+ * Map AI SDK usage (inputTokens, outputTokens, totalTokens) to our Usage type.
+ *
+ * @param u - Raw usage from generateText / agent result
+ * @returns Usage or null if missing or total <= 0
+ */
 export function usageFromAiSdk(u: {
   inputTokens?: number;
   outputTokens?: number;

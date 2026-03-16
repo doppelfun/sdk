@@ -26,6 +26,17 @@ const AUTONOMOUS_TOOL_NAMES = [
 const AUTONOMOUS_INSTRUCTIONS = `
 [AUTONOMOUS MODE] You may seek out others (get_occupants, then approach_person), then chat. Use chat with targetSessionId for DMs. One message per turn when talking to another agent. Stop after chat or when done. Building is not available.`;
 
+/**
+ * Create the Autonomous agent (ToolLoopAgent): chat, get_occupants, approach_*, stop; run_build is stubbed.
+ * Used when HasAutonomousWake (non-owner triggered the wake).
+ *
+ * @param client - Engine client
+ * @param store - Claw store
+ * @param config - Claw config
+ * @param systemContent - Base system prompt
+ * @param onToolResult - Optional tool result callback
+ * @returns AgentLike for runAgentTick
+ */
 export function createAutonomousAgent(
   client: DoppelClient,
   store: ClawStore,
@@ -55,6 +66,17 @@ export function createAutonomousAgent(
   }) as unknown as AgentLike;
 }
 
+/**
+ * Run one Autonomous agent tick.
+ *
+ * @param client - Engine client
+ * @param store - Claw store
+ * @param config - Claw config
+ * @param systemContent - Full system prompt (base + AUTONOMOUS_INSTRUCTIONS)
+ * @param userContent - Current user message
+ * @param onToolResult - Optional callback
+ * @returns RunTickLlmResult
+ */
 export async function runAutonomousAgentTick(
   client: DoppelClient,
   store: ClawStore,

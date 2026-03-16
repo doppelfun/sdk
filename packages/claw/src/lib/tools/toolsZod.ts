@@ -1,3 +1,6 @@
+/**
+ * Zod schemas and registry for claw tools (approach_position, approach_person, stop, chat, get_occupants).
+ */
 import { z } from "zod/v4";
 
 export const approachPositionSchema = z.object({
@@ -22,6 +25,7 @@ export const chatSchema = z.object({
 
 export const getOccupantsSchema = z.object({});
 
+/** Get the Zod schema for a tool by name (for parsing/validation). */
 export function getToolSchema(name: string): z.ZodTypeAny | undefined {
   return CLAW_TOOL_REGISTRY.find((t) => t.name === name)?.schema;
 }

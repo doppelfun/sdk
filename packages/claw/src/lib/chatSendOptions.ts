@@ -1,5 +1,12 @@
+/** Options for client.sendChat (DM target, voice). */
 export type ChatSendOptions = { targetSessionId?: string; voiceId?: string };
 
+/**
+ * Build sendChat options from targetSessionId and voiceId. Returns undefined if both empty.
+ *
+ * @param opts - targetSessionId, voiceId (optional)
+ * @returns ChatSendOptions or undefined
+ */
 export function buildChatSendOptions(opts: {
   targetSessionId?: string;
   voiceId?: string | null;

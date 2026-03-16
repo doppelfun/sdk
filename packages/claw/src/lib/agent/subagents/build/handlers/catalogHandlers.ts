@@ -13,7 +13,16 @@ const COMPACT_MAX_CHARS = 2800;
 const COMPACT_MAX_ENTRIES = 35;
 const MAX_SUMMARY = 8000;
 
-/** List catalog entries (id, name, url, category) for MML <m-model catalogId="...">. */
+/**
+ * List catalog entries (id, name, url, category) for MML <m-model catalogId="...">.
+ * Caches compact JSON in store.lastCatalogContext for the subagent.
+ *
+ * @param _client - Unused
+ * @param store - Claw store (setLastCatalogContext)
+ * @param config - Claw config (blockId, engineUrl for source label)
+ * @param args - Optional limit (default 100, max 200)
+ * @returns BuildToolResult with summary (JSON of entries)
+ */
 export async function handleListCatalog(
   _client: DoppelClient,
   store: ClawStore,

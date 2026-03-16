@@ -24,7 +24,7 @@ const BUILD_SYSTEM = `You are an MML (scene markup) generator for a 3D world. Yo
 - Every entity MUST have a unique id attribute. If the message says INCREMENTAL, do NOT reuse any id listed under "Existing entity ids".
 - Position is ALWAYS separate attributes: x="..." y="..." z="...". NEVER use a single position="..." attribute.
 - Place all entities at y >= 0. For a 100×100 block, x and z must ALWAYS be in [0, 100) — use 0 through 99.x only.
-- Glow: ONLY emission="#RRGGBB" and emission-intensity="0.6" (number). NEVER emissive or emissive-intensity.
+- Glow: Use ONLY emission="#RRGGBB" and emission-intensity="0.6" (number).
 - m-attr-anim: ONLY attr start end plus optional duration, loop, easing. Animatable: ry, x, y, z, width, height, depth, emission-intensity, color, emission.
 - If the message says FULL: output a complete MML document. If it says INCREMENTAL: output ONLY new tags to append — no full document wrapper.
 - No explanation, no markdown code fence — only raw MML.`;
@@ -83,6 +83,15 @@ function normalizeMmlXZToBlockLocal(mml: string, _blockBounds: BlockBounds): str
   return out;
 }
 
+/**
+ * Generate full-scene MML via AI SDK generateText. Uses BUILD_SYSTEM and block-local coords.
+ *
+ * @param model - Language model (from resolveBuildLanguageModel)
+ * @param instruction - User instruction (what to build)
+ * @param catalogJson - JSON string of catalog entries for <m-model catalogId>
+ * @param blockBounds - Block bounds for coordinate normalization
+ * @returns BuildMmlResult (mml string and usage, or error)
+ */
 export async function buildFull(
   model: LanguageModel,
   instruction: string,
@@ -117,6 +126,17 @@ Instruction: ${instruction}`;
   }
 }
 
+/**
+ * Generate incremental MML fragment via AI SDK generateText. Appends to existing MML; avoids reusing entity ids.
+ *
+ * @param model - Language model
+ * @param instruction - What to add and where
+ * @param existingMml - Current document MML (for context and existing ids)
+ * @param catalogJson - Catalog JSON
+ * @param blockBounds - Block bounds
+ * @param positionHint - Optional position hint for the LLM
+ * @returns BuildMmlResult
+ */
 export async function buildIncremental(
   model: LanguageModel,
   instruction: string,
@@ -175,7 +195,14 @@ MML SYNTAX (y>=0):
 const BUILD_WITH_CODE_INSTRUCTION_MAX_CHARS = 16_000;
 
 /**
- * Full-scene MML via Gemini code execution (Python sandbox). Requires config.llmProvider = google or google-vertex.
+ * Full-scene MML via Gemini code execution (Python sandbox). Model can run Python then output MML.
+ * Requires config.llmProvider = google (or google-vertex) and GOOGLE_API_KEY.
+ *
+ * @param config - Claw config (llmProvider, API keys)
+ * @param modelId - Gemini model id (e.g. gemini-2.0-flash-exp)
+ * @param instruction - User instruction
+ * @param blockBounds - Block bounds for coordinate normalization
+ * @returns BuildMmlResult
  */
 export async function buildFullWithCodeExecution(
   config: ClawConfig,

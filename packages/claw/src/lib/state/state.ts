@@ -88,7 +88,12 @@ export type ClawState = {
 
 const FACE_NEARBY_RADIUS_M = 12;
 
-/** Y rotation (radians) to face the nearest occupant with position, or undefined if none in range. */
+/**
+ * Y rotation (radians) to face the nearest occupant with position.
+ *
+ * @param state - Current claw state (occupants, myPosition)
+ * @returns Angle in radians, or undefined if no occupant in FACE_NEARBY_RADIUS_M
+ */
 export function getFacingTowardNearestOccupant(state: ClawState): number | undefined {
   const my = state.myPosition;
   if (!my) return undefined;
@@ -108,6 +113,12 @@ export function getFacingTowardNearestOccupant(state: ClawState): number | undef
   return Math.atan2(nearest.x - my.x, nearest.z - my.z);
 }
 
+/**
+ * Create initial ClawState for a block. wakePending is true so the first tick runs.
+ *
+ * @param blockSlotId - Block slot id (e.g. "0_0")
+ * @returns Fresh state with empty chat, no movement target, idle conversation
+ */
 export function createInitialState(blockSlotId: string): ClawState {
   return {
     blockSlotId,

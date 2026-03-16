@@ -15,6 +15,7 @@ import type { ClawStore } from "./state/index.js";
 import type { ClawConfig } from "./config/index.js";
 import { clawLog } from "./log.js";
 
+/** Options for creating the runner (store, config, optional client and callbacks). */
 export type RunnerOptions = {
   store: ClawStore;
   config: ClawConfig;
@@ -27,9 +28,12 @@ export type RunnerOptions = {
 };
 
 /**
- * Create the main agent loop with Obedient and Autonomous agents wired.
- * If client is provided, runObedientAgentTick and runAutonomousAgentTick are called with that client.
- * Call .start() to begin the 50ms tick loop; .stop() to clear the interval.
+ * Create the main agent loop with Obedient and Autonomous agents wired to the behaviour tree.
+ * Builds system content once; on each wake runs buildUserMessage, then the appropriate agent tick.
+ * Sends fallback chat to DM peer when the agent used tools but did not send chat.
+ *
+ * @param options - Store, config, optional client, executeMovementAndDrain, onUsageReportFailure
+ * @returns AgentLoop (start/stop/step) from createAgentLoop
  */
 export function createRunner(options: RunnerOptions): AgentLoop {
   const { store, config, client, executeMovementAndDrain, onUsageReportFailure } = options;

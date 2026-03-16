@@ -28,6 +28,12 @@ function mapEntry(e: SdkEntry): CatalogEntry {
   };
 }
 
+/**
+ * Load catalog entries from hub (when blockId set) or engine. Used by list_catalog and build tools.
+ *
+ * @param config - Claw config (hubUrl, blockId, apiKey, engineUrl)
+ * @returns Catalog entries for MML <m-model catalogId="...">
+ */
 export async function loadCatalogEntries(config: ClawConfig): Promise<CatalogEntry[]> {
   if (config.blockId) {
     const list = await getBlockCatalog(config.hubUrl, config.blockId, config.apiKey);
@@ -37,7 +43,12 @@ export async function loadCatalogEntries(config: ClawConfig): Promise<CatalogEnt
   return list.map((e) => mapEntry(e as SdkEntry)).filter((e) => e.id);
 }
 
-/** Same as loadCatalogEntries but returns [] on failure so build can still run. */
+/**
+ * Load catalog for build tools. Returns [] on failure so build_full can still run without catalog.
+ *
+ * @param config - Claw config
+ * @returns Catalog entries or []
+ */
 export async function getCatalogForBuild(config: ClawConfig): Promise<CatalogEntry[]> {
   try {
     return await loadCatalogEntries(config);
@@ -46,6 +57,7 @@ export async function getCatalogForBuild(config: ClawConfig): Promise<CatalogEnt
   }
 }
 
+/** Serialize catalog (first 100 entries) for LLM prompt. */
 export function catalogToJson(catalog: CatalogEntry[]): string {
   return JSON.stringify(catalog.slice(0, 100), null, 0);
 }

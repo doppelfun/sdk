@@ -17,6 +17,15 @@ import { isDocumentIdUuid, DOCUMENT_ID_UUID_HINT } from "../../../../build/docum
 import { clawLog } from "../../../../log.js";
 import type { BuildToolResult } from "../buildSteps.js";
 
+/**
+ * Generate procedural MML (city, pyramid, grass, trees) via @doppelfun/gen. No LLM.
+ *
+ * @param client - Engine client (createDocument, updateDocument, appendDocument)
+ * @param store - Claw store (documentsByBlockSlot)
+ * @param config - Claw config (for catalog when kind is city)
+ * @param args - kind, documentMode (new|replace|append), documentId?, params?
+ * @returns BuildToolResult with summary (e.g. "generated city scene (new document ...)")
+ */
 export async function handleGenerateProcedural(
   client: DoppelClient,
   store: ClawStore,

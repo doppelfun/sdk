@@ -8,6 +8,7 @@ import { clearConversation, onWeReceivedDm } from "../conversation.js";
 import { requestWake } from "../wake.js";
 import { isDmChannel } from "../../util/dm.js";
 
+/** Incoming chat message payload from engine (username, message, channelId, etc.). */
 export type ChatPayload = {
   username?: string;
   message?: string;
@@ -22,8 +23,12 @@ export type ChatPayload = {
 };
 
 /**
- * Process one chat message: update store (chat, owner, conversation) and request wake when the agent should reply.
- * Call from your WebSocket chat handler.
+ * Process one chat message: push to store, set lastTriggerUserId and conversation state, request wake when agent should reply.
+ * Wire to client.onMessage("chat", handleChatMessage(store, config, payload)).
+ *
+ * @param store - Claw store
+ * @param config - Claw config (ownerUserId)
+ * @param payload - Chat payload from engine
  */
 export function handleChatMessage(
   store: ClawStore,

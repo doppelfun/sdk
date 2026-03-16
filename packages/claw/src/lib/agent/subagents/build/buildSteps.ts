@@ -55,7 +55,10 @@ export function logStepFailed(tool: string, step: number, total: number, message
 
 /**
  * Run an async function while sending thinking(true) before and thinking(false) after.
- * Used so the client can show a "thinking" state during LLM or long work.
+ *
+ * @param client - Engine client (sendThinking)
+ * @param fn - Async work (e.g. LLM call)
+ * @returns Result of fn
  */
 export async function withThinking<T>(
   client: DoppelClient,
@@ -71,8 +74,11 @@ export async function withThinking<T>(
 }
 
 /**
- * Resolve build model, load catalog, and get block bounds.
- * Shared by build_full and build_incremental (build_with_code only needs bounds).
+ * Resolve build model, load catalog, and get block bounds. Shared by build_full and build_incremental.
+ *
+ * @param config - Claw config (BUILD_LLM_MODEL)
+ * @param store - Claw store (blockSlotId for bounds)
+ * @returns ModelCatalogContext or error
  */
 export async function resolveModelAndCatalog(
   config: ClawConfig,

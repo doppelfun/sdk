@@ -1,8 +1,12 @@
+/**
+ * Movement tool handlers: approach_position, approach_person, stop.
+ */
 import type { ToolContext } from "../types.js";
 import type { ClawStore } from "../../state/index.js";
 import { parsePositionHint } from "../../../util/position.js";
 import { clawLog } from "../../log.js";
 
+/** Set store movement target and intent; clear failed state; call client.moveTo. */
 function setApproachTarget(store: ClawStore, x: number, z: number, sprint: boolean): void {
   store.setMovementIntent(null);
   store.setMovementTarget({ x, z });
@@ -17,6 +21,12 @@ function clearMovement(store: ClawStore): void {
   store.setMovementSprint(false);
 }
 
+/**
+ * Handle approach_position: parse "x,z" or "x,y,z", set target, call client.moveTo.
+ *
+ * @param ctx - Tool context (args.position, args.sprint)
+ * @returns ExecuteToolResult
+ */
 export async function handleApproachPosition(ctx: ToolContext) {
   const { client, store, args, logAction } = ctx;
   const sprint = args.sprint === true;
@@ -36,6 +46,12 @@ export async function handleApproachPosition(ctx: ToolContext) {
   return { ok: true as const, summary: `approach (${parsed.x.toFixed(1)}, ${parsed.z.toFixed(1)})` };
 }
 
+/**
+ * Handle approach_person: resolve sessionId to occupant position, set target, call client.moveTo.
+ *
+ * @param ctx - Tool context (args.sessionId, args.sprint)
+ * @returns ExecuteToolResult
+ */
 export async function handleApproachPerson(ctx: ToolContext) {
   const { client, store, args, logAction } = ctx;
   const state = store.getState();
@@ -57,6 +73,12 @@ export async function handleApproachPerson(ctx: ToolContext) {
   return { ok: true as const, summary: `approach ${occ.username}` };
 }
 
+/**
+ * Handle stop: clear movement target and intent, cancel move, send zero input.
+ *
+ * @param ctx - Tool context
+ * @returns ExecuteToolResult
+ */
 export async function handleStop(ctx: ToolContext) {
   const { client, store, logAction } = ctx;
   const jump = ctx.args.jump === true;

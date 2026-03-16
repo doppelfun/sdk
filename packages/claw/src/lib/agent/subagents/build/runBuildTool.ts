@@ -17,11 +17,19 @@ import type { ExecuteToolResult } from "../../../tools/index.js";
 
 export const RUN_BUILD_STUB_MESSAGE = "Autonomous building is not available yet.";
 
-/** True if the build subagent's summary indicates a build/delete completed or failed (so we clear context). */
+/**
+ * Whether the build subagent's summary indicates a build/delete completed or failed.
+ * When true, we clear buildSubagentContext so the next run_build starts fresh.
+ *
+ * @param summary - Text returned from the build subagent or last tool
+ * @returns True if summary looks like "built", "added", "generated", "deleted", "failed", or "error:"
+ */
 export function isBuildCompletionSummary(summary: string): boolean {
   const lower = summary.toLowerCase();
   return (
     /\bbuilt\b/.test(lower) ||
+    /\badded\b/.test(lower) ||
+    /\bgenerated\b/.test(lower) ||
     /build (completed|done|finished)/.test(lower) ||
     /\bdeleted\b/.test(lower) ||
     /\bfailed\b/.test(lower) ||
@@ -30,7 +38,40 @@ export function isBuildCompletionSummary(summary: string): boolean {
 }
 
 /**
- * Create the run_build tool for the Obedient agent.
+ * Extract summary from Build subagent result: use final text, or last tool result when agent stops after a tool call.
+ *
+ * @param result - generate() result (text, steps; steps may have toolResults depending on SDK)
+ * @returns Summary string for user and context
+ */
+function getSummaryFromBuildResult(result: {
+  text?: string;
+  steps?: Array<{ toolResults?: unknown[]; toolCalls?: unknown[] }>;
+}): string {
+  if (typeof result.text === "string" && result.text.trim()) {
+    return result.text.trim().slice(0, 500);
+  }
+  const steps = result.steps;
+  if (Array.isArray(steps) && steps.length > 0) {
+    for (let i = steps.length - 1; i >= 0; i--) {
+      const step = steps[i] as { toolResults?: unknown[] } | undefined;
+      const tr = step?.toolResults;
+      if (Array.isArray(tr) && tr.length > 0) {
+        const last = tr[tr.length - 1];
+        if (typeof last === "string") return last.slice(0, 500);
+      }
+    }
+  }
+  return "Build step completed.";
+}
+
+/**
+ * Create the run_build tool for the Obedient agent. Owner-only; runs Build subagent with multi-turn context.
+ *
+ * @param client - Engine client (for subagent and sendChat)
+ * @param store - Claw store (buildSubagentContext, lastDmPeerSessionId)
+ * @param config - Claw config (ownerUserId)
+ * @param onToolResult - Optional callback when a tool completes
+ * @returns AI SDK tool with request string input, returns summary string
  */
 export function createRunBuildTool(
   client: DoppelClient,
@@ -72,10 +113,7 @@ export function createRunBuildTool(
         prompt,
         options: abortSignal ? { abortSignal } : {},
       });
-      const summary =
-        typeof result.text === "string" && result.text.trim()
-          ? result.text.trim().slice(0, 500)
-          : "Build step completed.";
+      const summary = getSummaryFromBuildResult(result);
 
       if (isBuildCompletionSummary(summary)) {
         store.clearBuildSubagentContext();
@@ -100,7 +138,9 @@ export function createRunBuildTool(
 }
 
 /**
- * Stub run_build for the Autonomous agent.
+ * Stub run_build for the Autonomous agent. Always returns RUN_BUILD_STUB_MESSAGE.
+ *
+ * @returns AI SDK tool that does not call the Build subagent
  */
 export function createRunBuildStubTool() {
   return tool({

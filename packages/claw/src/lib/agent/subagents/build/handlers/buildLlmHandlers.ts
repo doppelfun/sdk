@@ -26,7 +26,15 @@ const TOOL_BUILD_FULL = "build_full";
 const TOOL_BUILD_INCREMENTAL = "build_incremental";
 const TOOL_BUILD_WITH_CODE = "build_with_code";
 
-/** build_full: validate → resolve model+catalog → call LLM → persist MML. */
+/**
+ * build_full: validate instruction → resolve model+catalog → call LLM (buildFull) → persist MML.
+ *
+ * @param client - Engine client (persist, sendThinking via withThinking)
+ * @param store - Claw store
+ * @param config - Claw config (BUILD_LLM_MODEL, skipCreditReport)
+ * @param args - instruction, optional documentTarget, documentId
+ * @returns BuildToolResult (user-facing summary on success)
+ */
 export async function handleBuildFull(
   client: DoppelClient,
   store: ClawStore,
@@ -74,7 +82,15 @@ export async function handleBuildFull(
   return buildResult;
 }
 
-/** build_incremental: validate → resolve target + existing MML → resolve model+catalog → call LLM → persist fragment. */
+/**
+ * build_incremental: validate → resolve target + load existing MML → resolve model+catalog → call LLM → persist fragment.
+ *
+ * @param client - Engine client
+ * @param store - Claw store
+ * @param config - Claw config
+ * @param args - instruction, documentTarget?, documentId?, position?
+ * @returns BuildToolResult
+ */
 export async function handleBuildIncremental(
   client: DoppelClient,
   store: ClawStore,
@@ -178,7 +194,16 @@ export async function handleBuildIncremental(
   return { ok: true, summary: `appended to document ${idToAppend}` };
 }
 
-/** build_with_code: validate → resolve block bounds → Gemini code execution (Python sandbox) → persist MML. */
+/**
+ * build_with_code: validate → resolve block bounds → Gemini code execution (Python sandbox) → persist MML.
+ * Requires LLM_PROVIDER=google and GOOGLE_API_KEY.
+ *
+ * @param client - Engine client
+ * @param store - Claw store
+ * @param config - Claw config (buildLlmModel)
+ * @param args - instruction, documentTarget?, documentId?
+ * @returns BuildToolResult
+ */
 export async function handleBuildWithCode(
   client: DoppelClient,
   store: ClawStore,

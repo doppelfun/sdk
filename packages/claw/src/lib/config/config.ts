@@ -49,6 +49,10 @@ const DEFAULT_ENGINE = "http://localhost:2567";
 const DEFAULT_MAX_CHAT = 20;
 const DEFAULT_MAX_OWNER = 10;
 
+/**
+ * Parse LLM_PROVIDER env: "openrouter" | "google" | "google-vertex".
+ * Defaults to "google" when unset.
+ */
 function parseLlmProvider(): LlmProviderId {
   const raw = (process.env.LLM_PROVIDER?.trim().toLowerCase() || "google").replace(/_/g, "-");
   if (raw === "google-vertex") return "google-vertex";
@@ -56,6 +60,13 @@ function parseLlmProvider(): LlmProviderId {
   return "openrouter";
 }
 
+/**
+ * Load ClawConfig from environment. Throws if required vars missing (e.g. DOPPEL_AGENT_API_KEY).
+ * Validates API keys per LLM_PROVIDER (OPENROUTER_API_KEY for openrouter, GOOGLE_API_KEY for google, etc.).
+ *
+ * @returns Full config with defaults for optional env vars
+ * @throws When required env is missing for the chosen provider
+ */
 export function loadConfig(): ClawConfig {
   const apiKey = process.env.DOPPEL_AGENT_API_KEY?.trim();
   if (!apiKey) throw new Error("DOPPEL_AGENT_API_KEY is required");

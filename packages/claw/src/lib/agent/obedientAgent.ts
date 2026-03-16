@@ -31,6 +31,17 @@ const OBEDIENT_INSTRUCTIONS = `
 3) Build: call run_build with the owner's request. The build subagent will ask premade or custom and guide them. Then stop.
 Only the owner can ask you to move or build. If someone else asks, reply "Sorry, I only perform tasks for my owner." Do one action then stop.`;
 
+/**
+ * Create the Obedient agent (ToolLoopAgent): chat, get_occupants, approach_*, stop, run_build.
+ * Used when HasOwnerWake (owner DM, cron task, or DM to reply).
+ *
+ * @param client - Engine client for sendChat, sendThinking, etc.
+ * @param store - Claw store
+ * @param config - Claw config (owner, model, etc.)
+ * @param systemContent - Base system prompt (soul + skills from buildSystemContent)
+ * @param onToolResult - Optional callback when a tool finishes
+ * @returns AgentLike (generate + tools) for runAgentTick
+ */
 export function createObedientAgent(
   client: DoppelClient,
   store: ClawStore,
@@ -66,6 +77,17 @@ export function createObedientAgent(
   }) as unknown as AgentLike;
 }
 
+/**
+ * Run one Obedient agent tick: build agent, generate with userContent, return usage and reply.
+ *
+ * @param client - Engine client
+ * @param store - Claw store
+ * @param config - Claw config
+ * @param systemContent - Full system prompt (base + OBEDIENT_INSTRUCTIONS)
+ * @param userContent - Current user message (from buildUserMessage)
+ * @param onToolResult - Optional tool result callback
+ * @returns RunTickLlmResult (ok, usage, hadToolCalls, replyText)
+ */
 export async function runObedientAgentTick(
   client: DoppelClient,
   store: ClawStore,

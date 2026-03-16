@@ -4,6 +4,13 @@
 import type { ClawConfig } from "../config/index.js";
 import type { ClawStoreApi } from "../state/index.js";
 
+/**
+ * Build the user message for one agent tick: block, occupants, errors, scheduled task, owner messages, recent chat, DM hint.
+ *
+ * @param store - Claw store (getState)
+ * @param config - Claw config (maxOwnerMessages, maxChatContext)
+ * @returns Single string for the LLM user message
+ */
 export function buildUserMessage(store: ClawStoreApi, config: ClawConfig): string {
   const state = store.getState();
   const parts: string[] = [];

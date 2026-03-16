@@ -22,8 +22,12 @@ export type TreeAgentContext = {
 };
 
 /**
- * Build the agent object for BehaviourTree(definition, agent).
+ * Build the Mistreevous agent object for BehaviourTree(definition, agent).
+ * Keys match tree node names (ExecuteMovementAndDrain, HasOwnerWake, RunObedientAgent, etc.).
  * Condition methods return boolean; action methods return State or Promise<State>.
+ *
+ * @param ctx - Store, config, and optional callbacks for movement, obedient, autonomous
+ * @returns Agent object keyed by action/condition names
  */
 export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => State | boolean | Promise<State>> {
   const { store, config, runObedientAgent, runAutonomousAgent, executeMovementAndDrain } = ctx;
@@ -106,6 +110,9 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
   };
 }
 
+/**
+ * True if the owner is within ownerNearbyRadiusM of the agent (for TimeForAutonomousWake).
+ */
 function isOwnerNearby(
   state: { myPosition: { x: number; z: number } | null; occupants: Array<{ userId?: string; position?: { x: number; z: number } }> },
   config: ClawConfig

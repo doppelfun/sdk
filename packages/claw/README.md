@@ -36,7 +36,7 @@ flowchart TB
   end
 
   WS -->|"handleChatMessage → requestWake('dm')"| Store
-  Cron -->|requestCronWake(task)| Store
+  Cron -->|"requestCronWake(task)"| Store
   ReqAuto --> Store
   Store --> Step
   Step --> Move

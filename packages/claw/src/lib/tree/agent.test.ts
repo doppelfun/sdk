@@ -63,6 +63,21 @@ describe("createTreeAgent", () => {
     });
   });
 
+  describe("RequestAutonomousWake", () => {
+    it("sets wakePending and lastTriggerUserId=null so next tick runs autonomous branch", async () => {
+      const { store, config } = createTestContext({ ownerUserId: "owner-1" });
+      store.setLastTriggerUserId("owner-1");
+      const agent = createTreeAgent({ store, config });
+      const { State } = await import("mistreevous");
+      expect(agent.RequestAutonomousWake()).toBe(State.SUCCEEDED);
+      const s = store.getState();
+      expect(s.wakePending).toBe(true);
+      expect(s.lastTriggerUserId).toBe(null);
+      expect(agent.HasOwnerWake()).toBe(false);
+      expect(agent.HasAutonomousWake()).toBe(true);
+    });
+  });
+
   describe("ClearWakeIdle", () => {
     it("clears wake and returns SUCCEEDED", async () => {
       const { store, config } = createTestContext();

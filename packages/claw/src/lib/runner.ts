@@ -15,6 +15,9 @@ import type { ClawStore } from "./state/index.js";
 import type { ClawConfig } from "./config/index.js";
 import { clawLog } from "./log.js";
 
+/** Interval (ms) to refresh occupants so myPosition is set and TimeForAutonomousWake can fire when owner is away. */
+const OCCUPANTS_REFRESH_MS = 10_000;
+
 /** Options for creating the runner (store, config, optional client and callbacks). */
 export type RunnerOptions = {
   store: ClawStore;
@@ -98,11 +101,52 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     }
   };
 
-  return createAgentLoop({
+  const loop = createAgentLoop({
     store,
     config,
     runObedientAgent,
     runAutonomousAgent,
     executeMovementAndDrain: executeMovementAndDrain ?? defaultExecuteMovementAndDrain,
   });
+
+  const autonomousEnabled =
+    client != null &&
+    config.ownerUserId != null &&
+    config.autonomousSoulTickMs > 0;
+
+  if (!autonomousEnabled) {
+    return loop;
+  }
+
+  let occupantsInterval: ReturnType<typeof setInterval> | null = null;
+
+  const refreshOccupants = (): void => {
+    if (!client) return;
+    client.getOccupants().then(
+      (occupants) => {
+        const mySessionId = store.getState().mySessionId;
+        store.setOccupants(occupants, mySessionId);
+      },
+      (err) => {
+        clawLog("runner: occupants refresh failed", err instanceof Error ? err.message : String(err));
+      }
+    );
+  };
+
+  return {
+    start() {
+      if (occupantsInterval != null) return;
+      refreshOccupants();
+      occupantsInterval = setInterval(refreshOccupants, OCCUPANTS_REFRESH_MS);
+      loop.start();
+    },
+    stop() {
+      loop.stop();
+      if (occupantsInterval != null) {
+        clearInterval(occupantsInterval);
+        occupantsInterval = null;
+      }
+    },
+    step: loop.step.bind(loop),
+  };
 }

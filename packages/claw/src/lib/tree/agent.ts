@@ -100,6 +100,8 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
 
     RequestAutonomousWake(): State {
       store.setWakePending(true);
+      // So the next tick HasOwnerWake is false and HasAutonomousWake is true (selector runs autonomous branch).
+      store.setLastTriggerUserId(null);
       return State.SUCCEEDED;
     },
 

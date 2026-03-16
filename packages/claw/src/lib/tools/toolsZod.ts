@@ -37,12 +37,12 @@ export const CLAW_TOOL_REGISTRY: Array<{
 }> = [
   {
     name: "approach_position",
-    description: "Move to block-local coordinates (0–100). Pass position as 'x,z'. Only owner can give movement commands.",
+    description: "Move to block-local coordinates (0–100). Pass position as 'x,z'.",
     schema: approachPositionSchema,
   },
   {
     name: "approach_person",
-    description: "Move to a person's position. Pass sessionId (clientId from get_occupants). Only owner can give movement commands.",
+    description: "Move to a person's position. Pass sessionId (clientId from get_occupants).",
     schema: approachPersonSchema,
   },
   {

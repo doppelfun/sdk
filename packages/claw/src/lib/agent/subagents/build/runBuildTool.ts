@@ -39,6 +39,7 @@ export function isBuildCompletionSummary(summary: string): boolean {
 
 /**
  * Extract summary from Build subagent result: use final text, or last tool result when agent stops after a tool call.
+ * When the last tool failed, SDK may pass an Error or error string in toolResults — surface that instead of "Build step completed."
  *
  * @param result - generate() result (text, steps; steps may have toolResults depending on SDK)
  * @returns Summary string for user and context
@@ -58,10 +59,20 @@ function getSummaryFromBuildResult(result: {
       if (Array.isArray(tr) && tr.length > 0) {
         const last = tr[tr.length - 1];
         if (typeof last === "string") return last.slice(0, 500);
+        if (last instanceof Error) return last.message.slice(0, 500);
+        if (last && typeof (last as { message?: string }).message === "string")
+          return ((last as { message: string }).message).slice(0, 500);
       }
     }
   }
-  return "Build step completed.";
+  return "Build completed.";
+}
+
+/** Extract a user-facing error message from a thrown value (e.g. from build subagent tool throw). */
+function getErrorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  return String(e);
 }
 
 /**
@@ -109,10 +120,25 @@ export function createRunBuildTool(
       const buildAgent = createBuildSubagent(client, store, config, (name, args, res) => {
         onToolResult?.(name, args, res as ExecuteToolResult);
       });
-      const result = await buildAgent.generate({
-        prompt,
-        options: abortSignal ? { abortSignal } : {},
-      });
+      let result: Awaited<ReturnType<typeof buildAgent.generate>>;
+      try {
+        result = await buildAgent.generate({
+          prompt,
+          options: abortSignal ? { abortSignal } : {},
+        });
+      } catch (e) {
+        const summary = getErrorMessage(e);
+        if (isBuildCompletionSummary(summary)) store.clearBuildSubagentContext();
+        else store.appendBuildSubagentExchange(summary, currentRequest);
+        const targetSessionId = store.getState().lastDmPeerSessionId ?? null;
+        if (targetSessionId) {
+          client.sendChat?.(
+            summary,
+            buildChatSendOptions({ targetSessionId, voiceId: config.voiceId }) ?? undefined
+          );
+        }
+        return summary;
+      }
       const summary = getSummaryFromBuildResult(result);
 
       if (isBuildCompletionSummary(summary)) {

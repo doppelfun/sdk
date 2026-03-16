@@ -150,8 +150,27 @@ export async function handleGenerateProcedural(
     clawLog("build: generate_procedural ok", kind, "replaced");
     return { ok: true, summary: `generated ${kind} scene (replaced)` };
   } catch (e) {
-    const err = e instanceof Error ? e.message : String(e);
-    clawLog("build: generate_procedural error", err);
-    return { ok: false, error: `generate_procedural: ${err}` };
+    const raw = e instanceof Error ? e.message : String(e);
+    clawLog("build: generate_procedural error", raw);
+    const err = parseEngineError(raw);
+    return { ok: false, error: err };
   }
+}
+
+/**
+ * Prefer a short engine error message (e.g. from 413 JSON body) over the raw HTTP message.
+ */
+function parseEngineError(raw: string): string {
+  const prefix = "generate_procedural: ";
+  const start = raw.indexOf("{");
+  if (start >= 0) {
+    try {
+      const body = JSON.parse(raw.slice(start)) as { error?: string };
+      if (typeof body.error === "string" && body.error.trim())
+        return prefix + body.error.trim();
+    } catch {
+      // use raw
+    }
+  }
+  return prefix + raw;
 }

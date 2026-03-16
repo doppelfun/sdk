@@ -20,8 +20,9 @@ export async function handleChat(ctx: ToolContext) {
   const text = typeof args.text === "string" ? args.text.slice(0, 500).trim() : "";
   let targetSessionId: string | null =
     typeof args.targetSessionId === "string" ? args.targetSessionId.trim() || null : null;
-  if (text && !targetSessionId && state.lastDmPeerSessionId) {
-    targetSessionId = state.lastDmPeerSessionId;
+  // Enforce DM when we have a peer in state (e.g. user just DMed us): reply to that session, not global
+  if (text && state.lastDmPeerSessionId) {
+    targetSessionId = targetSessionId ?? state.lastDmPeerSessionId;
   }
 
   const autonomous =

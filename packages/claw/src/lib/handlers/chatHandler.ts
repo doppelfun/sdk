@@ -63,6 +63,8 @@ export function handleChatMessage(
 
   if (fromOwner) {
     clearConversation(store);
+    // Keep DM context so the agent replies in DM, not global
+    if (sessionId) store.setLastDmPeerSessionId(sessionId);
   } else if (dmFromOther && sessionId) {
     onWeReceivedDm(store, sessionId, {
       audioDurationMs: payload.audioDurationMs,

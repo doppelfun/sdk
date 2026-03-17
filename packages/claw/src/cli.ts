@@ -65,26 +65,35 @@ async function main(): Promise<void> {
   });
   loop.start();
 
-  const cronTasks = profile?.cronTasks;
-  const cronScheduler =
-    Array.isArray(cronTasks) && cronTasks.length > 0
-      ? startCronScheduler(
-          store,
-          () =>
-            cronTasks.map((t) => ({
-              taskId: t.id,
-              instruction: t.instruction,
-              intervalMs: (t as { intervalMs?: number }).intervalMs ?? 300_000,
-            })),
-          { checkIntervalMs: 60_000 }
-        )
-      : null;
+  // HACK: will be added with cron DB list on the future
+  // Wake-driven cron: spellcast task (hard-coded) + any profile cron tasks. LLM executes instructions.
+  const SPELLCAST_CRON_TASK = {
+    taskId: "spellcast",
+    instruction: "Go to position 34,30 and perform the spellcast emote.",
+    intervalMs: 2 * 60 * 1000, // Every 2 minutes
+  };
+  // ------------------------------------------------------------
 
+  const cronScheduler = startCronScheduler(
+    store,
+    () => [
+      SPELLCAST_CRON_TASK,
+      ...(Array.isArray(profile?.cronTasks)
+        ? profile.cronTasks.map((t) => ({
+            taskId: t.id,
+            instruction: t.instruction,
+            intervalMs: (t as { intervalMs?: number }).intervalMs ?? 300_000,
+          }))
+        : []),
+    ],
+    { checkIntervalMs: 60_000 }
+  );
+  
   await client.connect();
 
   const shutdown = (): void => {
     loop.stop();
-    cronScheduler?.stop();
+    cronScheduler.stop();
     const d = (client as unknown as { disconnect?: () => void }).disconnect;
     if (typeof d === "function") d.call(client);
     process.exit(0);

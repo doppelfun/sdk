@@ -5,6 +5,7 @@
 import type { ClawStore } from "../state/index.js";
 import { requestCronWake } from "../../wake.js";
 import type { PendingScheduledTask } from "../state/index.js";
+import { clawLog } from "../../util/log.js";
 
 export type CronTaskDef = {
   taskId: string;
@@ -43,6 +44,7 @@ export function startCronScheduler(
       const key = task.taskId;
       const last = lastRun.get(key) ?? 0;
       if (now - last >= intervalMs) {
+        clawLog("cron wake", task.taskId, task.instruction.slice(0, 60) + (task.instruction.length > 60 ? "…" : ""));
         const payload: PendingScheduledTask = { taskId: task.taskId, instruction: task.instruction };
         requestCronWake(store, payload);
         lastRun.set(key, now);

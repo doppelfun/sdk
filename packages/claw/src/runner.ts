@@ -160,19 +160,15 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     tryMoveToNearestOccupant,
   });
 
-  const autonomousEnabled =
-    client != null &&
-    config.ownerUserId != null &&
-    config.autonomousSoulTickMs > 0;
-
-  if (!autonomousEnabled) {
+  // Always refresh occupants when we have a client so myPosition/occupants are set. Required for
+  // TimeForAutonomousWake (owner-away check), TryMoveToNearestOccupant, and movement arrival detection.
+  if (client == null) {
     return loop;
   }
 
   let occupantsInterval: ReturnType<typeof setInterval> | null = null;
 
   const refreshOccupants = (): void => {
-    if (!client) return;
     client.getOccupants().then(
       (occupants) => {
         const mySessionId = store.getState().mySessionId;

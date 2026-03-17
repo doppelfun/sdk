@@ -16,6 +16,7 @@ import { runAgentTick, type AgentLike } from "./shared/runAgentTick.js";
 
 const OBEDIENT_TOOL_NAMES = [
   "chat",
+  "emote",
   "get_occupants",
   "approach_position",
   "approach_person",
@@ -71,9 +72,9 @@ export function createObedientAgent(
     instructions: systemContent + OBEDIENT_INSTRUCTIONS,
     tools,
     stopWhen: [
-      stepCountIs(5),
+      stepCountIs(8),
       hasToolCall("chat"),
-      hasToolCall("get_occupants"),
+      // Do not stop after get_occupants — it is often a precursor to approach_* or other actions (e.g. scheduled "go to X and emote").
       hasToolCall("approach_position"),
       hasToolCall("approach_person"),
       hasToolCall("follow"),

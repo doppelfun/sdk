@@ -41,12 +41,12 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       return State.SUCCEEDED;
     },
 
+    /** True only when wake was triggered by the owner (DM) or a scheduled task. Guest DMs must not run Obedient. */
     HasOwnerWake(): boolean {
       const s = store.getState();
       const isOwner = config.ownerUserId != null && s.lastTriggerUserId === config.ownerUserId;
       const hasScheduledTask = s.pendingScheduledTask != null;
-      const hasDmToReply = s.lastDmPeerSessionId != null;
-      return s.wakePending && (isOwner || hasScheduledTask || hasDmToReply);
+      return s.wakePending && (isOwner || hasScheduledTask);
     },
 
     HasEnoughCredits(): boolean {

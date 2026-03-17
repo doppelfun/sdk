@@ -4,6 +4,7 @@
 import type { ToolHandler } from "../types.js";
 import { handleApproachPosition, handleApproachPerson, handleFollow, handleStop } from "./move.js";
 import { handleChat } from "./chat.js";
+import { handleEmote } from "./emote.js";
 import { handleGetOccupants } from "./occupants.js";
 import {
   handleListCatalogTool,
@@ -25,6 +26,7 @@ export const TOOL_HANDLERS: Record<string, ToolHandler> = {
   follow: handleFollow,
   stop: handleStop,
   chat: handleChat,
+  emote: handleEmote,
   get_occupants: handleGetOccupants,
   list_catalog: handleListCatalogTool,
   list_documents: handleListDocumentsTool,

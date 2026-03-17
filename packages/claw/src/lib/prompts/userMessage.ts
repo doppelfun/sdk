@@ -28,14 +28,12 @@ export function buildUserMessage(store: ClawStoreApi, config: ClawConfig): strin
     parts.push(`Error: ${state.lastError.code} — ${state.lastError.message}`);
   }
 
-  if (state.pendingScheduledTask) {
-    parts.push(`Scheduled task: ${state.pendingScheduledTask.instruction}`);
-  }
-
-  // Single current message to act on (most recent only); multiple rapid messages are already in chat
+  // Single current message to act on: owner DM or scheduled task (treat cron like a DM so the agent executes it).
   const lastOwner = state.ownerMessages[state.ownerMessages.length - 1];
   if (lastOwner) {
     parts.push(`Current message to respond to: ${lastOwner.text}`);
+  } else if (state.pendingScheduledTask) {
+    parts.push(`Current message to respond to (scheduled task — execute with tools, do not just acknowledge): ${state.pendingScheduledTask.instruction}`);
   }
 
   const chatSlice = state.chat.slice(-(config.maxChatContext || 10));

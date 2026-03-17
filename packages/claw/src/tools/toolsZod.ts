@@ -39,6 +39,10 @@ export const chatSchema = z.object({
   voiceId: z.string().optional(),
 });
 
+export const emoteSchema = z.object({
+  emoteId: z.string().describe("Emote catalog id, e.g. wave, heart, spellcast."),
+});
+
 export const getOccupantsSchema = z.object({});
 
 export const listRecipesSchema = z.object({});
@@ -78,6 +82,11 @@ export const CLAW_TOOL_REGISTRY: Array<{
     name: "chat",
     description: "Send chat. Omit targetSessionId for global; set for DM so only you two see it.",
     schema: chatSchema,
+  },
+  {
+    name: "emote",
+    description: "Play an emote by catalog id (e.g. wave, heart, spellcast). Use for scheduled tasks or when the user asks you to emote.",
+    schema: emoteSchema,
   },
   {
     name: "get_occupants",

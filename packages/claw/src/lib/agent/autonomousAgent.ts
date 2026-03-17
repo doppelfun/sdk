@@ -60,7 +60,12 @@ export function createAutonomousAgent(
     model,
     instructions: systemContent + AUTONOMOUS_INSTRUCTIONS,
     tools,
-    stopWhen: [stepCountIs(8), hasToolCall("chat"), hasToolCall("run_build")],
+    stopWhen: [
+      stepCountIs(8),
+      hasToolCall("chat"),
+      hasToolCall("run_build"),
+      hasToolCall("get_occupants"),
+    ],
     maxOutputTokens: 1024,
     temperature: 0.3,
   }) as unknown as AgentLike;

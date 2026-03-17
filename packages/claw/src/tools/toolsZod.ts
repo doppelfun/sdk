@@ -84,7 +84,7 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "list_documents",
     description:
-      "List document ids (UUIDs). Use these ids for build_full replace, build_incremental append, run_recipe replace/append, delete_document, get_document_content.",
+      "List document ids (UUIDs). Use these ids for run_recipe replace/append, delete_document, get_document_content.",
     schema: listDocumentsSchema,
   },
   {
@@ -106,15 +106,16 @@ export const CLAW_TOOL_REGISTRY: Array<{
   {
     name: "build_full",
     description:
-      "Create a full scene with MML via LLM. instruction: what to build. x,z in [0,100). Default = new document; use documentTarget replace/update and optional documentId to update existing.",
+      "Create a full scene with MML via LLM. instruction: what to build. x,z in [0,100). Always creates a new document (delete/edit the latest via delete_document).",
     schema: buildFullSchema,
   },
-  {
-    name: "build_incremental",
-    description:
-      "Add MML fragment via LLM. instruction: what to add. Default = new document; use documentTarget append and optional documentId to append to existing.",
-    schema: buildIncrementalSchema,
-  },
+  // build_incremental disabled: always add new document so user can delete/edit latest only
+  // {
+  //   name: "build_incremental",
+  //   description:
+  //     "Add MML fragment via LLM. instruction: what to add. Default = new document; use documentTarget append and optional documentId to append to existing.",
+  //   schema: buildIncrementalSchema,
+  // },
   {
     name: "build_with_code",
     description:

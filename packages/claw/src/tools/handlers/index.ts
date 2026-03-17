@@ -12,7 +12,7 @@ import {
   handleListRecipes,
   handleRunRecipeTool,
   handleBuildFullTool,
-  handleBuildIncrementalTool,
+  // handleBuildIncrementalTool, // disabled: always add new document so user can delete/edit latest only
   handleBuildWithCodeTool,
   handleDeleteDocumentTool,
   handleDeleteAllDocumentsTool,
@@ -31,7 +31,7 @@ export const TOOL_HANDLERS: Record<string, ToolHandler> = {
   list_recipes: handleListRecipes,
   run_recipe: handleRunRecipeTool,
   build_full: handleBuildFullTool,
-  build_incremental: handleBuildIncrementalTool,
+  // build_incremental: handleBuildIncrementalTool, // disabled
   build_with_code: handleBuildWithCodeTool,
   delete_document: handleDeleteDocumentTool,
   delete_all_documents: handleDeleteAllDocumentsTool,

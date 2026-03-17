@@ -74,9 +74,9 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
 
     async RunObedientAgent(): Promise<State> {
       clawLog("tree: RunObedientAgent");
-      if (runObedientAgent) await runObedientAgent();
       store.clearWake();
       store.clearPendingScheduledTask();
+      if (runObedientAgent) await runObedientAgent();
       return State.SUCCEEDED;
     },
 
@@ -88,8 +88,8 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
 
     async RunAutonomousAgent(): Promise<State> {
       clawLog("tree: RunAutonomousAgent");
-      if (runAutonomousAgent) await runAutonomousAgent();
       store.clearWake();
+      if (runAutonomousAgent) await runAutonomousAgent();
       store.setLastAutonomousRunAt(Date.now());
       return State.SUCCEEDED;
     },

@@ -1,60 +1,59 @@
 /**
- * Persist MML from build_full / build_with_code: create or update document + state.
+ * Persist MML from build_full / build_with_code: always create a new document.
  */
 import type { DoppelClient } from "@doppelfun/sdk";
 import type { ClawStore } from "../state/store.js";
-import { isDocumentIdUuid, DOCUMENT_ID_UUID_HINT } from "./documents.js";
+import { clawLog } from "../../util/log.js";
 
-/** Result of persisting a full-scene MML (create or update document). */
+/** Result of persisting a full-scene MML (create new document). */
 export type PersistBuildResult =
   | { ok: true; summary: string }
   | { ok: false; error: string };
 
+/** Timeout (ms) for createDocument so we don't hang if the server never responds. */
+const PERSIST_CREATE_DOCUMENT_TIMEOUT_MS = 120_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms)
+    ),
+  ]);
+}
+
 /**
- * Persist full-scene MML: create new document or update existing (documentTarget replace + documentId).
+ * Persist full-scene MML: always create a new document (so user can delete/edit the latest only).
+ * Replace/update paths are disabled.
  *
- * @param client - Engine client (createDocument, updateDocument)
+ * @param client - Engine client (createDocument)
  * @param store - Claw store (mergeDocumentsByBlockSlot)
  * @param mml - Full MML string
- * @param args - documentTarget?, documentId?
+ * @param _args - documentTarget/documentId ignored; always create new
  * @returns PersistBuildResult
  */
 export async function persistFullBuildMml(
   client: DoppelClient,
   store: ClawStore,
   mml: string,
-  args: Record<string, unknown>
+  _args: Record<string, unknown>
 ): Promise<PersistBuildResult> {
   const state = store.getState();
-  const targetRaw =
-    typeof args.documentTarget === "string" ? args.documentTarget.trim().toLowerCase() : "";
-  const wantReplace =
-    targetRaw === "replace_current" || targetRaw === "replace" || targetRaw === "update";
-
-  if (!wantReplace) {
-    const { documentId: newId } = await client.createDocument(mml);
-    store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: newId, mml });
-    return { ok: true, summary: `built full scene (new document ${newId})` };
+  clawLog("build: persist createDocument request", "mml length=" + mml.length);
+  let newId: string;
+  try {
+    const result = await withTimeout(
+      client.createDocument(mml),
+      PERSIST_CREATE_DOCUMENT_TIMEOUT_MS,
+      "createDocument"
+    );
+    newId = result.documentId;
+    clawLog("build: persist createDocument ok", "documentId=" + newId);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    clawLog("build: persist createDocument failed:", msg);
+    return { ok: false, error: msg };
   }
-
-  const explicitId =
-    typeof args.documentId === "string" && args.documentId.trim() ? args.documentId.trim() : null;
-  if (explicitId) {
-    if (!isDocumentIdUuid(explicitId)) {
-      return { ok: false, error: `build_full replace/update: ${DOCUMENT_ID_UUID_HINT}` };
-    }
-    await client.updateDocument(explicitId, mml);
-    store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: explicitId, mml });
-    return { ok: true, summary: `built full scene (updated ${explicitId})` };
-  }
-
-  const blockDoc = state.documentsByBlockSlot[state.blockSlotId];
-  if (blockDoc) {
-    await client.updateDocument(blockDoc.documentId, mml);
-    store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: blockDoc.documentId, mml });
-    return { ok: true, summary: "built full scene (replaced current)" };
-  }
-  const { documentId: newId } = await client.createDocument(mml);
   store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: newId, mml });
   return { ok: true, summary: `built full scene (new document ${newId})` };
 }

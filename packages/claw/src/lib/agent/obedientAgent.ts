@@ -26,7 +26,7 @@ const OBEDIENT_TOOL_NAMES = [
   "list_recipes",
   "run_recipe",
   "build_full",
-  "build_incremental",
+  // "build_incremental", // disabled: always add new document so user can delete/edit latest only
   "build_with_code",
   "delete_document",
   "delete_all_documents",
@@ -36,7 +36,7 @@ const OBEDIENT_INSTRUCTIONS = `
 [OBEDIENT MODE] Do exactly one of:
 1) Conversation: reply once with the chat tool (targetSessionId = owner / last DM peer), then stop.
 2) Move: use get_occupants if needed, then approach_position or approach_person; reply with chat saying where you're moving. Then stop.
-3) Build: use list_recipes to see options. Use run_recipe with kind city/pyramid/grass/trees and optional params. For custom scenes use build_full with an instruction; use build_incremental to add to existing. Use list_catalog, list_documents, get_document_content, delete_document, delete_all_documents as needed. Then stop.
+3) Build: use list_recipes to see options. Use run_recipe with kind city/pyramid/grass/trees and optional params. For custom scenes use build_full with an instruction (always creates a new document). Use list_catalog, list_documents, get_document_content, delete_document, delete_all_documents as needed. Then stop.
 Only the owner can ask you to move or build. If someone else asks, reply "Sorry, I only perform tasks for my owner." Do one action then stop.`;
 
 /**
@@ -79,7 +79,7 @@ export function createObedientAgent(
       hasToolCall("list_recipes"),
       hasToolCall("run_recipe"),
       hasToolCall("build_full"),
-      hasToolCall("build_incremental"),
+      // hasToolCall("build_incremental"), // disabled
       hasToolCall("build_with_code"),
       hasToolCall("delete_document"),
       hasToolCall("delete_all_documents"),

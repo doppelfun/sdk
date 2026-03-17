@@ -44,7 +44,7 @@ export type ClawConfig = {
   skipCreditReport: boolean;
 };
 
-const DEFAULT_HUB = "http://localhost:4000";
+const DEFAULT_HUB = "https://doppel.fun";
 const DEFAULT_ENGINE = "http://localhost:2567";
 const DEFAULT_MAX_CHAT = 20;
 const DEFAULT_MAX_OWNER = 10;
@@ -118,7 +118,7 @@ export function loadConfig(): ClawConfig {
     ownerUserId,
     maxChatContext,
     maxOwnerMessages,
-    hosted: envFlag("CLAW_HOSTED"),
+    hosted: false,
     tokensPerCredit,
     skillIds,
     llmProvider,
@@ -131,6 +131,6 @@ export function loadConfig(): ClawConfig {
     voiceEnabled: true,
     dailyCreditBudget: 0,
     soul: null,
-    skipCreditReport: envFlag("ALLOW_BUILD_WITHOUT_CREDITS"),
+    skipCreditReport: envFlag("DISABLE_CREDITS"),
   };
 }

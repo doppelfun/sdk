@@ -54,9 +54,19 @@ export async function handleBuildFull(
   logStepOk(TOOL_BUILD_FULL, 2, 4, "catalog entries=" + catalog.length);
 
   logStep(TOOL_BUILD_FULL, 3, 4, "call LLM (buildFull)");
-  const result = await withThinking(client, () =>
-    buildFull(model, instruction, catalogToJson(catalog), blockBounds)
-  );
+  let result: Awaited<ReturnType<typeof buildFull>>;
+  try {
+    result = await withThinking(client, () =>
+      buildFull(model, instruction, catalogToJson(catalog), blockBounds)
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const stack = e instanceof Error ? e.stack : undefined;
+    clawLog("build: build_full step 3/4 throw:", msg);
+    if (stack) clawLog("build: build_full step 3/4 stack:", stack);
+    logStepFailed(TOOL_BUILD_FULL, 3, 4, msg, "Check BUILD_LLM_MODEL, API key, network, and instruction.");
+    return { ok: false, error: msg };
+  }
   if (!result.ok) {
     logStepFailed(TOOL_BUILD_FULL, 3, 4, result.error, "Check BUILD_LLM_MODEL, API key, and instruction.");
     return result;
@@ -67,7 +77,16 @@ export async function handleBuildFull(
   }
 
   logStep(TOOL_BUILD_FULL, 4, 4, "persist MML", args.documentTarget ?? "new", args.documentId ?? "");
-  const buildResult = await persistFullBuildMml(client, store, result.mml, args);
+  let buildResult: Awaited<ReturnType<typeof persistFullBuildMml>>;
+  try {
+    buildResult = await persistFullBuildMml(client, store, result.mml, args);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    clawLog("build: build_full step 4/4 throw:", msg);
+    if (e instanceof Error && e.stack) clawLog("build: build_full step 4/4 stack:", e.stack);
+    logStepFailed(TOOL_BUILD_FULL, 4, 4, msg, "Check documentId/target and engine connection.");
+    return { ok: false, error: msg };
+  }
   if (!buildResult.ok) {
     logStepFailed(TOOL_BUILD_FULL, 4, 4, buildResult.error, "Check documentId/target and engine connection.");
     return buildResult;

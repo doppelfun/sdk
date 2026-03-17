@@ -118,7 +118,7 @@ export function loadConfig(): ClawConfig {
     ownerUserId,
     maxChatContext,
     maxOwnerMessages,
-    hosted: false,
+    hosted: envFlag("CLAW_HOSTED"),
     tokensPerCredit,
     skillIds,
     llmProvider,

@@ -7,7 +7,7 @@
 import { State } from "mistreevous";
 import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
-import { hasEnoughCredits } from "../credits/index.js";
+import { hasEnoughCredits, MIN_BALANCE_THRESHOLD } from "../credits/index.js";
 import { clawLog } from "../../util/log.js";
 
 export type TreeAgentContext = {
@@ -61,6 +61,12 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
     },
 
     ClearWakeInsufficientCredits(): State {
+      const state = store.getState();
+      clawLog(
+        "credits: blocking run — insufficient credits (cachedBalance=%s, threshold=%s)",
+        state.cachedBalance.toFixed(2),
+        MIN_BALANCE_THRESHOLD.toFixed(2)
+      );
       store.clearWake();
       store.clearPendingScheduledTask();
       return State.SUCCEEDED;

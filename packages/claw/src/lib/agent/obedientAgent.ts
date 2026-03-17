@@ -72,8 +72,10 @@ export function createObedientAgent(
     stopWhen: [
       stepCountIs(5),
       hasToolCall("chat"),
+      hasToolCall("get_occupants"),
       hasToolCall("approach_position"),
       hasToolCall("approach_person"),
+      hasToolCall("stop"),
       hasToolCall("list_recipes"),
       hasToolCall("run_recipe"),
       hasToolCall("build_full"),

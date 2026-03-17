@@ -30,6 +30,15 @@ export async function bootstrapAgent(): Promise<BootstrapResult> {
     profileApplied = true;
     profile = res.profile;
   }
+  const reportUsage = config.hosted && !config.skipCreditReport;
+  const checkBalance = config.hosted;
+  console.log(
+    "[claw] Credits: hosted=%s skipCreditReport=%s → report-usage %s, balance checks %s",
+    config.hosted,
+    config.skipCreditReport,
+    reportUsage ? "on" : "off",
+    checkBalance ? "on" : "off"
+  );
   return { config, profileApplied, profile };
 }
 
@@ -60,7 +69,12 @@ export async function createSession(
   if (!join.ok) return { ok: false, error: join.error };
   const store = createClawStore(join.blockSlotId);
   if (options?.refreshBalance && config.hosted) {
-    await refreshBalance(store, config);
+    const balanceRes = await refreshBalance(store, config);
+    if (balanceRes.ok) {
+      console.log("[claw] Credits: fetched balance", balanceRes.balance.toFixed(2));
+    } else {
+      console.warn("[claw] Credits: balance fetch failed —", balanceRes.error);
+    }
   }
   return {
     ok: true,

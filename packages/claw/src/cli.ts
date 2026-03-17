@@ -52,6 +52,11 @@ async function main(): Promise<void> {
     handleChatMessage(store, config, payload as Parameters<typeof handleChatMessage>[2]);
   });
 
+  client.onMessage("follow_failed", (payload: unknown) => {
+    const p = payload as { targetSessionId?: string };
+    store.setLastFollowFailed(typeof p?.targetSessionId === "string" ? p.targetSessionId : "");
+  });
+
   const loop = createRunner({
     store,
     config,

@@ -33,6 +33,8 @@ export type ClawConfig = {
    * Tree condition TimeForAutonomousWake uses this.
    */
   autonomousSoulTickMs: number;
+  /** Min ms between autonomous LLM runs in soul mode. Real DMs bypass; tree uses CanRunAutonomousLlm. */
+  autonomousLlmCooldownMs: number;
   voiceId: string | null;
   /** From hub profile: voice enabled. */
   voiceEnabled: boolean;
@@ -102,6 +104,7 @@ export function loadConfig(): ClawConfig {
   const tokensPerCredit = parseIntEnv("TOKENS_PER_CREDIT", 1000, 1);
   const ownerNearbyRadiusM = parseIntEnv("OWNER_NEARBY_RADIUS_M", 14, 4, 80);
   const autonomousSoulTickMs = parseIntEnv("AUTONOMOUS_SOUL_TICK_MS", 45000, 0, 300000);
+  const autonomousLlmCooldownMs = parseIntEnv("AUTONOMOUS_LLM_COOLDOWN_MS", 25000, 5000, 120000);
   const voiceId = process.env.CLAW_VOICE_ID?.trim() || null;
 
   const defaultChatModel = llmProvider === "openrouter" ? "openrouter/auto" : "gemini-3-flash-preview";
@@ -127,6 +130,7 @@ export function loadConfig(): ClawConfig {
     googleCloudLocation: process.env.GOOGLE_CLOUD_LOCATION?.trim() || null,
     ownerNearbyRadiusM,
     autonomousSoulTickMs,
+    autonomousLlmCooldownMs,
     voiceId,
     voiceEnabled: true,
     dailyCreditBudget: 0,

@@ -14,9 +14,55 @@ import { createAgentLoop, type AgentLoop } from "./lib/tree/index.js";
 import type { ClawStore } from "./lib/state/index.js";
 import type { ClawConfig } from "./lib/config/index.js";
 import { clawLog } from "./util/log.js";
+import { findNearestOccupant } from "./util/position.js";
 
 /** Interval (ms) to refresh occupants so myPosition is set and TimeForAutonomousWake can fire when owner is away. */
 const OCCUPANTS_REFRESH_MS = 10_000;
+
+/** Chance (0–1) to skip moving to nearest when in autonomous "soul" mode; adds variety. */
+const TRY_MOVE_TO_NEAREST_SKIP_CHANCE = 0.15;
+
+type RunTickResult = Awaited<ReturnType<typeof runObedientAgentTick>>;
+
+/**
+ * Run one agent tick (obedient or autonomous): build context, call LLM, report usage,
+ * send fallback chat if the agent didn't use the chat tool, clear owner messages.
+ */
+async function runAgentTickWithFallback(
+  client: DoppelClient,
+  store: ClawStore,
+  config: ClawConfig,
+  systemContent: string,
+  runTick: (client: DoppelClient, store: ClawStore, config: ClawConfig, system: string, user: string) => Promise<RunTickResult>,
+  label: "obedient" | "autonomous",
+  onUsageReportFailure?: (message: string) => void
+): Promise<void> {
+  clawLog(`runner: Run${label === "obedient" ? "Obedient" : "Autonomous"}Agent start`);
+  const userContent = buildUserMessage(store, config);
+  const result = await runTick(client, store, config, systemContent, userContent);
+  const state = store.getState();
+  clawLog(
+    `runner: ${label} tick done`,
+    "ok=" + result.ok,
+    "replyText=" + (result.ok && result.replyText ? result.replyText.slice(0, 60) + "…" : "null"),
+    "lastTickSentChat=" + state.lastTickSentChat
+  );
+  if (result.ok && result.usage) {
+    reportUsageToHub(config, store, result.usage, config.chatLlmModel, onUsageReportFailure);
+  }
+  if (result.ok && result.replyText && !state.lastTickSentChat) {
+    clawLog("runner: sending fallback chat", result.replyText.slice(0, 80));
+    const dmTarget = state.lastDmPeerSessionId ?? undefined;
+    const voiceId = config.voiceId ?? undefined;
+    client.sendChat?.(result.replyText, { targetSessionId: dmTarget, voiceId });
+    if (voiceId && config.voiceEnabled) {
+      reportVoiceUsageToHub(config, store, result.replyText.length, onUsageReportFailure);
+    }
+    store.setLastAgentChatMessage(result.replyText);
+    store.setLastTickSentChat(true);
+  }
+  if (result.ok) store.clearOwnerMessages();
+}
 
 /** Options for creating the runner (store, config, optional client and callbacks). */
 export type RunnerOptions = {
@@ -45,60 +91,30 @@ export function createRunner(options: RunnerOptions): AgentLoop {
 
   const runObedientAgent =
     client != null
-      ? async () => {
-          clawLog("runner: RunObedientAgent start");
-          const userContent = buildUserMessage(store, config);
-          const result = await runObedientAgentTick(client, store, config, systemContent, userContent);
-          const state = store.getState();
-          clawLog("runner: obedient tick done", "ok=" + result.ok, "replyText=" + (result.ok && result.replyText ? result.replyText.slice(0, 60) + "…" : "null"), "lastTickSentChat=" + state.lastTickSentChat);
-          if (result.ok && result.usage) {
-            reportUsageToHub(config, store, result.usage, config.chatLlmModel, onUsageReportFailure);
-          }
-          if (result.ok && result.replyText && !state.lastTickSentChat) {
-            clawLog("runner: sending fallback chat", result.replyText.slice(0, 80));
-            const dmTarget = state.lastDmPeerSessionId ?? undefined;
-            const voiceId = config.voiceId ?? undefined;
-            client.sendChat?.(result.replyText, {
-              targetSessionId: dmTarget,
-              voiceId,
-            });
-            if (voiceId && config.voiceEnabled) {
-              reportVoiceUsageToHub(config, store, result.replyText.length, onUsageReportFailure);
-            }
-            store.setLastAgentChatMessage(result.replyText);
-            store.setLastTickSentChat(true);
-          }
-          if (result.ok) store.clearOwnerMessages();
-        }
+      ? () =>
+          runAgentTickWithFallback(
+            client,
+            store,
+            config,
+            systemContent,
+            runObedientAgentTick,
+            "obedient",
+            onUsageReportFailure
+          )
       : undefined;
 
   const runAutonomousAgent =
     client != null
-      ? async () => {
-          clawLog("runner: RunAutonomousAgent start");
-          const userContent = buildUserMessage(store, config);
-          const result = await runAutonomousAgentTick(client, store, config, systemContent, userContent);
-          const state = store.getState();
-          clawLog("runner: autonomous tick done", "ok=" + result.ok, "replyText=" + (result.ok && result.replyText ? result.replyText.slice(0, 60) + "…" : "null"), "lastTickSentChat=" + state.lastTickSentChat);
-          if (result.ok && result.usage) {
-            reportUsageToHub(config, store, result.usage, config.chatLlmModel, onUsageReportFailure);
-          }
-          if (result.ok && result.replyText && !state.lastTickSentChat) {
-            clawLog("runner: sending fallback chat", result.replyText.slice(0, 80));
-            const dmTarget = state.lastDmPeerSessionId ?? undefined;
-            const voiceId = config.voiceId ?? undefined;
-            client.sendChat?.(result.replyText, {
-              targetSessionId: dmTarget,
-              voiceId,
-            });
-            if (voiceId && config.voiceEnabled) {
-              reportVoiceUsageToHub(config, store, result.replyText.length, onUsageReportFailure);
-            }
-            store.setLastAgentChatMessage(result.replyText);
-            store.setLastTickSentChat(true);
-          }
-          if (result.ok) store.clearOwnerMessages();
-        }
+      ? () =>
+          runAgentTickWithFallback(
+            client,
+            store,
+            config,
+            systemContent,
+            runAutonomousAgentTick,
+            "autonomous",
+            onUsageReportFailure
+          )
       : undefined;
 
   const defaultExecuteMovementAndDrain = () => {
@@ -117,12 +133,31 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     }
   };
 
+  /** Tree action: move toward nearest occupant (no LLM). Skips if already moving or 15% random. */
+  const tryMoveToNearestOccupant = (): void => {
+    if (!client) return;
+    const state = store.getState();
+    if (state.movementTarget || state.followTargetSessionId) return;
+    if (Math.random() < TRY_MOVE_TO_NEAREST_SKIP_CHANCE) return;
+    const nearest = findNearestOccupant(state.occupants, state.mySessionId, state.myPosition);
+    if (!nearest?.position) return;
+    const { x, z } = nearest.position;
+    store.setMovementIntent(null);
+    store.setMovementTarget({ x, z });
+    store.setLastMoveToFailed(null);
+    store.setMovementSprint(false);
+    store.setAutonomousEmoteStandStillUntil(0);
+    client.moveTo(x, z);
+    clawLog("tree: TryMoveToNearestOccupant", nearest.username ?? nearest.clientId);
+  };
+
   const loop = createAgentLoop({
     store,
     config,
     runObedientAgent,
     runAutonomousAgent,
     executeMovementAndDrain: executeMovementAndDrain ?? defaultExecuteMovementAndDrain,
+    tryMoveToNearestOccupant,
   });
 
   const autonomousEnabled =

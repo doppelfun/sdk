@@ -13,6 +13,7 @@ export type PersistBuildResult =
 /** Timeout (ms) for createDocument so we don't hang if the server never responds. */
 const PERSIST_CREATE_DOCUMENT_TIMEOUT_MS = 120_000;
 
+/** Reject after ms so we never hang on createDocument. */
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     promise,

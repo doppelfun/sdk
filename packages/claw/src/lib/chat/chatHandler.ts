@@ -37,11 +37,14 @@ export function handleChatMessage(
   payload: ChatPayload
 ): void {
   const state = store.getState();
-  if (state.mySessionId && payload.sessionId === state.mySessionId) return;
 
-  const username = typeof payload.username === "string" ? payload.username : "?";
+  // Skip: from self, echo of our own sent message, or duplicate (same id already in chat).
+  if (state.mySessionId && payload.sessionId === state.mySessionId) return;
   const message =
     typeof payload.message === "string" ? payload.message : typeof payload.text === "string" ? payload.text : "";
+  if (state.lastAgentChatMessage && message.trim() === state.lastAgentChatMessage) return;
+
+  const username = typeof payload.username === "string" ? payload.username : "?";
   const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : undefined;
   const createdAt =
     typeof payload.createdAt === "number" ? payload.createdAt : (payload.timestamp ?? Date.now()) as number;

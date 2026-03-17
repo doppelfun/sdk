@@ -372,6 +372,22 @@ export class DoppelClient {
   }
 
   /**
+   * Follow another occupant by sessionId. Server re-paths to the target's position periodically (like move_to with a moving destination).
+   */
+  follow(targetSessionId: string): void {
+    if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
+    this.ws.send(JSON.stringify({ type: "follow", targetSessionId: String(targetSessionId).trim() }));
+  }
+
+  /**
+   * Cancel current follow (stop following).
+   */
+  cancelFollow(): void {
+    if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
+    this.ws.send(JSON.stringify({ type: "cancel_follow" }));
+  }
+
+  /**
    * Close the current WebSocket and immediately open a new one using the latest
    * JWT from getJwt() (e.g. after hub joinBlock refresh). Waits for `authenticated`
    * again. Does not set disconnectRequested — reconnect policy remains active.

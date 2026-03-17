@@ -9,7 +9,7 @@ import {
   listDocumentsSchema,
   getDocumentContentSchema,
   buildFullSchema,
-  buildIncrementalSchema,
+  // buildIncrementalSchema,
   deleteDocumentSchema,
   deleteAllDocumentsSchema,
   runRecipeSchema,
@@ -27,6 +27,10 @@ export const approachPersonSchema = z.object({
 
 export const stopSchema = z.object({
   jump: z.boolean().optional(),
+});
+
+export const followSchema = z.object({
+  sessionId: z.string().describe("Occupant clientId from get_occupants to follow (server re-paths to their position periodically)."),
 });
 
 export const chatSchema = z.object({
@@ -64,6 +68,11 @@ export const CLAW_TOOL_REGISTRY: Array<{
     name: "stop",
     description: "Stop moving.",
     schema: stopSchema,
+  },
+  {
+    name: "follow",
+    description: "Follow another person (re-path to their position periodically). Pass sessionId (clientId from get_occupants). Use stop to stop following.",
+    schema: followSchema,
   },
   {
     name: "chat",

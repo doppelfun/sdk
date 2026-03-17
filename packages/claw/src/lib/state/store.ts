@@ -92,6 +92,15 @@ function createClawStore(blockSlotId: string) {
     setLastMoveToFailed(p: { x: number; z: number } | null) {
       setState({ lastMoveToFailed: p });
     },
+    setFollowTargetSessionId(sessionId: string | null) {
+      setState((s) => ({
+        followTargetSessionId: sessionId,
+        ...(sessionId != null && sessionId !== "" ? { lastFollowFailed: null } : {}),
+      }));
+    },
+    setLastFollowFailed(targetSessionId: string | null) {
+      setState({ lastFollowFailed: targetSessionId, followTargetSessionId: null });
+    },
     setMovementIntent(intent: { moveX: number; moveZ: number; sprint: boolean } | null) {
       setState({ movementIntent: intent });
     },

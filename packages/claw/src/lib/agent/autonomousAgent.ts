@@ -20,11 +20,12 @@ const AUTONOMOUS_TOOL_NAMES = [
   "get_occupants",
   "approach_position",
   "approach_person",
+  "follow",
   "stop",
 ] as const;
 
 const AUTONOMOUS_INSTRUCTIONS = `
-[AUTONOMOUS MODE] You may seek out others (get_occupants, then approach_person), then chat. Use chat with targetSessionId for DMs. One message per turn when talking to another agent. Stop after chat or when done. You may move and chat with any occupant; you are not restricted to your owner. Building is not available.`;
+[AUTONOMOUS MODE] You may seek out others (get_occupants, then approach_person or follow), then chat. Use chat with targetSessionId for DMs. One message per turn when talking to another agent. Stop after chat or when done. You may move and chat with any occupant; you are not restricted to your owner. Building is not available.`;
 
 /**
  * Create the Autonomous agent (ToolLoopAgent): chat, get_occupants, approach_*, stop; run_build is stubbed.
@@ -67,6 +68,7 @@ export function createAutonomousAgent(
       hasToolCall("get_occupants"),
       hasToolCall("approach_position"),
       hasToolCall("approach_person"),
+      hasToolCall("follow"),
       hasToolCall("stop"),
     ],
     maxOutputTokens: 1024,

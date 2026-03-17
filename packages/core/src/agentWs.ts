@@ -96,6 +96,17 @@ export type AgentWsCancelMoveMessage = {
   type: "cancel_move";
 };
 
+/** Follow another occupant by sessionId. Server re-paths to target's position periodically (like move_to with a moving destination). */
+export type AgentWsFollowMessage = {
+  type: "follow";
+  targetSessionId: string;
+};
+
+/** Cancel current follow (stop following). */
+export type AgentWsCancelFollowMessage = {
+  type: "cancel_follow";
+};
+
 /** All outbound Agent WebSocket message types. Send as JSON after receiving `authenticated`. */
 export type AgentWsClientMessage =
   | AgentWsInputMessage
@@ -105,7 +116,9 @@ export type AgentWsClientMessage =
   | AgentWsThinkingMessage
   | AgentWsSpeakMessage
   | AgentWsMoveToMessage
-  | AgentWsCancelMoveMessage;
+  | AgentWsCancelMoveMessage
+  | AgentWsFollowMessage
+  | AgentWsCancelFollowMessage;
 
 // --- Inbound (server → client) ---
 
@@ -164,9 +177,16 @@ export type AgentWsMoveToFailedMessage = {
   z: number;
 };
 
+/** Sent when follow failed (target left or no path). */
+export type AgentWsFollowFailedMessage = {
+  type: "follow_failed";
+  targetSessionId: string;
+};
+
 /**
  * Inbound Agent WebSocket messages. Movement: client sends move_to(x,z); server pathfinds and drives movement each tick (no waypoints sent back).
  * move_to_failed: server sends when no path; agent can inform user.
+ * follow_failed: server sends when follow target left or no path.
  */
 export type AgentWsServerMessage =
   | AgentWsAuthenticatedMessage
@@ -175,7 +195,8 @@ export type AgentWsServerMessage =
   | AgentWsHeartbeatMessage
   | AgentWsThinkingServerMessage
   | AgentWsChatServerMessage
-  | AgentWsMoveToFailedMessage;
+  | AgentWsMoveToFailedMessage
+  | AgentWsFollowFailedMessage;
 
 export function isAgentWsAuthenticated(msg: AgentWsServerMessage): msg is AgentWsAuthenticatedMessage {
   return msg.type === "authenticated";

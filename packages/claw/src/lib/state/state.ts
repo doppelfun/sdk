@@ -43,6 +43,10 @@ export type ClawState = {
   myPosition: Position3 | null;
   movementTarget: { x: number; z: number } | null;
   lastMoveToFailed: { x: number; z: number } | null;
+  /** When set, agent is following this sessionId (server-driven). Cleared on cancel_follow or follow_failed. */
+  followTargetSessionId: string | null;
+  /** Set when server sends follow_failed (target left or no path). */
+  lastFollowFailed: string | null;
   movementStopDistanceM: number;
   movementSprint: boolean;
   movementIntent: { moveX: number; moveZ: number; sprint: boolean } | null;
@@ -85,33 +89,6 @@ export type ClawState = {
   lastCatalogContext: string | null;
 };
 
-const FACE_NEARBY_RADIUS_M = 12;
-
-/**
- * Y rotation (radians) to face the nearest occupant with position.
- *
- * @param state - Current claw state (occupants, myPosition)
- * @returns Angle in radians, or undefined if no occupant in FACE_NEARBY_RADIUS_M
- */
-export function getFacingTowardNearestOccupant(state: ClawState): number | undefined {
-  const my = state.myPosition;
-  if (!my) return undefined;
-  let nearestDist2 = FACE_NEARBY_RADIUS_M * FACE_NEARBY_RADIUS_M;
-  let nearest: { x: number; z: number } | null = null;
-  for (const o of state.occupants) {
-    if (o.clientId === state.mySessionId || !o.position) continue;
-    const dx = o.position.x - my.x;
-    const dz = o.position.z - my.z;
-    const d2 = dx * dx + dz * dz;
-    if (d2 < nearestDist2 && d2 > 0.01) {
-      nearestDist2 = d2;
-      nearest = { x: o.position.x, z: o.position.z };
-    }
-  }
-  if (!nearest) return undefined;
-  return Math.atan2(nearest.x - my.x, nearest.z - my.z);
-}
-
 /**
  * Create initial ClawState for a block. wakePending is true so the first tick runs.
  *
@@ -130,6 +107,8 @@ export function createInitialState(blockSlotId: string): ClawState {
     myPosition: null,
     movementTarget: null,
     lastMoveToFailed: null,
+    followTargetSessionId: null,
+    lastFollowFailed: null,
     movementStopDistanceM: 2,
     movementSprint: false,
     movementIntent: null,

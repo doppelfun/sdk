@@ -8,6 +8,7 @@ import { State } from "mistreevous";
 import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
 import { hasEnoughCredits, MIN_BALANCE_THRESHOLD } from "../credits/index.js";
+import { isOwnerNearby } from "../../util/position.js";
 import { clawLog } from "../../util/log.js";
 
 export type TreeAgentContext = {
@@ -19,6 +20,8 @@ export type TreeAgentContext = {
   runAutonomousAgent?: () => Promise<void>;
   /** Optional: movement + drain tick. When absent, ExecuteMovementAndDrain is a no-op. */
   executeMovementAndDrain?: () => void;
+  /** Optional: move to nearest occupant (no LLM). When absent, TryMoveToNearestOccupant no-ops. */
+  tryMoveToNearestOccupant?: () => void;
 };
 
 /**
@@ -30,7 +33,7 @@ export type TreeAgentContext = {
  * @returns Agent object keyed by action/condition names
  */
 export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => State | boolean | Promise<State>> {
-  const { store, config, runObedientAgent, runAutonomousAgent, executeMovementAndDrain } = ctx;
+  const { store, config, runObedientAgent, runAutonomousAgent, executeMovementAndDrain, tryMoveToNearestOccupant } = ctx;
 
   return {
     ExecuteMovementAndDrain(): State {
@@ -72,6 +75,7 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       return State.SUCCEEDED;
     },
 
+    /** Consume wake and scheduled task first so the next tree step doesn't re-enter. */
     async RunObedientAgent(): Promise<State> {
       clawLog("tree: RunObedientAgent");
       store.clearWake();
@@ -86,9 +90,25 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       return s.lastTriggerUserId !== config.ownerUserId;
     },
 
+    /** True when we should run the autonomous LLM: real DM (lastTriggerUserId set) or cooldown elapsed. Prevents LLM spam in soul mode. */
+    CanRunAutonomousLlm(): boolean {
+      const s = store.getState();
+      if (s.lastTriggerUserId != null) return true;
+      const elapsed = Date.now() - s.lastAutonomousRunAt;
+      return elapsed >= config.autonomousLlmCooldownMs;
+    },
+
+    /** Tree-driven move (no LLM). Used when autonomous wake but cooldown not elapsed. */
+    TryMoveToNearestOccupant(): State {
+      if (tryMoveToNearestOccupant) tryMoveToNearestOccupant();
+      return State.SUCCEEDED;
+    },
+
+    /** Consume wake and owner messages first; then run LLM. Clear owner so autonomous doesn't re-run last command. */
     async RunAutonomousAgent(): Promise<State> {
       clawLog("tree: RunAutonomousAgent");
       store.clearWake();
+      store.clearOwnerMessages();
       if (runAutonomousAgent) await runAutonomousAgent();
       store.setLastAutonomousRunAt(Date.now());
       return State.SUCCEEDED;
@@ -98,7 +118,7 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       const s = store.getState();
       if (s.wakePending) return false;
       if (!config.ownerUserId || config.autonomousSoulTickMs <= 0) return false;
-      const ownerAway = s.myPosition != null && !isOwnerNearby(s, config);
+      const ownerAway = s.myPosition != null && !isOwnerNearby(s.occupants, s.myPosition, config.ownerUserId, config.ownerNearbyRadiusM);
       if (!ownerAway) return false;
       const elapsed = Date.now() - s.lastAutonomousRunAt;
       return elapsed >= config.autonomousSoulTickMs;
@@ -118,21 +138,3 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
   };
 }
 
-/**
- * True if the owner is within ownerNearbyRadiusM of the agent (for TimeForAutonomousWake).
- */
-function isOwnerNearby(
-  state: { myPosition: { x: number; z: number } | null; occupants: Array<{ userId?: string; position?: { x: number; z: number } }> },
-  config: ClawConfig
-): boolean {
-  if (!state.myPosition || !config.ownerUserId) return false;
-  const radiusM = config.ownerNearbyRadiusM;
-  const radius2 = radiusM * radiusM;
-  for (const o of state.occupants) {
-    if (o.userId !== config.ownerUserId || !o.position) continue;
-    const dx = o.position.x - state.myPosition.x;
-    const dz = o.position.z - state.myPosition.z;
-    if (dx * dx + dz * dz <= radius2) return true;
-  }
-  return false;
-}

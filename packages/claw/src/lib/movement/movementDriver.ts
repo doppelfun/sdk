@@ -4,7 +4,7 @@
 import type { DoppelClient } from "@doppelfun/sdk";
 import { buildChatSendOptions } from "../../util/chatSendOptions.js";
 import { canSendDmTo, onWeSentDm } from "../conversation.js";
-import { getFacingTowardNearestOccupant } from "../state/state.js";
+import { getFacingTowardNearestOccupant } from "../../util/position.js";
 import type { ClawStore } from "../state/index.js";
 import { BLOCK_SIZE_M } from "../../util/blockBounds.js";
 import { clawLog } from "../../util/log.js";
@@ -35,7 +35,7 @@ function applyArrival(
   options: MovementDriverOptions | undefined,
   logLabel: string
 ): void {
-  const rotY = getFacingTowardNearestOccupant(state);
+  const rotY = getFacingTowardNearestOccupant(state.occupants, state.mySessionId, state.myPosition);
   client.sendInput?.({ moveX: 0, moveZ: 0, sprint: false, jump: false, ...(rotY != null && { rotY }) });
   store.setMovementTarget(null);
   clawLog("arrived at target", logLabel);
@@ -84,7 +84,7 @@ export function movementDriverTick(
     state.autonomousEmoteStandStillUntil > 0 &&
     Date.now() < state.autonomousEmoteStandStillUntil
   ) {
-    const rotY = getFacingTowardNearestOccupant(state);
+    const rotY = getFacingTowardNearestOccupant(state.occupants, state.mySessionId, state.myPosition);
     client.sendInput?.({ moveX: 0, moveZ: 0, sprint: false, jump: false, ...(rotY != null && { rotY }) });
     return true;
   }

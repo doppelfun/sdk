@@ -53,6 +53,7 @@ export async function handleBuildFull(
   const { model, catalog, blockBounds } = resolved.ctx;
   logStepOk(TOOL_BUILD_FULL, 2, 4, "catalog entries=" + catalog.length);
 
+  // Step 3: LLM call; catch throws (e.g. network) so we never fail silently.
   logStep(TOOL_BUILD_FULL, 3, 4, "call LLM (buildFull)");
   let result: Awaited<ReturnType<typeof buildFull>>;
   try {
@@ -61,9 +62,8 @@ export async function handleBuildFull(
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    const stack = e instanceof Error ? e.stack : undefined;
     clawLog("build: build_full step 3/4 throw:", msg);
-    if (stack) clawLog("build: build_full step 3/4 stack:", stack);
+    if (e instanceof Error && e.stack) clawLog("build: build_full step 3/4 stack:", e.stack);
     logStepFailed(TOOL_BUILD_FULL, 3, 4, msg, "Check BUILD_LLM_MODEL, API key, network, and instruction.");
     return { ok: false, error: msg };
   }
@@ -76,6 +76,7 @@ export async function handleBuildFull(
     reportUsageToHub(config, store, result.usage, config.buildLlmModel);
   }
 
+  // Step 4: Persist; catch throws (e.g. createDocument hang/timeout) so we never fail silently.
   logStep(TOOL_BUILD_FULL, 4, 4, "persist MML", args.documentTarget ?? "new", args.documentId ?? "");
   let buildResult: Awaited<ReturnType<typeof persistFullBuildMml>>;
   try {

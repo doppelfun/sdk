@@ -19,6 +19,7 @@ const OBEDIENT_TOOL_NAMES = [
   "get_occupants",
   "approach_position",
   "approach_person",
+  "follow",
   "stop",
   "list_catalog",
   "list_documents",
@@ -35,8 +36,8 @@ const OBEDIENT_TOOL_NAMES = [
 const OBEDIENT_INSTRUCTIONS = `
 [OBEDIENT MODE] Do exactly one of:
 1) Conversation: reply once with the chat tool (targetSessionId = owner / last DM peer), then stop.
-2) Move: use get_occupants if needed, then approach_position or approach_person; reply with chat saying where you're moving. Then stop.
-3) Build: use list_recipes to see options. Use run_recipe with kind city/pyramid/grass/trees and optional params. For custom scenes use build_full with an instruction (always creates a new document). Use list_catalog, list_documents, get_document_content, delete_document, delete_all_documents as needed. Then stop.
+2) Move: use get_occupants if needed, then approach_position, approach_person, or follow (to follow someone); reply with chat saying where you're moving. Then stop.
+3) Build: use list_recipes to see options. Use run_recipe with kind city/pyramid/grass/trees and optional params. For custom scenes use build_full or build_with_code for complex scenes with an instruction (always creates a new document). Use list_catalog, list_documents, get_document_content, delete_document, delete_all_documents as needed. Then stop.
 Only the owner can ask you to move or build. If someone else asks, reply "Sorry, I only perform tasks for my owner." Do one action then stop.`;
 
 /**
@@ -75,6 +76,7 @@ export function createObedientAgent(
       hasToolCall("get_occupants"),
       hasToolCall("approach_position"),
       hasToolCall("approach_person"),
+      hasToolCall("follow"),
       hasToolCall("stop"),
       hasToolCall("list_recipes"),
       hasToolCall("run_recipe"),

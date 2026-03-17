@@ -1,6 +1,7 @@
 /**
  * Mistreevous behaviour tree definition (MDSL).
  * Root: sequence of ExecuteMovementAndDrain then selector over wake branches.
+ * Autonomous branch: if CanRunAutonomousLlm (real DM or cooldown elapsed) run LLM; else TryMoveToNearestOccupant (no LLM).
  * @see docs/PLAN-AGENT-WAKE-DRIVEN.md §6
  */
 
@@ -20,8 +21,14 @@ export const TREE_DEFINITION = `root {
             }
             sequence {
                 condition [HasAutonomousWake]
-                condition [HasEnoughCredits]
-                action [RunAutonomousAgent]
+                selector {
+                    sequence {
+                        condition [CanRunAutonomousLlm]
+                        condition [HasEnoughCredits]
+                        action [RunAutonomousAgent]
+                    }
+                    action [TryMoveToNearestOccupant]
+                }
             }
             sequence {
                 condition [HasAutonomousWake]

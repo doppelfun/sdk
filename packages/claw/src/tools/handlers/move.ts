@@ -1,5 +1,5 @@
 /**
- * Movement tool handlers: approach_position, approach_person, stop.
+ * Movement tool handlers: approach_position, approach_person, follow, stop.
  */
 import type { ToolContext } from "../types.js";
 import type { ClawStore } from "../../lib/state/index.js";
@@ -19,6 +19,7 @@ function clearMovement(store: ClawStore): void {
   store.setMovementTarget(null);
   store.setMovementIntent(null);
   store.setMovementSprint(false);
+  store.setFollowTargetSessionId(null);
 }
 
 /**
@@ -74,7 +75,35 @@ export async function handleApproachPerson(ctx: ToolContext) {
 }
 
 /**
- * Handle stop: clear movement target and intent, cancel move, send zero input.
+ * Handle follow: set follow target by sessionId, call client.follow. Server re-paths to target's position periodically.
+ *
+ * @param ctx - Tool context (args.sessionId)
+ * @returns ExecuteToolResult
+ */
+export async function handleFollow(ctx: ToolContext) {
+  const { client, store, args, logAction } = ctx;
+  const sessionId = typeof args.sessionId === "string" ? args.sessionId.trim() : "";
+  if (!sessionId) {
+    return { ok: false, error: "follow requires sessionId (clientId from get_occupants)." };
+  }
+  const state = store.getState();
+  const occ = state.occupants.find((o) => o.clientId === sessionId);
+  if (!occ?.position) {
+    return { ok: false, error: "follow requires an occupant with position—call get_occupants first." };
+  }
+  if (sessionId === state.mySessionId) {
+    return { ok: false, error: "Cannot follow yourself." };
+  }
+  clearMovement(store);
+  store.setFollowTargetSessionId(sessionId);
+  client.follow(sessionId);
+  clawLog("follow", sessionId);
+  logAction(`follow ${occ.username}`);
+  return { ok: true as const, summary: `following ${occ.username}` };
+}
+
+/**
+ * Handle stop: clear movement target and intent, cancel move and follow, send zero input.
  *
  * @param ctx - Tool context
  * @returns ExecuteToolResult
@@ -84,6 +113,7 @@ export async function handleStop(ctx: ToolContext) {
   const jump = ctx.args.jump === true;
   clearMovement(store);
   client.cancelMove();
+  client.cancelFollow();
   client.sendInput({ moveX: 0, moveZ: 0, sprint: false, jump });
   logAction("stop");
   return { ok: true as const, summary: "stop" };

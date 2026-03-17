@@ -1,0 +1,25 @@
+{
+  "id": "city",
+  "name": "City",
+  "description": "Recipe: city grid (streets, buildings, pyramid, lights, vehicles). Pass catalog to derive buildings/vehicles/lights.",
+  "inject": ["catalog"],
+  "inputs": [
+    { "name": "catalog", "type": "array", "optional": true, "description": "Full block catalog; recipe parses to buildings, vehicles, traffic lights" },
+    { "name": "rows", "type": "number", "optional": true, "description": "Grid rows" },
+    { "name": "gridRows", "type": "number", "optional": true, "description": "Grid rows" },
+    { "name": "cols", "type": "number", "optional": true, "description": "Grid columns" },
+    { "name": "gridCols", "type": "number", "optional": true, "description": "Grid columns" },
+    { "name": "blockSize", "type": "number", "optional": true, "description": "Distance between streets in m" },
+    { "name": "streetWidth", "type": "number", "optional": true, "description": "Street width" },
+    { "name": "setback", "type": "number", "optional": true, "description": "Building setback" },
+    { "name": "buildingSetback", "type": "number", "optional": true, "description": "Building setback" },
+    { "name": "seed", "type": "number", "optional": true, "description": "PRNG seed" },
+    { "name": "pyramidRow", "type": "number", "optional": true, "description": "Pyramid cell row" },
+    { "name": "pyramidCol", "type": "number", "optional": true, "description": "Pyramid cell col" },
+    { "name": "noPyramid", "type": "boolean", "optional": true, "description": "No pyramid in grid" },
+    { "name": "buildings", "type": "array", "optional": true, "description": "Building pool (id, name, url, width, depth, height)" },
+    { "name": "vehicleCatalogIds", "type": "array", "optional": true, "description": "Vehicle catalog IDs" },
+    { "name": "trafficLightCatalogIds", "type": "array", "optional": true, "description": "Traffic light catalog IDs" }
+  ],
+  "output": "mml"
+}

@@ -31,7 +31,7 @@ export type CatalogEntry = {
   tag?: string;
   /** URL to collision mesh blob (models). */
   collisionUrl?: string | null;
-  /** Bounding box dimensions in meters (models). For procedural generation and pathfinding. */
+  /** Bounding box dimensions in meters (models). For recipe generation and pathfinding. */
   width?: number | null;
   depth?: number | null;
   height?: number | null;

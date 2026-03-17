@@ -15,6 +15,7 @@ export const MIN_BALANCE_THRESHOLD = 0.1;
 /**
  * Report LLM usage to hub (fire-and-forget). Updates cached balance when hub returns balanceAfter.
  * No-op when skipCreditReport or !hosted or usage is null/zero.
+ * Intentionally non-blocking: never await this; the request runs in the background.
  */
 export function reportUsageToHub(
   config: ClawConfig,
@@ -29,7 +30,7 @@ export function reportUsageToHub(
   const completionTokens = Math.max(0, Math.floor(usage.completion_tokens));
   if (promptTokens === 0 && completionTokens === 0) return;
 
-  reportUsage(config.agentApiUrl, config.apiKey, {
+  void reportUsage(config.agentApiUrl, config.apiKey, {
     promptTokens,
     completionTokens,
     model: modelId,
@@ -74,7 +75,8 @@ export async function refreshBalance(
 }
 
 /**
- * Report voice (TTS) character usage to hub. No-op when !hosted or !voiceEnabled or skipCreditReport.
+ * Report voice (TTS) character usage to hub (fire-and-forget). No-op when !hosted or !voiceEnabled or skipCreditReport.
+ * Intentionally non-blocking: never await this; the request runs in the background.
  */
 export function reportVoiceUsageToHub(
   config: ClawConfig,
@@ -84,7 +86,7 @@ export function reportVoiceUsageToHub(
 ): void {
   if (config.skipCreditReport || !config.hosted || !config.voiceEnabled) return;
   if (characters <= 0) return;
-  reportVoiceUsage(config.agentApiUrl, config.apiKey, { characters })
+  void reportVoiceUsage(config.agentApiUrl, config.apiKey, { characters })
     .then((res) => {
       if (res.ok && res.balanceAfter != null) {
         setCachedBalance(store, res.balanceAfter);

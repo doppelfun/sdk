@@ -22,7 +22,6 @@ const FALLBACK = { width: 5, depth: 3, height: 5 } as const;
 const DEFAULT_BUILDING_CATEGORY_HINTS = ["building", "buildings"];
 
 export const CATEGORY_VEHICLES = "Vehicles";
-export const CATEGORY_BUILDINGS = "Buildings";
 
 function mergeDims(id: string, partial: Partial<SeedBuildingEntry>): SeedBuildingEntry {
   return {
@@ -112,16 +111,6 @@ export function getTrafficLightCatalogIds(entries: CatalogLike[]): string[] {
     }
   }
   return out;
-}
-
-export async function fetchBuildingsFromCatalog(
-  hubUrl: string,
-  blockId: string,
-  apiKey?: string
-): Promise<SeedBuildingEntry[]> {
-  const { getBlockCatalog } = await import("@doppelfun/sdk");
-  const entries = await getBlockCatalog(hubUrl, blockId, apiKey);
-  return catalogEntriesToSeedBuildings(entries);
 }
 
 export type CityCatalogFromHub = {

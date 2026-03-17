@@ -5,7 +5,8 @@ import type { ClawConfig } from "../config/index.js";
 import type { ClawStoreApi } from "../state/index.js";
 
 /**
- * Build the user message for one agent tick: block, occupants, errors, scheduled task, owner messages, recent chat, DM hint.
+ * Build the user message for one agent tick: block, occupants, errors, scheduled task, single current message, conversation history, DM hint.
+ * Only the most recent owner message is "current"; older ones are in chat history. Respond only to the current message.
  *
  * @param store - Claw store (getState)
  * @param config - Claw config (maxOwnerMessages, maxChatContext)
@@ -31,16 +32,19 @@ export function buildUserMessage(store: ClawStoreApi, config: ClawConfig): strin
     parts.push(`Scheduled task: ${state.pendingScheduledTask.instruction}`);
   }
 
-  const ownerMsgs = state.ownerMessages.slice(-(config.maxOwnerMessages || 5));
-  if (ownerMsgs.length > 0) {
-    parts.push("Owner said: " + ownerMsgs.map((m) => m.text).join(" | "));
+  // Single current message to act on (most recent only); multiple rapid messages are already in chat
+  const lastOwner = state.ownerMessages[state.ownerMessages.length - 1];
+  if (lastOwner) {
+    parts.push(`Current message to respond to: ${lastOwner.text}`);
   }
 
   const chatSlice = state.chat.slice(-(config.maxChatContext || 10));
   if (chatSlice.length > 0) {
     parts.push(
-      "Recent chat: " +
-        chatSlice.map((c) => `[${c.username}]: ${c.message}`).join(" ")
+      "Conversation history (for context only; do not re-execute or re-acknowledge past commands):"
+    );
+    parts.push(
+      chatSlice.map((c) => `[${c.username}]: ${c.message}`).join(" ")
     );
   }
 

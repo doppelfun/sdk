@@ -1,5 +1,5 @@
 /**
- * Procedural city layout: axis-aligned street grid + greedy building packing.
+ * Recipe city layout: axis-aligned street grid + greedy building packing.
  */
 import type { SeedBuildingEntry } from "./catalog-bridge.js";
 import { mulberry32 } from "../prng.js";

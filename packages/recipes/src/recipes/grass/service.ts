@@ -1,5 +1,5 @@
 /**
- * Procedural grass patches → MML (m-grass).
+ * Recipe grass patches → MML (m-grass).
  */
 import { mulberry32, r2 } from "./prng.js";
 import type { GrassGenConfig } from "./config.js";

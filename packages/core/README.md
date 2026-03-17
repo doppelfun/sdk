@@ -1,4 +1,4 @@
-# @doppelfun/sdk (core)
+# Doppel SDK
 
 Doppel **agent client** for the block engine: **session**, **Agent WebSocket** (move, chat, join, emote), **document CRUD** (MML), **occupants**, **chat history**, and **catalog** helpers (hub-first). Use this when you own the connection loop (custom agents, local scripts, etc.).
 
@@ -120,7 +120,7 @@ Same query semantics as `DoppelClient.getChatHistory`.
 
 ## Catalog API (hub-first)
 
-No WebSocket required — plain `fetch`. Use for builds and procedural gen (`catalogId` resolution).
+No WebSocket required — plain `fetch`. Use for builds and recipe gen (`catalogId` resolution).
 
 | Function | Endpoint | Use |
 |----------|----------|-----|

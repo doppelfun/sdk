@@ -17,7 +17,11 @@ const LOCAL_Z_MIN = BOUNDS_MARGIN;
 const LOCAL_Z_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
 export const DEFAULT_STOP_DISTANCE_M = 1;
 
-export type MovementDriverOptions = { voiceId?: string | null };
+export type MovementDriverOptions = {
+  voiceId?: string | null;
+  /** When voice is used for arrival DM, call with character count for usage telemetry. */
+  onVoiceSent?: (characters: number) => void;
+};
 
 /**
  * On arrival at movement target: send zero input, clear target, optionally send pendingGoTalkToAgent DM and clear lastBuildTarget.
@@ -37,10 +41,14 @@ function applyArrival(
   clawLog("arrived at target", logLabel);
   const pending = state.pendingGoTalkToAgent;
   if (pending && canSendDmTo(store, pending.targetSessionId)) {
+    const voiceId = options?.voiceId;
     client.sendChat?.(
       pending.openingMessage,
-      buildChatSendOptions({ targetSessionId: pending.targetSessionId, voiceId: options?.voiceId }) ?? undefined
+      buildChatSendOptions({ targetSessionId: pending.targetSessionId, voiceId }) ?? undefined
     );
+    if (voiceId && options?.onVoiceSent) {
+      options.onVoiceSent(pending.openingMessage.length);
+    }
     store.setLastAgentChatMessage(pending.openingMessage);
     onWeSentDm(store, pending.targetSessionId);
     store.setPendingGoTalkToAgent(null);

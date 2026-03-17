@@ -12,6 +12,8 @@ export type ChatEntry = {
   userId?: string;
   sessionId?: string;
   channelId?: string;
+  /** Idempotency key (e.g. hash(sessionId + message)); skip push if already in chat. */
+  id?: string;
 };
 
 export type OwnerMessage = { text: string; at: number };

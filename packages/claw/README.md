@@ -58,12 +58,12 @@ The CLI bootstraps, joins a block (from profile default or `BLOCK_ID`), connects
 
 ## Recipes
 
-The Obedient agent can generate procedural MML via **recipes** from [@doppelfun/recipes](https://github.com/doppelfun/doppel-sdk/tree/main/packages/recipes). Recipes are pure generators (no LLM): params in → MML out. Claw wires two tools:
+The Obedient agent can generate MML via **recipes** from [@doppelfun/recipes](https://github.com/doppelfun/doppel-sdk/tree/main/packages/recipes). Recipes are pure generators (no LLM): params in → MML out. Claw wires two tools:
 
 - **`list_recipes`** — No args. Returns available recipe names (e.g. `city`, `pyramid`, `grass`, `trees`) so the agent can choose before calling `run_recipe`.
-- **`run_recipe`** — `kind` (city / pyramid / grass / trees), optional `documentMode` (new / replace / append), `documentId`, and `params` per recipe (e.g. `rows`, `cols`, `blockSize` for city). Writes MML via the build document API (new document, or replace/append by id).
+- **`run_recipe`** — `kind` (city / pyramid / grass / trees), optional `documentMode` (new / replace / append), `documentId`, and `params` per recipe. For city, Claw passes the full catalog in `params.catalog`; the recipe parses it to buildings, vehicles, and traffic lights. Writes MML via the build document API (new document, or replace/append by id).
 
-Recipes live in the recipes package; claw depends on `@doppelfun/recipes` and calls `listProceduralKinds()` and `runProceduralMml()` in the tool handlers. For custom scenes the agent uses `build_full` / `build_incremental` instead.
+Recipes live in the recipes package; claw depends on `@doppelfun/recipes` and calls `listRecipes()` and `runRecipe()` in the tool handlers. For custom scenes the agent uses `build_full` / `build_incremental` instead.
 
 ## Architecture
 

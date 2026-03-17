@@ -4,12 +4,10 @@ export type { BuildingPlacement, CityLayoutConfig, CityLayoutResult, StreetSegme
 export type { SeedBuildingEntry } from "./catalog-bridge.js";
 export {
   catalogEntriesToSeedBuildings,
-  fetchBuildingsFromCatalog,
   fetchCityCatalogFromHub,
   getCatalogIdsByCategory,
   getTrafficLightCatalogIds,
   CATEGORY_VEHICLES,
-  CATEGORY_BUILDINGS,
   normalizeBuildingsParam,
   type CatalogLike,
   type CityCatalogFromHub,

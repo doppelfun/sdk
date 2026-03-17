@@ -1,5 +1,5 @@
 /**
- * Procedural city MML: streets, buildings, pyramid, lights, vehicles.
+ * Recipe city MML: streets, buildings, pyramid, lights, vehicles.
  * Uses layout for grid + packing; emits MML for models, cubes, grass, etc.
  */
 import {

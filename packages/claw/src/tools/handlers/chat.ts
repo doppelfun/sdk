@@ -53,6 +53,7 @@ export async function handleChat(ctx: ToolContext) {
     }
     store.setLastAgentChatMessage(text);
     store.setLastTickSentChat(true);
+    store.clearOwnerMessages();
     if (targetSessionId) onWeSentDm(store, targetSessionId);
     else store.setState({ lastDmPeerSessionId: null });
   }

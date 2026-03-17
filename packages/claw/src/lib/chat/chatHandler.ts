@@ -7,6 +7,7 @@ import type { ClawConfig } from "../config/index.js";
 import { clearConversation, onWeReceivedDm } from "../conversation.js";
 import { requestWake } from "../../wake.js";
 import { isDmChannel } from "../../util/dm.js";
+import { hashString } from "../../util/hash.js";
 
 /** Incoming chat message payload from engine (username, message, channelId, etc.). */
 export type ChatPayload = {
@@ -41,10 +42,12 @@ export function handleChatMessage(
   const username = typeof payload.username === "string" ? payload.username : "?";
   const message =
     typeof payload.message === "string" ? payload.message : typeof payload.text === "string" ? payload.text : "";
+  const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : undefined;
   const createdAt =
     typeof payload.createdAt === "number" ? payload.createdAt : (payload.timestamp ?? Date.now()) as number;
+  const idempotencyKey = hashString((sessionId ?? "") + "|" + createdAt + "|" + message);
+  if (state.chat.some((c) => c.id === idempotencyKey)) return;
   const userId = typeof payload.userId === "string" && payload.userId.trim() ? payload.userId.trim() : undefined;
-  const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : undefined;
   const targetSessionId =
     typeof payload.targetSessionId === "string" && payload.targetSessionId.trim()
       ? payload.targetSessionId.trim()
@@ -88,6 +91,7 @@ export function handleChatMessage(
       userId,
       sessionId,
       channelId: typeof payload.channelId === "string" ? payload.channelId : undefined,
+      id: idempotencyKey,
     },
     config.maxChatContext
   );

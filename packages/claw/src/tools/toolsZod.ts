@@ -1,7 +1,9 @@
 /**
  * Zod schemas and registry for claw tools (chat, move, get_occupants, build/recipe tools).
+ * Recipe list for descriptions comes from lib/build/recipeKinds (single source).
  */
 import { z } from "zod/v4";
+import { RECIPE_KINDS_LIST } from "../lib/build/recipeKinds.js";
 import {
   listCatalogSchema,
   listDocumentsSchema,
@@ -35,10 +37,7 @@ export const chatSchema = z.object({
 
 export const getOccupantsSchema = z.object({});
 
-/** List recipes: no args. Returns recipe names (city, pyramid, grass, trees). */
 export const listRecipesSchema = z.object({});
-
-/** run_recipe: kind, documentMode?, documentId?, params? (re-exported from build). */
 export { runRecipeSchema };
 
 /** Get the Zod schema for a tool by name (for parsing/validation). */
@@ -96,14 +95,12 @@ export const CLAW_TOOL_REGISTRY: Array<{
   },
   {
     name: "list_recipes",
-    description:
-      "List available recipe names (e.g. city, pyramid, grass, trees). Call before run_recipe to see options.",
+    description: `List available recipes (${RECIPE_KINDS_LIST}). Call before run_recipe to see options.`,
     schema: listRecipesSchema,
   },
   {
     name: "run_recipe",
-    description:
-      "Run a recipe to generate MML (no LLM). kind: city, pyramid, grass, or trees. documentMode: new (default), replace, or append. Params per recipe (e.g. rows, cols, blockSize for city).",
+    description: `Run a recipe to generate MML (no LLM). kind: ${RECIPE_KINDS_LIST}. documentMode: new, replace, or append. Params per recipe (see list_recipes).`,
     schema: runRecipeSchema,
   },
   {

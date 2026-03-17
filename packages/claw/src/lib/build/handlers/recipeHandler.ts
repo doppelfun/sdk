@@ -1,14 +1,14 @@
 /**
- * Build handler: run_recipe.
- * Runs a recipe (city, pyramid, grass, trees) via @doppelfun/recipes. No LLM.
+ * run_recipe handler: run a recipe via @doppelfun/recipes (no LLM).
+ * Output behavior: mml → write to document; message / json → return string to agent (no document).
  */
 import type { DoppelClient } from "@doppelfun/sdk";
 import {
-  runProceduralMml,
-  catalogEntriesToSeedBuildings,
-  getCatalogIdsByCategory,
-  getTrafficLightCatalogIds,
-  CATEGORY_VEHICLES,
+  runRecipe,
+  getRecipeManifests,
+  RECIPE_INJECT_KEYS,
+  type RecipeInjectKey,
+  type RecipeOutputType,
 } from "@doppelfun/recipes";
 import type { ClawStore } from "../../state/index.js";
 import type { ClawConfig } from "../../config/index.js";
@@ -17,14 +17,18 @@ import { isDocumentIdUuid, DOCUMENT_ID_UUID_HINT } from "../documents.js";
 import { clawLog } from "../../../util/log.js";
 import type { BuildToolResult } from "../buildSteps.js";
 
+/** Normalize documentMode from tool args. */
+function normalizeDocumentMode(raw: string): "new" | "replace" | "append" {
+  const mode = raw.trim().toLowerCase();
+  if (mode === "replace" || mode === "replace_current" || mode === "update") return "replace";
+  if (mode === "append" || mode === "append_current") return "append";
+  return "new";
+}
+
 /**
- * Run a recipe to generate MML (city, pyramid, grass, trees) via @doppelfun/recipes. No LLM.
- *
- * @param client - Engine client (createDocument, updateDocument, appendDocument)
- * @param store - Claw store (documentsByBlockSlot)
- * @param config - Claw config (for catalog when kind is city)
- * @param args - kind, documentMode (new|replace|append), documentId?, params?
- * @returns BuildToolResult with summary (e.g. "generated city scene (new document ...)")
+ * Run a recipe; behavior depends on manifest.output.
+ * If "mml": create/update/append a document with the output. If "message" or "json": return output to the agent (no document).
+ * If the recipe manifest lists "inject" keys (e.g. "catalog"), we load that state and add it to params.
  */
 export async function handleRunRecipe(
   client: DoppelClient,
@@ -39,65 +43,75 @@ export async function handleRunRecipe(
 ): Promise<BuildToolResult> {
   const kind = args.kind?.trim().toLowerCase() || "";
   clawLog("build: run_recipe", kind, "documentMode=" + (args.documentMode ?? "new"));
-  const state = store.getState();
+
+  const manifests = getRecipeManifests();
+  const knownKinds = manifests.map((m) => m.id).join(", ");
   if (!kind) {
     clawLog("build: run_recipe error", "missing kind");
-    return { ok: false, error: "run_recipe requires kind (city, pyramid, grass, or trees)" };
+    return { ok: false, error: `run_recipe requires kind (one of: ${knownKinds}). Call list_recipes.` };
   }
 
-  const modeRaw = typeof args.documentMode === "string" ? args.documentMode.trim().toLowerCase() : "";
-  const documentMode =
-    modeRaw === "replace" || modeRaw === "replace_current" || modeRaw === "update"
-      ? "replace"
-      : modeRaw === "append" || modeRaw === "append_current"
-        ? "append"
-        : "new";
-
+  const documentMode = normalizeDocumentMode(
+    typeof args.documentMode === "string" ? args.documentMode : ""
+  );
   const raw: Record<string, unknown> = {
     kind,
     documentMode,
     documentId: args.documentId,
-    params: args.params ?? {},
+    params: { ...(args.params ?? {}) },
   };
 
-  // City recipe needs catalog for buildings and traffic
-  if (kind === "city") {
-    try {
-      const catalog = await loadCatalogEntries(config);
-      const buildings = catalogEntriesToSeedBuildings(catalog);
-      const vehicleCatalogIds = getCatalogIdsByCategory(catalog, CATEGORY_VEHICLES);
-      const trafficLightCatalogIds = getTrafficLightCatalogIds(catalog);
-      const params = (raw.params as Record<string, unknown>) ?? {};
-      if (buildings.length > 0) {
-        (params as Record<string, unknown>).buildings = buildings.map(
-          (b: { id: string; name: string; url: string; width?: number; depth?: number; height?: number }) => ({
-            id: b.id,
-            name: b.name,
-            url: b.url,
-            width: b.width,
-            depth: b.depth,
-            height: b.height,
-          })
-        );
+  // Inject only allowed state keys; any other key in manifest.inject is ignored
+  const manifest = manifests.find((m) => m.id.trim().toLowerCase() === kind);
+  const injectAllowSet = new Set(RECIPE_INJECT_KEYS);
+  const requestedInject = Array.isArray(manifest?.inject) ? manifest.inject : [];
+  const allowedKeys: RecipeInjectKey[] = requestedInject.filter((k) =>
+    injectAllowSet.has(k as RecipeInjectKey)
+  );
+  if (allowedKeys.length > 0) {
+    const params = raw.params as Record<string, unknown>;
+    if (allowedKeys.includes("catalog")) {
+      try {
+        const catalog = await loadCatalogEntries(config);
+        if (catalog.length > 0) params.catalog = catalog;
+      } catch {
+        /* omit catalog on failure */
       }
-      if (vehicleCatalogIds.length > 0) (params as Record<string, unknown>).vehicleCatalogIds = vehicleCatalogIds;
-      if (trafficLightCatalogIds.length > 0)
-        (params as Record<string, unknown>).trafficLightCatalogIds = trafficLightCatalogIds;
-      raw.params = params;
-    } catch {
-      // fallback: empty building list
+    }
+    if (allowedKeys.includes("currentDocument")) {
+      const state = store.getState();
+      const blockDoc = state.documentsByBlockSlot[state.blockSlotId];
+      params.currentDocument = blockDoc?.mml ?? null;
+    }
+    if (allowedKeys.includes("occupants")) {
+      const state = store.getState();
+      params.occupants = state.occupants;
     }
   }
 
-  let mml: string;
+  let output: string;
   try {
-    mml = runProceduralMml(kind, raw);
+    output = runRecipe(kind, raw);
   } catch (e) {
     const err = e instanceof Error ? e.message : "run_recipe failed";
     clawLog("build: run_recipe error", err);
     return { ok: false, error: err };
   }
 
+  const outputType: RecipeOutputType = manifest?.output ?? "mml";
+
+  // message / json: return output to agent; no document write
+  if (outputType === "message") {
+    clawLog("build: run_recipe ok", kind, "message");
+    return { ok: true, summary: output || `Recipe ${kind} produced no message.` };
+  }
+  if (outputType === "json") {
+    clawLog("build: run_recipe ok", kind, "json");
+    return { ok: true, summary: output || "{}" };
+  }
+
+  // mml: write to document
+  const state = store.getState();
   const targetDocumentId =
     typeof args.documentId === "string" && args.documentId.trim() ? args.documentId.trim() : null;
   if (
@@ -116,8 +130,8 @@ export async function handleRunRecipe(
 
   try {
     if (documentMode === "new") {
-      const { documentId: newId } = await client.createDocument(mml);
-      store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: newId, mml });
+      const { documentId: newId } = await client.createDocument(output);
+      store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: newId, mml: output });
       clawLog("build: run_recipe ok", kind, "new document", newId);
       return { ok: true, summary: `generated ${kind} scene (new document ${newId})` };
     }
@@ -129,25 +143,25 @@ export async function handleRunRecipe(
             const res = await client.getDocumentContent(targetId);
             priorMml = res.content;
           } catch {
-            // append may still work
+            /* append may still work */
           }
         }
-        await client.appendDocument(targetId, mml);
-        const newMml = priorMml ? `${priorMml}\n${mml}` : mml;
+        await client.appendDocument(targetId, output);
+        const newMml = priorMml ? `${priorMml}\n${output}` : output;
         store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: targetId, mml: newMml });
       } else {
-        const { documentId: newId } = await client.createDocument(mml);
-        store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: newId, mml });
+        const { documentId: newId } = await client.createDocument(output);
+        store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: newId, mml: output });
       }
       clawLog("build: run_recipe ok", kind, "appended");
       return { ok: true, summary: `generated ${kind} scene (appended)` };
     }
     if (targetId) {
-      await client.updateDocument(targetId, mml);
-      store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: targetId, mml });
+      await client.updateDocument(targetId, output);
+      store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: targetId, mml: output });
     } else {
-      const { documentId: newId } = await client.createDocument(mml);
-      store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: newId, mml });
+      const { documentId: newId } = await client.createDocument(output);
+      store.mergeDocumentsByBlockSlot(state.blockSlotId, { documentId: newId, mml: output });
     }
     clawLog("build: run_recipe ok", kind, "replaced");
     return { ok: true, summary: `generated ${kind} scene (replaced)` };

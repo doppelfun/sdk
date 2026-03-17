@@ -1,7 +1,7 @@
 {
   "id": "trees",
   "name": "Trees",
-  "description": "Procedural tree placement (m-model catalog ids)",
+  "description": "Recipe: tree placement (m-model catalog ids)",
   "inputs": [
     { "name": "count", "type": "number", "optional": true, "description": "Number of trees" },
     { "name": "catalogId", "type": "string", "optional": true, "description": "Single catalog id (e.g. def-tree)" },

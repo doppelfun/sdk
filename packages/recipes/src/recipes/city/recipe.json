@@ -1,8 +1,10 @@
 {
   "id": "city",
   "name": "City",
-  "description": "Procedural city grid: streets, buildings, pyramid, lights, vehicles",
+  "description": "Recipe: city grid (streets, buildings, pyramid, lights, vehicles). Pass catalog to derive buildings/vehicles/lights.",
+  "inject": ["catalog"],
   "inputs": [
+    { "name": "catalog", "type": "array", "optional": true, "description": "Full block catalog; recipe parses to buildings, vehicles, traffic lights" },
     { "name": "rows", "type": "number", "optional": true, "description": "Grid rows" },
     { "name": "gridRows", "type": "number", "optional": true, "description": "Grid rows" },
     { "name": "cols", "type": "number", "optional": true, "description": "Grid columns" },

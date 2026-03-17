@@ -12,9 +12,20 @@ export type CatalogEntry = {
   width?: number | null;
   depth?: number | null;
   height?: number | null;
+  triangleCount?: number;
 };
 
-type SdkEntry = { id?: string; tag?: string; name?: string; url?: string; category?: string; width?: number | null; depth?: number | null; height?: number | null };
+type SdkEntry = {
+  id?: string;
+  tag?: string;
+  name?: string;
+  url?: string;
+  category?: string;
+  width?: number | null;
+  depth?: number | null;
+  height?: number | null;
+  triangleCount?: number;
+};
 
 function mapEntry(e: SdkEntry): CatalogEntry {
   return {
@@ -25,6 +36,7 @@ function mapEntry(e: SdkEntry): CatalogEntry {
     width: e.width,
     depth: e.depth,
     height: e.height,
+    triangleCount: e.triangleCount,
   };
 }
 

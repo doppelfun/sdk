@@ -1,7 +1,7 @@
 {
   "id": "grass",
   "name": "Grass",
-  "description": "Procedural grass patches (m-grass)",
+  "description": "Recipe: grass patches (m-grass)",
   "inputs": [
     { "name": "patches", "type": "number", "optional": true, "description": "Number of patches" },
     { "name": "count", "type": "number", "optional": true, "description": "Blades per patch" },

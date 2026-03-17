@@ -9,7 +9,7 @@ import { runObedientAgentTick } from "./lib/agent/obedientAgent.js";
 import { runAutonomousAgentTick } from "./lib/agent/autonomousAgent.js";
 import { drainPendingReply } from "./lib/conversation.js";
 import { movementDriverTick } from "./lib/movement/index.js";
-import { reportUsageToHub } from "./lib/credits/index.js";
+import { reportUsageToHub, reportVoiceUsageToHub } from "./lib/credits/index.js";
 import { createAgentLoop, type AgentLoop } from "./lib/tree/index.js";
 import type { ClawStore } from "./lib/state/index.js";
 import type { ClawConfig } from "./lib/config/index.js";
@@ -57,13 +57,18 @@ export function createRunner(options: RunnerOptions): AgentLoop {
           if (result.ok && result.replyText && !state.lastTickSentChat) {
             clawLog("runner: sending fallback chat", result.replyText.slice(0, 80));
             const dmTarget = state.lastDmPeerSessionId ?? undefined;
+            const voiceId = config.voiceId ?? undefined;
             client.sendChat?.(result.replyText, {
               targetSessionId: dmTarget,
-              voiceId: config.voiceId ?? undefined,
+              voiceId,
             });
+            if (voiceId && config.voiceEnabled) {
+              reportVoiceUsageToHub(config, store, result.replyText.length, onUsageReportFailure);
+            }
             store.setLastAgentChatMessage(result.replyText);
             store.setLastTickSentChat(true);
           }
+          if (result.ok) store.clearOwnerMessages();
         }
       : undefined;
 
@@ -81,19 +86,30 @@ export function createRunner(options: RunnerOptions): AgentLoop {
           if (result.ok && result.replyText && !state.lastTickSentChat) {
             clawLog("runner: sending fallback chat", result.replyText.slice(0, 80));
             const dmTarget = state.lastDmPeerSessionId ?? undefined;
+            const voiceId = config.voiceId ?? undefined;
             client.sendChat?.(result.replyText, {
               targetSessionId: dmTarget,
-              voiceId: config.voiceId ?? undefined,
+              voiceId,
             });
+            if (voiceId && config.voiceEnabled) {
+              reportVoiceUsageToHub(config, store, result.replyText.length, onUsageReportFailure);
+            }
             store.setLastAgentChatMessage(result.replyText);
             store.setLastTickSentChat(true);
           }
+          if (result.ok) store.clearOwnerMessages();
         }
       : undefined;
 
   const defaultExecuteMovementAndDrain = () => {
     if (!client) return;
-    movementDriverTick(client, store, { voiceId: config.voiceId });
+    movementDriverTick(client, store, {
+      voiceId: config.voiceId,
+      onVoiceSent:
+        config.voiceEnabled && config.voiceId
+          ? (characters) => reportVoiceUsageToHub(config, store, characters, onUsageReportFailure)
+          : undefined,
+    });
     const pending = drainPendingReply(store);
     if (pending) {
       clawLog("runner: drain pending DM", pending.targetSessionId, pending.text.slice(0, 40));

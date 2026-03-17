@@ -45,7 +45,7 @@ async function loadRecipes(): Promise<RecipeEntry[]> {
 
 const RECIPES = await loadRecipes();
 
-/** Build kind → run map; throws if duplicate recipe id. */
+/** kind (lowercase id) → run function. Throws on duplicate id. */
 function buildHandlerMap(): Record<string, RecipeRunner> {
   const map: Record<string, RecipeRunner> = {};
   for (const { manifest, run } of RECIPES) {
@@ -58,26 +58,22 @@ function buildHandlerMap(): Record<string, RecipeRunner> {
 
 const HANDLERS = buildHandlerMap();
 
-/**
- * Run a recipe by kind. raw must contain kind at top level and params under raw.params.
- * @throws if kind is unknown
- */
-export function runProceduralMml(kind: string, raw: Record<string, unknown>): string {
+/** Run a recipe by kind. raw must include kind and params; returns string (MML, message, or JSON per manifest.output). */
+export function runRecipe(kind: string, raw: Record<string, unknown>): string {
   const k = kind.trim().toLowerCase();
   const handler = HANDLERS[k];
   if (!handler) {
-    const known = Object.keys(HANDLERS).join(", ");
-    throw new Error(`Unknown recipe kind "${kind}". Known kinds: ${known}`);
+    throw new Error(`Unknown recipe kind "${kind}". Known: ${Object.keys(HANDLERS).join(", ")}`);
   }
   return handler(raw);
 }
 
-/** List all registered recipe ids (e.g. for claw list_recipes tool). */
-export function listProceduralKinds(): string[] {
+/** Registered recipe ids (for list_recipes / schema validation). */
+export function listRecipes(): string[] {
   return Object.keys(HANDLERS);
 }
 
-/** All recipe manifests for tool registration (inputs/outputs from recipe.json). */
+/** Manifests for tool registration and inject (e.g. catalog) lookup. */
 export function getRecipeManifests(): RecipeManifest[] {
   return RECIPES.map((r) => r.manifest);
 }

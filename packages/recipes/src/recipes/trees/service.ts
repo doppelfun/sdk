@@ -1,5 +1,5 @@
 /**
- * Procedural tree placement → MML (m-model).
+ * Recipe tree placement → MML (m-model).
  */
 import { mulberry32, r2, deg } from "./prng.js";
 import type { TreesGenConfig } from "./config.js";

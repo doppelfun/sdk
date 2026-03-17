@@ -58,12 +58,19 @@ function createClawStore(blockSlotId: string) {
 
     // --- Chat / owner ---
     pushChat(entry: ChatEntry, max: number) {
-      setState((s) => ({ chat: [...s.chat, entry].slice(-max) }));
+      setState((s) => {
+        if (entry.id != null && s.chat.some((c) => c.id === entry.id)) return s;
+        return { chat: [...s.chat, entry].slice(-max) };
+      });
     },
     pushOwnerMessage(text: string, max: number) {
       setState((s) => ({
         ownerMessages: [...s.ownerMessages, { text, at: Date.now() }].slice(-max),
       }));
+    },
+    /** Clear owner messages after responding so only the next new message is "current". */
+    clearOwnerMessages() {
+      setState({ ownerMessages: [] });
     },
 
     // --- Core ---

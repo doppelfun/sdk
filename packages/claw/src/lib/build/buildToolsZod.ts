@@ -2,11 +2,14 @@
  * Zod schemas for build tools (list_catalog, list_documents, get_document_content,
  * list_recipes, run_recipe, build_full, build_incremental, build_with_code,
  * delete_document, delete_all_documents).
+ * Recipe kinds come from lib/build/recipeKinds (single source from @doppelfun/recipes).
  */
 import { z } from "zod/v4";
+import { RECIPE_KINDS } from "./recipeKinds.js";
 
 const DOCUMENT_ID_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** documentId must be a UUID from list_documents (used by build/recipe tools). */
 const documentIdUuidOptional = z
   .string()
   .optional()
@@ -55,28 +58,26 @@ export const deleteDocumentSchema = z.object({
 
 export const deleteAllDocumentsSchema = z.object({});
 
-/** Normalize kind aliases (e.g. "procedural-city" from LLM) to recipe id. */
-const kindAliases: Record<string, "city" | "pyramid" | "grass" | "trees"> = {
-  "procedural-city": "city",
-  procedural_city: "city",
-  citygrid: "city",
-  "procedural-pyramid": "pyramid",
-  procedural_pyramid: "pyramid",
-  "procedural-grass": "grass",
-  procedural_grass: "grass",
-  "procedural-trees": "trees",
-  procedural_trees: "trees",
-};
+/** Alias map: LLM-friendly names (recipe-X, procedural-X) → canonical recipe id. */
+const kindAliases: Record<string, string> = {};
+for (const id of RECIPE_KINDS) {
+  kindAliases[`recipe-${id}`] = id;
+  kindAliases[`recipe_${id}`] = id;
+  kindAliases[`procedural-${id}`] = id;
+  kindAliases[`procedural_${id}`] = id;
+}
 
 export const runRecipeSchema = z.object({
   kind: z
     .string()
     .transform((s) => kindAliases[s.trim().toLowerCase()] ?? s.trim().toLowerCase())
-    .pipe(z.enum(["city", "pyramid", "grass", "trees"]))
-    .describe('Recipe kind: city, pyramid, grass, or trees.'),
+    .refine((k) => RECIPE_KINDS.includes(k), {
+      message: `Recipe kind must be one of: ${RECIPE_KINDS.join(", ")}. Call list_recipes to see options.`,
+    })
+    .describe(`Recipe kind: one of ${RECIPE_KINDS.join(", ")}.`),
   documentMode: z.string().optional().describe('Optional. "new", "replace", or "append".'),
   documentId: documentIdUuidOptional,
-  params: z.record(z.string(), z.unknown()).optional().describe("Params per recipe (e.g. rows, cols, blockSize for city)."),
+  params: z.record(z.string(), z.unknown()).optional().describe("Params per recipe (see list_recipes / recipe manifest)."),
 });
 
 export type BuildToolArgs = {

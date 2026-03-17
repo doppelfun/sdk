@@ -1,9 +1,8 @@
 /**
- * Build and recipe tool handlers. Wrap build lib handlers for use with executeTool (ToolContext).
- * list_recipes calls @doppelfun/recipes; run_recipe and others use build handlers.
+ * Build and recipe tool handlers. Wrap build lib handlers for executeTool (ToolContext).
  */
 import type { ToolContext, ExecuteToolResult } from "../types.js";
-import { listProceduralKinds } from "@doppelfun/recipes";
+import { RECIPE_KINDS } from "../../lib/build/recipeKinds.js";
 import {
   handleListCatalog,
   handleListDocuments,
@@ -37,12 +36,11 @@ export const handleBuildWithCodeTool = wrapBuildHandler(handleBuildWithCode as B
 export const handleDeleteDocumentTool = wrapBuildHandler(handleDeleteDocument as BuildHandler);
 export const handleDeleteAllDocumentsTool = wrapBuildHandler(handleDeleteAllDocuments as BuildHandler);
 
-/** List available recipe names from @doppelfun/recipes (city, pyramid, grass, trees). */
+/** List available recipe names (from recipeKinds). */
 export async function handleListRecipes(_ctx: ToolContext): Promise<ExecuteToolResult> {
-  const kinds = listProceduralKinds();
   const summary =
-    kinds.length > 0
-      ? `Available recipes: ${kinds.join(", ")}. Use run_recipe with kind=<name> and optional params (e.g. rows, cols, blockSize for city).`
+    RECIPE_KINDS.length > 0
+      ? `Available recipes: ${RECIPE_KINDS.join(", ")}. Use run_recipe with kind and optional params.`
       : "No recipes available.";
   return { ok: true, summary };
 }

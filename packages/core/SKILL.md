@@ -27,7 +27,7 @@ Use when integrating with **doppel-engine**: session, **Agent WebSocket** (move,
 
 ## Catalog (no WebSocket)
 
-Use for LLM/build pipelines and procedural gen:
+Use for LLM/build pipelines and recipe gen:
 
 - **`getBlockCatalog(hubUrl, blockId, apiKey?)`** — GET /api/blocks/:id/catalog (full entries; optional Bearer).
 - **`listCatalog(hubUrl, params?, apiKey?)`** — GET /api/catalog?type&category&blockId.

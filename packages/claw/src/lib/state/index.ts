@@ -11,4 +11,5 @@ export {
   type Position3,
   type BuildTarget,
   type BlockDocument,
+  type WanderState,
 } from "./state.js";

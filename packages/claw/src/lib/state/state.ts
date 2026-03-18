@@ -22,6 +22,16 @@ export type Position3 = { x: number; y: number; z: number };
 
 export type BuildTarget = { x: number; z: number };
 
+/** Random wander state (aligned with engine NpcDriver heading/speed behavior). */
+export type WanderState = {
+  heading: number;
+  targetHeading: number;
+  speed: number;
+  targetSpeed: number;
+  nextHeadingRetargetAt: number;
+  nextSpeedRetargetAt: number;
+};
+
 /** Scheduled task from cron wake; consumed by Obedient agent. */
 export type PendingScheduledTask = {
   taskId: string;
@@ -50,6 +60,8 @@ export type ClawState = {
   movementStopDistanceM: number;
   movementSprint: boolean;
   movementIntent: { moveX: number; moveZ: number; sprint: boolean } | null;
+  /** When set, movement driver uses this for random wander when no target/intent (engine NPC-style). */
+  wanderState: WanderState | null;
   lastBuildTarget: BuildTarget | null;
   /** When set, movement driver sends greeting then clears. */
   pendingGoTalkToAgent: { targetSessionId: string; openingMessage: string } | null;
@@ -112,6 +124,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     movementStopDistanceM: 2,
     movementSprint: false,
     movementIntent: null,
+    wanderState: null,
     lastBuildTarget: null,
     pendingGoTalkToAgent: null,
     autonomousEmoteStandStillUntil: 0,

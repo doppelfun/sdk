@@ -104,6 +104,9 @@ function createClawStore(blockSlotId: string) {
     setMovementIntent(intent: { moveX: number; moveZ: number; sprint: boolean } | null) {
       setState({ movementIntent: intent });
     },
+    setWanderState(wander: ClawState["wanderState"]) {
+      setState({ wanderState: wander });
+    },
     setLastBuildTarget(target: BuildTarget | null) {
       setState({ lastBuildTarget: target });
     },

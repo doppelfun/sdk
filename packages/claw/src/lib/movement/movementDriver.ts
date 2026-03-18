@@ -1,11 +1,13 @@
 /**
  * Movement driver: apply movementIntent or check arrival for movementTarget (server-driven move_to).
+ * When idle (no target, no intent), runs random wander (engine NPC-style heading/speed).
  */
 import type { DoppelClient } from "@doppelfun/sdk";
 import { buildChatSendOptions } from "../../util/chatSendOptions.js";
 import { canSendDmTo, onWeSentDm } from "../conversation.js";
 import { getFacingTowardNearestOccupant } from "../../util/position.js";
 import type { ClawStore } from "../state/index.js";
+import type { WanderState } from "../state/index.js";
 import { BLOCK_SIZE_M } from "../../util/blockBounds.js";
 import { clawLog } from "../../util/log.js";
 
@@ -16,6 +18,88 @@ const LOCAL_X_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
 const LOCAL_Z_MIN = BOUNDS_MARGIN;
 const LOCAL_Z_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
 export const DEFAULT_STOP_DISTANCE_M = 1;
+
+// --- Random wander (aligned with engine NpcDriver) ---
+const HEADING_RETARGET_MS = { min: 800, max: 2800 };
+const SPEED_RETARGET_MS = { min: 600, max: 2200 };
+/** Below this speed we send 0,0 so walk animation doesn't play. */
+const WANDER_SPEED_THRESHOLD = 0.08;
+
+function randomRange(min: number, max: number): number {
+  return min + Math.random() * (max - min);
+}
+
+function normalizeAngle(angle: number): number {
+  let out = angle;
+  while (out > Math.PI) out -= Math.PI * 2;
+  while (out < -Math.PI) out += Math.PI * 2;
+  return out;
+}
+
+function lerpAngle(current: number, target: number, t: number): number {
+  const delta = normalizeAngle(target - current);
+  return normalizeAngle(current + delta * t);
+}
+
+/** Speed multiplier; lower = agents move around less. */
+function randomWeightedSpeed(): number {
+  const r = Math.random();
+  if (r < 0.25) return 0;
+  if (r < 0.55) return randomRange(0.15, 0.35);
+  return randomRange(0.35, 0.6);
+}
+
+function createInitialWanderState(now: number): WanderState {
+  const heading = randomRange(-Math.PI, Math.PI);
+  return {
+    heading,
+    targetHeading: heading,
+    speed: randomWeightedSpeed(),
+    targetSpeed: randomWeightedSpeed(),
+    nextHeadingRetargetAt: now + randomRange(HEADING_RETARGET_MS.min, HEADING_RETARGET_MS.max),
+    nextSpeedRetargetAt: now + randomRange(SPEED_RETARGET_MS.min, SPEED_RETARGET_MS.max),
+  };
+}
+
+/**
+ * Advance wander state one tick and set movementIntent from it (unit direction when speed >= threshold).
+ * Called when there is no movementTarget and no movementIntent (idle); keeps autonomous agents moving randomly.
+ */
+function wanderTick(store: ClawStore): void {
+  const now = Date.now();
+  let w = store.getState().wanderState;
+  if (!w) {
+    w = createInitialWanderState(now);
+    store.setWanderState(w);
+  }
+  if (now >= w.nextHeadingRetargetAt) {
+    const maxTurn = Math.random() < 0.12 ? Math.PI * 0.7 : Math.PI * 0.2;
+    w = {
+      ...w,
+      targetHeading: normalizeAngle(w.heading + randomRange(-maxTurn, maxTurn)),
+      nextHeadingRetargetAt: now + randomRange(HEADING_RETARGET_MS.min, HEADING_RETARGET_MS.max),
+    };
+    store.setWanderState(w);
+  }
+  if (now >= w.nextSpeedRetargetAt) {
+    w = {
+      ...w,
+      targetSpeed: randomWeightedSpeed(),
+      nextSpeedRetargetAt: now + randomRange(SPEED_RETARGET_MS.min, SPEED_RETARGET_MS.max),
+    };
+    store.setWanderState(w);
+  }
+  const heading = lerpAngle(w.heading, w.targetHeading, 0.22);
+  const speed = w.speed + (w.targetSpeed - w.speed) * 0.18;
+  store.setWanderState({
+    ...w,
+    heading,
+    speed,
+  });
+  const moveX = speed < WANDER_SPEED_THRESHOLD ? 0 : Math.cos(heading);
+  const moveZ = speed < WANDER_SPEED_THRESHOLD ? 0 : Math.sin(heading);
+  store.setMovementIntent({ moveX, moveZ, sprint: false });
+}
 
 export type MovementDriverOptions = {
   voiceId?: string | null;
@@ -76,7 +160,7 @@ export function movementDriverTick(
   store: ClawStore,
   options?: MovementDriverOptions
 ): boolean {
-  const state = store.getState();
+  let state = store.getState();
   const target = state.movementTarget;
 
   if (
@@ -87,6 +171,12 @@ export function movementDriverTick(
     const rotY = getFacingTowardNearestOccupant(state.occupants, state.mySessionId, state.myPosition);
     client.sendInput?.({ moveX: 0, moveZ: 0, sprint: false, jump: false, ...(rotY != null && { rotY }) });
     return true;
+  }
+
+  // When idle (no target, no intent, not following), run random wander so autonomous agents move like engine NPCs
+  if (!target && !state.movementIntent && !state.followTargetSessionId) {
+    wanderTick(store);
+    state = store.getState();
   }
 
   if (!target && state.movementIntent) {

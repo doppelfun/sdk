@@ -23,6 +23,7 @@ export function testConfig(overrides: Partial<ClawConfig> = {}): ClawConfig {
     googleCloudProject: null,
     googleCloudLocation: null,
     ownerNearbyRadiusM: 14,
+    chatNearbyRadiusM: 4,
     autonomousSoulTickMs: 45000,
     autonomousLlmCooldownMs: 25000,
     voiceId: null,

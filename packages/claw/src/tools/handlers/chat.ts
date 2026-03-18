@@ -5,6 +5,7 @@ import type { ToolContext } from "../types.js";
 import { buildChatSendOptions } from "../../util/chatSendOptions.js";
 import { evaluateSendReply, onWeSentDm } from "../../lib/conversation.js";
 import { isOwnerNearby } from "../../lib/movement/index.js";
+import { isTargetOwner, isOccupantNearby } from "../../util/position.js";
 import { reportVoiceUsageToHub } from "../../lib/credits/index.js";
 import { clawLog } from "../../util/log.js";
 
@@ -33,6 +34,25 @@ export async function handleChat(ctx: ToolContext) {
       error:
         "You must send a DM only. Call chat with targetSessionId set to the person you're talking to.",
     };
+  }
+
+  if (text && targetSessionId) {
+    if (!isTargetOwner(state.occupants, targetSessionId, config.ownerUserId)) {
+      if (!state.myPosition) {
+        return {
+          ok: false,
+          error:
+            "You need to be in the space to DM someone. Move first or use get_occupants to see who's here.",
+        };
+      }
+      if (!isOccupantNearby(state.occupants, state.myPosition, targetSessionId, config.chatNearbyRadiusM)) {
+        return {
+          ok: false,
+          error:
+            "That person is too far away. Use approach_person or follow to get closer first.",
+        };
+      }
+    }
   }
 
   if (text && targetSessionId) {

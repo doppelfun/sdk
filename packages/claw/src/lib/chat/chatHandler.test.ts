@@ -94,4 +94,31 @@ describe("handleChatMessage", () => {
     handleChatMessage(store, config, { ...base, createdAt: 2000 });
     expect(store.getState().chat).toHaveLength(2);
   });
+
+  it("does not wake bystander when agent-agent DM is broadcast (only recipient wakes)", () => {
+    // Server broadcasts agent A -> agent B DM to whole room; channelId is dm:A:B, targetSessionId is B.
+    // Agent C (bystander) must not treat as "DM for me" and must not wake.
+    const storeBystander = createClawStore("0_0");
+    storeBystander.setMySessionId("agent-c-session");
+    storeBystander.clearWake();
+    const config = testConfig({ ownerUserId: "owner-1" });
+    const agentToAgentDmPayload = {
+      userId: "agent-a",
+      sessionId: "agent-a-session",
+      message: "Hey B, over here!",
+      username: "AgentA",
+      channelId: "dm:agent-a-session:agent-b-session",
+      targetSessionId: "agent-b-session",
+    };
+    handleChatMessage(storeBystander, config, agentToAgentDmPayload);
+    expect(storeBystander.getState().chat).toHaveLength(1);
+    expect(storeBystander.getState().wakePending).toBe(false);
+
+    // Recipient B should wake
+    const storeRecipient = createClawStore("0_0");
+    storeRecipient.setMySessionId("agent-b-session");
+    storeRecipient.clearWake();
+    handleChatMessage(storeRecipient, config, agentToAgentDmPayload);
+    expect(storeRecipient.getState().wakePending).toBe(true);
+  });
 });

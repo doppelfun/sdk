@@ -30,6 +30,8 @@ export type ClawConfig = {
   googleCloudLocation: string | null;
   /** Meters — owner within this distance for "owner nearby" checks. */
   ownerNearbyRadiusM: number;
+  /** Meters — max distance to send DM to another agent; owner is always allowed. */
+  chatNearbyRadiusM: number;
   /**
    * When > 0 and owner is away: request autonomous wake this often (ms).
    * Tree condition TimeForAutonomousWake uses this.
@@ -110,6 +112,7 @@ export function loadConfig(): ClawConfig {
   const maxOwnerMessages = parseIntEnv("MAX_OWNER_MESSAGES", DEFAULT_MAX_OWNER, 1, 50);
   const tokensPerCredit = parseIntEnv("TOKENS_PER_CREDIT", 1000, 1);
   const ownerNearbyRadiusM = parseIntEnv("OWNER_NEARBY_RADIUS_M", 14, 4, 80);
+  const chatNearbyRadiusM = parseIntEnv("CHAT_NEARBY_RADIUS_M", 10, 2, 50);
   const autonomousSoulTickMs = parseIntEnv("AUTONOMOUS_SOUL_TICK_MS", 45000, 0, 300000);
   const autonomousLlmCooldownMs = parseIntEnv("AUTONOMOUS_LLM_COOLDOWN_MS", 25000, 5000, 120000);
   const voiceId = process.env.CLAW_VOICE_ID?.trim() || null;
@@ -147,6 +150,7 @@ export function loadConfig(): ClawConfig {
     googleCloudProject: process.env.GOOGLE_CLOUD_PROJECT?.trim() || null,
     googleCloudLocation: process.env.GOOGLE_CLOUD_LOCATION?.trim() || null,
     ownerNearbyRadiusM,
+    chatNearbyRadiusM,
     autonomousSoulTickMs,
     autonomousLlmCooldownMs,
     voiceId,

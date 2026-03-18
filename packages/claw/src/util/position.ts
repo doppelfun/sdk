@@ -91,3 +91,36 @@ export function isOwnerNearby(
   }
   return false;
 }
+
+/**
+ * True if the occupant with clientId === targetSessionId has userId === ownerUserId.
+ * Used to allow DMs to owner regardless of distance (e.g. owner spectating).
+ */
+export function isTargetOwner(
+  occupants: Occupant[],
+  targetSessionId: string | null,
+  ownerUserId: string | null
+): boolean {
+  if (!targetSessionId || !ownerUserId) return false;
+  const o = occupants.find((x) => x.clientId === targetSessionId);
+  return o != null && o.userId === ownerUserId;
+}
+
+/**
+ * True if the occupant with clientId === targetSessionId has a position and is within radiusM of myPosition.
+ * Used to enforce "only chat with nearby agents" (agents must be in earshot).
+ */
+export function isOccupantNearby(
+  occupants: Occupant[],
+  myPosition: { x: number; z: number } | null,
+  targetSessionId: string | null,
+  radiusM: number
+): boolean {
+  if (!myPosition || !targetSessionId || radiusM <= 0) return false;
+  const o = occupants.find((x) => x.clientId === targetSessionId);
+  if (!o?.position) return false;
+  const dx = o.position.x - myPosition.x;
+  const dz = o.position.z - myPosition.z;
+  const radius2 = radiusM * radiusM;
+  return dx * dx + dz * dz <= radius2;
+}

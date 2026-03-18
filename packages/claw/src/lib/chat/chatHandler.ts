@@ -6,7 +6,7 @@ import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
 import { clearConversation, onWeReceivedDm } from "../conversation.js";
 import { requestWake } from "../../wake.js";
-import { isDmChannel } from "../../util/dm.js";
+import { isDmChannel, isParticipantInDmChannel } from "../../util/dm.js";
 import { hashString } from "../../util/hash.js";
 import { isTalkToSomeoneElseMessage } from "../prompts/userMessage.js";
 
@@ -57,11 +57,13 @@ export function handleChatMessage(
       ? payload.targetSessionId.trim()
       : undefined;
   const directedAtMe = state.mySessionId != null && targetSessionId === state.mySessionId;
+  const inThisDm =
+    directedAtMe || isParticipantInDmChannel(payload.channelId, state.mySessionId);
   const dmFromOther =
     state.mySessionId != null &&
     sessionId != null &&
     sessionId !== state.mySessionId &&
-    (isDmChannel(payload.channelId) || directedAtMe);
+    inThisDm;
   const fromOwner =
     config.ownerUserId != null &&
     userId === config.ownerUserId &&

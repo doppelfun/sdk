@@ -4,6 +4,7 @@
 import type { ToolContext } from "../types.js";
 import { buildChatSendOptions } from "../../util/chatSendOptions.js";
 import { clearConversation, evaluateSendReply, onWeSentDm } from "../../lib/conversation.js";
+import { isTargetOwner, isOccupantNearby } from "../../util/position.js";
 import { reportVoiceUsageToHub } from "../../lib/credits/index.js";
 import { clawLog } from "../../util/log.js";
 
@@ -23,6 +24,23 @@ export async function handleStartConversation(ctx: ToolContext) {
   }
 
   const state = store.getState();
+  if (!isTargetOwner(state.occupants, targetSessionId, config.ownerUserId)) {
+    if (!state.myPosition) {
+      return {
+        ok: false as const,
+        error:
+          "You need to be in the space to start a conversation. Move first or use get_occupants to see who's here.",
+      };
+    }
+    if (!isOccupantNearby(state.occupants, state.myPosition, targetSessionId, config.chatNearbyRadiusM)) {
+      return {
+        ok: false as const,
+        error:
+          "That person is too far away. Use approach_person or follow to get closer first.",
+      };
+    }
+  }
+
   // If we're switching to a new peer while a conversation is in progress,
   // exit/reset the paced conversation FSM so we can start immediately.
   if (state.conversationPhase !== "idle" && state.conversationPeerSessionId !== targetSessionId) {

@@ -107,6 +107,9 @@ function createClawStore(blockSlotId: string) {
     setWanderState(wander: ClawState["wanderState"]) {
       setState({ wanderState: wander });
     },
+    setNextWanderDestinationAt(ts: number) {
+      setState({ nextWanderDestinationAt: ts });
+    },
     setLastBuildTarget(target: BuildTarget | null) {
       setState({ lastBuildTarget: target });
     },

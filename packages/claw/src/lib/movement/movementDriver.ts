@@ -1,6 +1,7 @@
 /**
  * Movement driver: apply movementIntent or check arrival for movementTarget (server-driven move_to).
- * When idle (no target, no intent), runs random wander (engine NPC-style heading/speed).
+ * When idle, uses pathfinding-based wander (engine NPC-style): pick random point every 12–28s via moveTo;
+ * between pathfinding legs uses heading/speed drift.
  */
 import type { DoppelClient } from "@doppelfun/sdk";
 import { buildChatSendOptions } from "../../util/chatSendOptions.js";
@@ -20,6 +21,8 @@ const LOCAL_Z_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
 export const DEFAULT_STOP_DISTANCE_M = 1;
 
 // --- Random wander (aligned with engine NpcDriver) ---
+/** When to pick next pathfinding wander target (engine PATHFIND_RETARGET_MS). */
+const PATHFIND_RETARGET_MS = { min: 12_000, max: 28_000 };
 const HEADING_RETARGET_MS = { min: 800, max: 2800 };
 const SPEED_RETARGET_MS = { min: 600, max: 2200 };
 /** Below this speed we send 0,0 so walk animation doesn't play. */
@@ -101,6 +104,25 @@ function wanderTick(store: ClawStore): void {
   store.setMovementIntent({ moveX, moveZ, sprint: false });
 }
 
+/**
+ * Pick a random point in block bounds and start server pathfinding (moveTo).
+ * Used when idle and it's time for the next pathfinding wander leg (engine NPC-style).
+ */
+function pickWanderDestinationAndMoveTo(
+  client: DoppelClient,
+  store: ClawStore,
+): void {
+  const x = randomRange(LOCAL_X_MIN, LOCAL_X_MAX);
+  const z = randomRange(LOCAL_Z_MIN, LOCAL_Z_MAX);
+  store.setMovementIntent(null);
+  store.setMovementTarget({ x, z });
+  store.setLastMoveToFailed(null);
+  store.setMovementSprint(false);
+  store.setNextWanderDestinationAt(Date.now() + randomRange(PATHFIND_RETARGET_MS.min, PATHFIND_RETARGET_MS.max));
+  client.moveTo(x, z);
+  clawLog("wander pathfind", x.toFixed(1), z.toFixed(1));
+}
+
 export type MovementDriverOptions = {
   voiceId?: string | null;
   /** When voice is used for arrival DM, call with character count for usage telemetry. */
@@ -173,10 +195,17 @@ export function movementDriverTick(
     return true;
   }
 
-  // When idle (no target, no intent, not following), run random wander so autonomous agents move like engine NPCs
+  // When idle (no target, no intent, not following): pathfinding-based wander like engine NPCs.
+  // When it's time to pick a destination, moveTo so server pathfinds; between legs use heading/speed drift.
   if (!target && !state.movementIntent && !state.followTargetSessionId) {
-    wanderTick(store);
-    state = store.getState();
+    const now = Date.now();
+    if (state.nextWanderDestinationAt <= now) {
+      pickWanderDestinationAndMoveTo(client, store);
+      state = store.getState();
+    } else {
+      wanderTick(store);
+      state = store.getState();
+    }
   }
 
   if (!target && state.movementIntent) {

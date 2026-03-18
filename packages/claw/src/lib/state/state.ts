@@ -62,6 +62,8 @@ export type ClawState = {
   movementIntent: { moveX: number; moveZ: number; sprint: boolean } | null;
   /** When set, movement driver uses this for random wander when no target/intent (engine NPC-style). */
   wanderState: WanderState | null;
+  /** Next time (ms) to pick a pathfinding wander destination; 0 = pick as soon as idle. Aligned with engine PATHFIND_RETARGET_MS. */
+  nextWanderDestinationAt: number;
   lastBuildTarget: BuildTarget | null;
   /** When set, movement driver sends greeting then clears. */
   pendingGoTalkToAgent: { targetSessionId: string; openingMessage: string } | null;
@@ -125,6 +127,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     movementSprint: false,
     movementIntent: null,
     wanderState: null,
+    nextWanderDestinationAt: 0,
     lastBuildTarget: null,
     pendingGoTalkToAgent: null,
     autonomousEmoteStandStillUntil: 0,

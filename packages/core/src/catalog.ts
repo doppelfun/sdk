@@ -178,16 +178,23 @@ export type GenerateCatalogModelError = {
 /**
  * Start text-to-3D (or image-to-3D) generation for the block's catalog.
  * POST /api/blocks/:blockId/catalog/generate. Requires catalog auth (Bearer apiKey).
- * On 402 (insufficient credits or x402), returns ok: false with statusCode and body fields.
+ * paymentType: "credits" (default) or "x402". On 402 (insufficient credits or x402), returns ok: false.
  */
 export async function generateCatalogModel(
   hubUrl: string,
   blockId: string,
   apiKey: string,
-  params: { prompt: string; name?: string; category?: string }
+  params: {
+    prompt: string;
+    name?: string;
+    category?: string;
+    /** "credits" (default) or "x402" */
+    paymentType?: "credits" | "x402";
+  }
 ): Promise<GenerateCatalogModelSuccess | GenerateCatalogModelError> {
   const base = normalizeBaseUrl(hubUrl);
   const url = `${base}/api/blocks/${encodeURIComponent(blockId)}/catalog/generate`;
+  const paymentType = params.paymentType ?? "credits";
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -196,6 +203,7 @@ export async function generateCatalogModel(
     },
     body: JSON.stringify({
       prompt: params.prompt.trim(),
+      paymentType,
       ...(params.name?.trim() && { name: params.name.trim() }),
       ...(params.category?.trim() && { category: params.category.trim() }),
     }),

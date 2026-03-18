@@ -1,5 +1,5 @@
 /** Build tool handlers — re-exported for buildHandlers barrel. */
-export { handleListCatalog, handleGenerateCatalogModel } from "./catalogHandlers.js";
+export { handleListCatalog, handlePlaceCatalogModel } from "./catalogHandlers.js";
 export {
   handleListDocuments,
   handleGetDocumentContent,

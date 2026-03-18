@@ -6,7 +6,7 @@ import { z } from "zod/v4";
 import { RECIPE_KINDS_LIST } from "../lib/build/recipeKinds.js";
 import {
   listCatalogSchema,
-  generateCatalogModelSchema,
+  placeCatalogModelSchema,
   listDocumentsSchema,
   getDocumentContentSchema,
   buildFullSchema,
@@ -112,10 +112,10 @@ export const CLAW_TOOL_REGISTRY: Array<{
     schema: listCatalogSchema,
   },
   {
-    name: "generate_catalog_model",
+    name: "place_catalog_model",
     description:
-      "Generate a 3D model from a text prompt for this block's catalog (text-to-3D). Returns jobId and catalogId; poll jobs or list_catalog until ready, then use catalogId in build_full or run_recipe.",
-    schema: generateCatalogModelSchema,
+      "Place a catalog model at block-local coordinates (x, y, z in 0–100). Use list_catalog for catalogId. Optionally pass documentId to append to an existing document; otherwise creates a new document with just this model. Optional ry = rotation in degrees.",
+    schema: placeCatalogModelSchema,
   },
   {
     name: "list_documents",

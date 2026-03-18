@@ -5,7 +5,7 @@ import type { ToolContext, ExecuteToolResult } from "../types.js";
 import { RECIPE_KINDS } from "../../lib/build/recipeKinds.js";
 import {
   handleListCatalog,
-  handleGenerateCatalogModel,
+  handlePlaceCatalogModel,
   handleListDocuments,
   handleGetDocumentContent,
   handleRunRecipe,
@@ -28,7 +28,7 @@ function wrapBuildHandler(handler: BuildHandler): (ctx: ToolContext) => Promise<
 }
 
 export const handleListCatalogTool = wrapBuildHandler(handleListCatalog as BuildHandler);
-export const handleGenerateCatalogModelTool = wrapBuildHandler(handleGenerateCatalogModel as BuildHandler);
+export const handlePlaceCatalogModelTool = wrapBuildHandler(handlePlaceCatalogModel as BuildHandler);
 export const handleListDocumentsTool = wrapBuildHandler(handleListDocuments as BuildHandler);
 export const handleGetDocumentContentTool = wrapBuildHandler(handleGetDocumentContent as BuildHandler);
 export const handleRunRecipeTool = wrapBuildHandler(handleRunRecipe as BuildHandler);

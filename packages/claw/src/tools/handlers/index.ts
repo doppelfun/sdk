@@ -9,7 +9,7 @@ import { handleEmote } from "./emote.js";
 import { handleGetOccupants } from "./occupants.js";
 import {
   handleListCatalogTool,
-  handleGenerateCatalogModelTool,
+  handlePlaceCatalogModelTool,
   handleListDocumentsTool,
   handleGetDocumentContentTool,
   handleListRecipes,
@@ -32,7 +32,7 @@ export const TOOL_HANDLERS: Record<string, ToolHandler> = {
   emote: handleEmote,
   get_occupants: handleGetOccupants,
   list_catalog: handleListCatalogTool,
-  generate_catalog_model: handleGenerateCatalogModelTool,
+  place_catalog_model: handlePlaceCatalogModelTool,
   list_documents: handleListDocumentsTool,
   get_document_content: handleGetDocumentContentTool,
   list_recipes: handleListRecipes,

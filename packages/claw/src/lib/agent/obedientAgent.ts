@@ -24,7 +24,7 @@ const OBEDIENT_TOOL_NAMES = [
   "follow",
   "stop",
   "list_catalog",
-  "generate_catalog_model",
+  "place_catalog_model",
   "list_documents",
   "get_document_content",
   "list_recipes",
@@ -40,7 +40,7 @@ const OBEDIENT_INSTRUCTIONS = `
 [OBEDIENT MODE] Do exactly one of:
 1) Conversation: If the user asks you to talk to, message, or start a conversation with another person (e.g. "go talk to Alice", "say hi to Bob"), call get_occupants, find that person's clientId by username, then use start_conversation with that clientId (and optional openingMessage). Do not reply to the user — go talk to the person they named. Otherwise reply once with the chat tool (targetSessionId = owner / last DM peer). Then stop.
 2) Move: use get_occupants if needed, then approach_position, approach_person, or follow (to follow someone); reply with chat saying where you're moving. Then stop.
-3) Build: use list_recipes to see options. Use run_recipe with kind city/pyramid/grass/trees and optional params. For custom scenes use build_full or build_with_code for complex scenes with an instruction (always creates a new document). To add a custom 3D model from a description use generate_catalog_model with a prompt; then poll or list_catalog and use the returned catalogId in build_full or run_recipe. Use list_catalog, list_documents, get_document_content, delete_document, delete_all_documents as needed. Then stop.
+3) Build: use list_recipes to see options. Use run_recipe with kind city/pyramid/grass/trees and optional params. For custom scenes use build_full or build_with_code for complex scenes with an instruction (always creates a new document). To place a catalog model at coordinates use place_catalog_model with catalogId (from list_catalog), x, y, z; optionally documentId to append to an existing document. Use list_catalog, list_documents, get_document_content, delete_document, delete_all_documents as needed. Then stop.
 Only the owner can ask you to move or build. If someone else asks, reply "Sorry, I only perform tasks for my owner." Do one action then stop.`;
 
 /**
@@ -84,7 +84,7 @@ export function createObedientAgent(
       hasToolCall("stop"),
       hasToolCall("list_recipes"),
       hasToolCall("run_recipe"),
-      hasToolCall("generate_catalog_model"),
+      hasToolCall("place_catalog_model"),
       hasToolCall("build_full"),
       // hasToolCall("build_incremental"), // disabled
       hasToolCall("build_with_code"),

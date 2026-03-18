@@ -90,12 +90,12 @@ Single API for many models (Claude, Llama, etc.) via [OpenRouter](https://openro
 
 ## Recipes
 
-The Obedient agent can generate MML via **recipes** from [@doppelfun/recipes](https://github.com/doppelfun/doppel-sdk/tree/main/packages/recipes). Recipes are pure generators (no LLM): params in → MML out. Claw wires two tools:
+The Obedient agent can generate MML via **recipes** from [@doppelfun/recipes](https://github.com/doppelfun/sdk/tree/main/packages/recipes). Recipes are pure generators (no LLM): params in → MML out. Claw wires two tools:
 
 - **`list_recipes`** — No args. Returns available recipe names (e.g. `city`, `pyramid`, `grass`, `trees`) so the agent can choose before calling `run_recipe`.
 - **`run_recipe`** — `kind` (city / pyramid / grass / trees), optional `documentMode` (new / replace / append), `documentId`, and `params` per recipe. For city, Claw passes the full catalog in `params.catalog`; the recipe parses it to buildings, vehicles, and traffic lights. Writes MML via the build document API (new document, or replace/append by id).
 
-Recipes live in the recipes package; claw depends on `@doppelfun/recipes` and calls `listRecipes()` and `runRecipe()` in the tool handlers. For custom scenes the agent uses `build_full` / `build_incremental` instead. To generate a new 3D model from a text description the agent uses **`generate_catalog_model`** (prompt, optional name/category); the hub starts a text-to-3D job and returns jobId/catalogId—the agent can then use list_catalog and the new catalogId in build_full or run_recipe.
+Recipes live in the recipes package; claw depends on `@doppelfun/recipes` and calls `listRecipes()` and `runRecipe()` in the tool handlers. For custom scenes the agent uses `build_full` / `build_incremental` instead. To place a catalog model at coordinates the agent uses **`place_catalog_model`** (catalogId from list_catalog, x, y, z; optional documentId to append).
 
 ## Architecture
 

@@ -1,14 +1,18 @@
 /**
- * Build handler: list_catalog, generate_catalog_model.
+ * Build handler: list_catalog, place_catalog_model.
  * Catalog is used by build_full / build_incremental to pick catalogId for <m-model>.
  */
 import type { DoppelClient } from "@doppelfun/sdk";
-import { generateCatalogModel } from "@doppelfun/sdk";
 import type { ClawStore } from "../../state/index.js";
 import type { ClawConfig } from "../../config/index.js";
 import { loadCatalogEntries } from "../catalog.js";
 import { clawLog } from "../../../util/log.js";
 import type { BuildToolResult } from "../buildSteps.js";
+
+/** Format number for MML (2 decimal places). */
+function r2(n: number): string {
+  return Number.isFinite(n) ? n.toFixed(2) : "0";
+}
 
 const COMPACT_MAX_CHARS = 2800;
 const COMPACT_MAX_ENTRIES = 35;
@@ -66,50 +70,72 @@ export async function handleListCatalog(
 }
 
 /**
- * Start text-to-3D generation for the block's catalog via hub POST .../catalog/generate.
- * Requires config.blockId and config.apiKey. Returns jobId/catalogId for polling or list_catalog.
+ * Place a catalog model at block-local coordinates. Creates a new document with a single
+ * m-model, or appends to an existing document by inserting the m-model before the last </m-group>.
  */
-export async function handleGenerateCatalogModel(
-  _client: DoppelClient,
+export async function handlePlaceCatalogModel(
+  client: DoppelClient,
   _store: ClawStore,
-  config: ClawConfig,
-  args: { prompt: string; name?: string; category?: string }
+  _config: ClawConfig,
+  args: {
+    catalogId: string;
+    x: number;
+    y: number;
+    z: number;
+    documentId?: string;
+    ry?: number;
+    id?: string;
+  }
 ): Promise<BuildToolResult> {
-  if (!config.blockId?.trim()) {
-    return { ok: false, error: "generate_catalog_model requires a block (set BLOCK_ID or join a block)" };
+  const catalogId = typeof args.catalogId === "string" ? args.catalogId.trim() : "";
+  if (!catalogId) {
+    return { ok: false, error: "place_catalog_model requires catalogId (use list_catalog for ids)" };
   }
-  if (!config.apiKey?.trim()) {
-    return { ok: false, error: "generate_catalog_model requires an API key (DOPPEL_AGENT_API_KEY)" };
+  const x = Number(args.x);
+  const y = Number(args.y);
+  const z = Number(args.z);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+    return { ok: false, error: "place_catalog_model requires numeric x, y, z (block-local 0–100)" };
   }
-  const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
-  if (!prompt) {
-    return { ok: false, error: "generate_catalog_model requires a non-empty prompt" };
-  }
+  const ry = typeof args.ry === "number" && Number.isFinite(args.ry) ? args.ry : 0;
+  const modelId =
+    typeof args.id === "string" && args.id.trim()
+      ? args.id.trim()
+      : `placed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const attrs = [
+    `id="${modelId}"`,
+    `x="${r2(x)}"`,
+    `y="${r2(y)}"`,
+    `z="${r2(z)}"`,
+    `catalogId="${catalogId}"`,
+    `ry="${r2(ry)}"`,
+    "collide=\"true\"",
+  ];
+  const mModelLine = `  <m-model ${attrs.join(" ")} />`;
 
-  clawLog("build: generate_catalog_model", "prompt=" + prompt.slice(0, 60) + (prompt.length > 60 ? "…" : ""));
+  clawLog("build: place_catalog_model", catalogId, x, y, z, args.documentId ? "append" : "new");
+
   try {
-    const result = await generateCatalogModel(config.hubUrl, config.blockId, config.apiKey, {
-      prompt,
-      name: args.name?.trim(),
-      category: args.category?.trim(),
-    });
-
-    if (result.ok) {
-      const summary =
-        `Text-to-3D started. jobId=${result.jobId}, catalogId=${result.catalogId}. ` +
-        "Poll GET /api/jobs/:jobId or use list_catalog until the model is ready, then use this catalogId in build_full or run_recipe.";
-      clawLog("build: generate_catalog_model ok", result.jobId);
-      return { ok: true, summary };
+    if (args.documentId?.trim()) {
+      const doc = await client.getDocumentContent(args.documentId.trim());
+      const lastClose = doc.content.lastIndexOf("</m-group>");
+      if (lastClose === -1) {
+        return { ok: false, error: "place_catalog_model append: document has no </m-group>, use new document" };
+      }
+      const before = doc.content.slice(0, lastClose);
+      const after = doc.content.slice(lastClose);
+      const newContent = `${before}\n${mModelLine}\n${after}`;
+      await client.updateDocument(doc.documentId, newContent);
+      clawLog("build: place_catalog_model ok", "appended to", doc.documentId);
+      return { ok: true, summary: `Placed ${catalogId} at (${x},${y},${z}) in document ${doc.documentId}` };
     }
-
-    const msg =
-      result.statusCode === 402 && result.code === "insufficient_credits"
-        ? `Insufficient credits (balance: ${result.balance ?? "?"}, required: ${result.required ?? "?"}). Top up credits and try again.`
-        : result.error;
-    return { ok: false, error: msg };
+    const content = `<m-group id="place-root">\n${mModelLine}\n</m-group>`;
+    const { documentId } = await client.createDocument(content);
+    clawLog("build: place_catalog_model ok", "new document", documentId);
+    return { ok: true, summary: `Placed ${catalogId} at (${x},${y},${z}); new document ${documentId}` };
   } catch (e) {
     const err = e instanceof Error ? e.message : String(e);
-    clawLog("build: generate_catalog_model error", err);
-    return { ok: false, error: `generate_catalog_model failed: ${err}` };
+    clawLog("build: place_catalog_model error", err);
+    return { ok: false, error: `place_catalog_model failed: ${err}` };
   }
 }

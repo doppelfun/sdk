@@ -1,6 +1,6 @@
 # Doppel Recipes
 
-**Recipes** are pure, discoverable generators: parameters in → string out (MML, message, or JSON). They are used by [@doppelfun/claw](https://github.com/doppelfun/doppel-sdk/tree/main/packages/claw) for the `list_recipes` and `run_recipe` tools so agents can generate scenes or get data without calling an LLM.
+**Recipes** are pure, discoverable generators: parameters in → string out (MML, message, or JSON). They are used by [@doppelfun/claw](https://github.com/doppelfun/sdk/tree/main/packages/claw) for the `list_recipes` and `run_recipe` tools so agents can generate scenes or get data without calling an LLM.
 
 ---
 

@@ -25,10 +25,15 @@ export const listCatalogSchema = z.object({
   limit: z.number().optional().describe("Max entries to include (default 100, max 200)."),
 });
 
-export const generateCatalogModelSchema = z.object({
-  prompt: z.string().min(1).describe("Text description of the 3D model to generate (e.g. 'cyberpunk skyscraper')."),
-  name: z.string().optional().describe("Optional display name for the catalog asset."),
-  category: z.string().optional().describe("Optional category (default Cyberpunk)."),
+/** Place a catalog model at block-local coordinates. Use list_catalog for valid catalogId. */
+export const placeCatalogModelSchema = z.object({
+  catalogId: z.string().min(1).describe("Catalog asset id from list_catalog (e.g. cat-abc123)."),
+  x: z.number().describe("X position in block-local coordinates (0–100)."),
+  y: z.number().describe("Y position (height). Use 0 for ground."),
+  z: z.number().describe("Z position in block-local coordinates (0–100)."),
+  documentId: documentIdUuidOptional.describe("Optional. If set, append this model to an existing document; otherwise create a new document with just this model."),
+  ry: z.number().optional().describe("Optional rotation around Y axis in degrees (0 = default facing)."),
+  id: z.string().optional().describe("Optional unique id for the m-model element (default: auto-generated)."),
 });
 
 export const listDocumentsSchema = z.object({});
@@ -88,6 +93,7 @@ export const runRecipeSchema = z.object({
 
 export type BuildToolArgs = {
   list_catalog: z.infer<typeof listCatalogSchema>;
+  place_catalog_model: z.infer<typeof placeCatalogModelSchema>;
   list_documents: z.infer<typeof listDocumentsSchema>;
   build_full: z.infer<typeof buildFullSchema>;
   build_incremental: z.infer<typeof buildIncrementalSchema>;

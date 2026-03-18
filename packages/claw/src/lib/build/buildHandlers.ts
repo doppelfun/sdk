@@ -14,7 +14,7 @@ export type { BuildToolResult } from "./buildSteps.js";
 
 export {
   handleListCatalog,
-  handleGenerateCatalogModel,
+  handlePlaceCatalogModel,
   handleListDocuments,
   handleGetDocumentContent,
   handleDeleteDocument,

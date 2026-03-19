@@ -37,7 +37,8 @@ const WINS_PER_FACE_MAX = 4;
 
 const WIN_W = 0.35;
 const WIN_H = 0.45;
-const WIN_INTENSITY = 3.0;
+/** Emissive strength for window cubes; higher than generic props so small faces read on mobile (DPR cap, bloom). */
+const WIN_INTENSITY = 7.0;
 
 // --- Pyramid -----------------------------------------------------------------
 
@@ -362,6 +363,51 @@ const LIGHT_INTENSITY = 4;
 const LIGHT_SETBACK = 0.4;
 
 /**
+ * Road surface as one cube per grid block along the street. The client culls by entity (x,z)
+ * center only; one full-span slab is centered mid-avenue so standing near an end can cull the
+ * entire road. Chunking matches {@link layout/index} block spacing.
+ */
+function emitRoadSlabs(
+  parts: string[],
+  streetIdx: number,
+  s: StreetSegment,
+  streetWidth: number,
+  gridRows: number,
+  gridCols: number,
+  blockSize: number,
+  roadY: number,
+  roadThickness: number,
+  offsetX: number,
+  offsetZ: number,
+  streetCollide: boolean,
+): void {
+  const coll = streetCollide ? "true" : "false";
+  if (s.alongX) {
+    const n = gridCols - 1;
+    for (let k = 0; k < n; k++) {
+      const x0 = s.startX + k * blockSize;
+      const x1 = s.startX + (k + 1) * blockSize;
+      const cx = (x0 + x1) / 2 + offsetX;
+      const cz = s.startZ + offsetZ;
+      parts.push(
+        `  <m-cube id="street-${streetIdx}-${k}" x="${r2(cx)}" y="${r2(roadY)}" z="${r2(cz)}" width="${r2(blockSize)}" height="${r2(roadThickness)}" depth="${r2(streetWidth)}" color="#333333" collide="${coll}" />`,
+      );
+    }
+  } else {
+    const n = gridRows - 1;
+    for (let k = 0; k < n; k++) {
+      const z0 = s.startZ + k * blockSize;
+      const z1 = s.startZ + (k + 1) * blockSize;
+      const cx = s.startX + offsetX;
+      const cz = (z0 + z1) / 2 + offsetZ;
+      parts.push(
+        `  <m-cube id="street-${streetIdx}-${k}" x="${r2(cx)}" y="${r2(roadY)}" z="${r2(cz)}" width="${r2(streetWidth)}" height="${r2(roadThickness)}" depth="${r2(blockSize)}" color="#333333" collide="${coll}" />`,
+      );
+    }
+  }
+}
+
+/**
  * Emit dashed glowing center line along the middle of a street segment.
  * Color from pyramid palette (GLOW_COLORS); small so intersections stay clean. No collision.
  */
@@ -568,6 +614,7 @@ function cityToMml(
   buildings: BuildingPlacement[],
   streets: StreetSegment[],
   streetWidth: number,
+  blockSize: number,
   offsetX: number,
   offsetZ: number,
   seed: number,
@@ -594,14 +641,21 @@ function cityToMml(
 
   for (let i = 0; i < streets.length; i++) {
     const s = streets[i]!;
-    const cx = (s.startX + s.endX) / 2 + offsetX;
-    const cz = (s.startZ + s.endZ) / 2 + offsetZ;
     const len = s.alongX ? Math.abs(s.endX - s.startX) : Math.abs(s.endZ - s.startZ);
-    const w = s.alongX ? len : streetWidth;
-    const d = s.alongX ? streetWidth : len;
     const streetCollide = perimeterStreetIndices.has(i);
-    parts.push(
-      `  <m-cube id="street-${i}" x="${r2(cx)}" y="${r2(roadY)}" z="${r2(cz)}" width="${r2(w)}" height="${r2(roadThickness)}" depth="${r2(d)}" color="#333333" collide="${streetCollide}" />`,
+    emitRoadSlabs(
+      parts,
+      i,
+      s,
+      streetWidth,
+      gridRows,
+      gridCols,
+      blockSize,
+      roadY,
+      roadThickness,
+      offsetX,
+      offsetZ,
+      streetCollide,
     );
     emitCenterLine(parts, i, s, len, streetWidth, roadY, roadThickness, offsetX, offsetZ, centerLineColor);
     emitStreetLights(parts, i, s, len, streetWidth, roadY, roadThickness, offsetX, offsetZ);
@@ -685,6 +739,7 @@ export function generateCityMml(
     layout.buildings,
     layout.streets,
     c.streetWidth,
+    c.blockSize,
     offsetX,
     offsetZ,
     c.seed,

@@ -5,7 +5,7 @@
  * Structure:
  * - Wake/credits: HasOwnerWake, HasEnoughCredits, InsufficientCredits, ClearWakeInsufficientCredits
  * - Obedient: RunObedientAgent (owner or scheduled task)
- * - Autonomous: OwnerAway, InConversation, WasConverseButNowIdle, HasApproachGoal, ShouldSeekSocialTarget,
+ * - Autonomous: OwnerAway, OwnerAwayOrInConversation, InConversation, WasConverseButNowIdle, HasApproachGoal, ShouldSeekSocialTarget,
  *   RunConverseAgent, ExitConversationToWander, ContinueApproach, SeekSocialTarget, SetWanderGoal, TryMoveToNearestOccupant
  * - Wake timing: TimeForAutonomousWake, RequestAutonomousWake, ClearWakeIdle
  *
@@ -99,12 +99,21 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       return State.SUCCEEDED;
     },
 
-    /** Consume wake and scheduled task first so the next tree step doesn't re-enter. */
+    /** Consume wake and scheduled task, clear any autonomous conversation state (owner takes over), then run obedient. */
     async RunObedientAgent(): Promise<State> {
       setCurrentActionForNode(store, "RunObedientAgent");
       clawLog("tree: RunObedientAgent");
       store.clearWake();
       store.clearPendingScheduledTask();
+      // Clear conversation state so agent is no longer "in conversation" with the other person; next tick won't resume it.
+      store.setConversationPhase("idle");
+      store.setConversationPeerSessionId(null);
+      store.setAutonomousGoal("wander");
+      store.setAutonomousTargetSessionId(null);
+      store.setPendingGoTalkToAgent(null);
+      store.setFollowTargetSessionId(null);
+      const now = Date.now();
+      store.setSocialSeekCooldownUntil(now + 5_000);
       if (runObedientAgent) await runObedientAgent();
       setLastCompletedActionForNode(store, "RunObedientAgent");
       return State.SUCCEEDED;
@@ -123,6 +132,15 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
     /** True when owner is not nearby (or we have no owner). Prevents autonomous mode when owner is in range. */
     OwnerAway(): boolean {
       const s = store.getState();
+      if (!config.ownerUserId) return true;
+      if (!s.myPosition) return true;
+      return !isOwnerNearby(s.occupants, s.myPosition, config.ownerUserId, config.ownerNearbyRadiusM);
+    },
+
+    /** True when owner is away OR we're already in a conversation (so owner can observe without pulling agent back to obedient). */
+    OwnerAwayOrInConversation(): boolean {
+      const s = store.getState();
+      if (s.conversationPhase !== "idle") return true;
       if (!config.ownerUserId) return true;
       if (!s.myPosition) return true;
       return !isOwnerNearby(s.occupants, s.myPosition, config.ownerUserId, config.ownerNearbyRadiusM);

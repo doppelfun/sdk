@@ -6,7 +6,7 @@
 import type { DoppelClient } from "@doppelfun/sdk";
 import { buildChatSendOptions } from "../../util/chatSendOptions.js";
 import { alreadyInConversationWith, canSendDmTo, onWeSentDm } from "../conversation.js";
-import { getFacingTowardNearestOccupant } from "../../util/position.js";
+import { getFacingTowardNearestOccupant, isOwnerNearby } from "../../util/position.js";
 import type { ClawStore } from "../state/index.js";
 import type { WanderState } from "../state/index.js";
 import { BLOCK_SIZE_M } from "../../util/blockBounds.js";
@@ -152,6 +152,9 @@ export type MovementDriverOptions = {
   voiceId?: string | null;
   /** When voice is used for arrival DM, call with character count for usage telemetry. */
   onVoiceSent?: (characters: number) => void;
+  /** When set, if owner is nearby and not in conversation we stop moving (so agent doesn't run away from owner). */
+  ownerUserId?: string | null;
+  ownerNearbyRadiusM?: number;
 };
 
 // --- Arrival handling ---
@@ -228,6 +231,26 @@ export function movementDriverTick(
 ): boolean {
   let state = store.getState();
   const target = state.movementTarget;
+
+  // When owner is nearby and we're not in a conversation, don't move (stand still so we don't run away from owner).
+  const ownerUserId = options?.ownerUserId ?? null;
+  const ownerNearbyRadiusM = options?.ownerNearbyRadiusM ?? 0;
+  if (
+    ownerUserId &&
+    ownerNearbyRadiusM > 0 &&
+    state.conversationPhase === "idle" &&
+    state.myPosition &&
+    isOwnerNearby(state.occupants, state.myPosition, ownerUserId, ownerNearbyRadiusM)
+  ) {
+    store.setMovementTarget(null);
+    store.setMovementIntent(null);
+    store.setFollowTargetSessionId(null);
+    store.setPendingGoTalkToAgent(null);
+    client.cancelMove?.();
+    client.cancelApproach?.();
+    client.sendInput?.({ moveX: 0, moveZ: 0, sprint: false, jump: false });
+    return true;
+  }
 
   if (
     target == null &&

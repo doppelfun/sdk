@@ -114,7 +114,7 @@ export function loadConfig(): ClawConfig {
   const maxChatContext = parseIntEnv("MAX_CHAT_CONTEXT", DEFAULT_MAX_CHAT, 5, 100);
   const maxOwnerMessages = parseIntEnv("MAX_OWNER_MESSAGES", DEFAULT_MAX_OWNER, 1, 50);
   const tokensPerCredit = parseIntEnv("TOKENS_PER_CREDIT", 1000, 1);
-  const ownerNearbyRadiusM = parseIntEnv("OWNER_NEARBY_RADIUS_M", 14, 4, 80);
+  const ownerNearbyRadiusM = parseIntEnv("OWNER_NEARBY_RADIUS_M", 4, 4, 80);
   const chatNearbyRadiusM = parseIntEnv("CHAT_NEARBY_RADIUS_M", 10, 2, 50);
   const autonomousSoulTickMs = parseIntEnv("AUTONOMOUS_SOUL_TICK_MS", 45000, 0, 300000);
   const autonomousLlmCooldownMs = parseIntEnv("AUTONOMOUS_LLM_COOLDOWN_MS", 25000, 5000, 120000);

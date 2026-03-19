@@ -184,6 +184,8 @@ export function createRunner(options: RunnerOptions): AgentLoop {
         config.voiceEnabled && config.voiceId
           ? (characters) => reportVoiceUsageToHub(config, store, characters, onUsageReportFailure)
           : undefined,
+      ownerUserId: config.ownerUserId ?? undefined,
+      ownerNearbyRadiusM: config.ownerNearbyRadiusM,
     });
     const pending = drainPendingReply(store);
     if (pending) {

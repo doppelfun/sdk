@@ -1,9 +1,11 @@
 /**
- * Claw usage attestation: build canonical payload and sign with Ed25519.
+ * Claw usage attestation: build canonical payload and sign with Ed25519 (ox).
  * Must match hub canonical format (see doppel-app src/lib/attestation.ts).
+ * Private key from env is hex; signature is returned as base64 for the API.
  */
 
-import { createPrivateKey, randomFillSync, sign } from "node:crypto";
+import { randomFillSync } from "node:crypto";
+import { Base64, Bytes, Ed25519 } from "ox";
 
 /** Build canonical payload for LLM usage attestation (same format as hub). */
 export function buildUsagePayload(params: {
@@ -48,14 +50,16 @@ export function buildVoicePayload(params: {
 }
 
 /**
- * Sign payload with Ed25519. privateKeyBase64 is PKCS8 DER base64 (from CLAW_ATTESTATION_PRIVATE_KEY).
- * Returns signature as base64.
+ * Sign payload with Ed25519. privateKeyHex is from CLAW_ATTESTATION_PRIVATE_KEY (hex).
+ * Returns signature as base64 for the report-usage request body.
  */
-export function signPayload(payload: string, privateKeyBase64: string): string {
-  const keyBuf = Buffer.from(privateKeyBase64, "base64");
-  const key = createPrivateKey({ key: keyBuf, format: "der", type: "pkcs8" });
-  const sig = sign(null, Buffer.from(payload, "utf8"), key);
-  return sig.toString("base64");
+export function signPayload(payload: string, privateKeyHex: string): string {
+  const signatureBytes = Ed25519.sign({
+    payload: Bytes.fromString(payload),
+    privateKey: privateKeyHex as `0x${string}`,
+    as: "Bytes",
+  });
+  return Base64.fromBytes(signatureBytes);
 }
 
 export function generateNonce(): string {

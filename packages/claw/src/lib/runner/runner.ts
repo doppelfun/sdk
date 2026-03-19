@@ -1,27 +1,36 @@
 /**
  * Runner — wires the behaviour tree loop with Obedient and Autonomous agents.
  * Pass a client to run real LLM ticks; omit for a loop that only ticks the tree (stubs).
+ *
+ * Architecture:
+ * - Obedient: owner/scheduled wake → RunObedientAgent (full tools).
+ * - Autonomous: BT-driven flow — InConversation → RunConverseAgent (chat-only); else SeekSocialTarget or Wander (no LLM for movement).
  */
 
 import type { DoppelClient } from "@doppelfun/sdk";
+import type { Occupant } from "@doppelfun/sdk";
 import { buildSystemContent } from "../prompts/index.js";
 import { buildUserMessage } from "../prompts/index.js";
 import { runObedientAgentTick } from "../agent/obedientAgent.js";
-import { runAutonomousAgentTick } from "../agent/autonomousAgent.js";
+import { runConverseAgentTick } from "../agent/converseAgent.js";
 import { drainPendingReply } from "../conversation.js";
-import { movementDriverTick } from "../movement/index.js";
+import { movementDriverTick, CONVERSATION_RANGE_M, DEFAULT_STOP_DISTANCE_M } from "../movement/index.js";
 import { reportUsageToHub, reportVoiceUsageToHub } from "../credits/index.js";
 import { createAgentLoop, type AgentLoop } from "../tree/index.js";
 import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
+import type { TreeAction } from "../state/index.js";
 import { clawLog } from "../../util/log.js";
 import { findNearestOccupantByPriority } from "../../util/position.js";
 
 /** Interval (ms) to refresh occupants so myPosition is set and TimeForAutonomousWake can fire when owner is away. */
 const OCCUPANTS_REFRESH_MS = 10_000;
 
-/** Min/max cooldown (ms) before next autonomous move (move-to-nearest or wander). Applied when starting move and on arrival. */
+/** Min/max cooldown (ms) before next autonomous move. Shared by move-to-nearest, seek-social, and movement driver on arrival. */
 const AUTONOMOUS_MOVE_COOLDOWN_MS = { min: 20_000, max: 45_000 };
+
+/** Cooldown (ms) after starting a social seek before we may seek again. */
+const SOCIAL_SEEK_COOLDOWN_MS = 10_000;
 
 function randomCooldownMs(): number {
   return AUTONOMOUS_MOVE_COOLDOWN_MS.min + Math.random() * (AUTONOMOUS_MOVE_COOLDOWN_MS.max - AUTONOMOUS_MOVE_COOLDOWN_MS.min);
@@ -29,8 +38,15 @@ function randomCooldownMs(): number {
 
 type RunTickResult = Awaited<ReturnType<typeof runObedientAgentTick>>;
 
+/** LLM tick label → display name and TreeAction for lastCompletedAction. */
+const LLM_TICK_LABELS: Record<"obedient" | "autonomous" | "converse", { displayName: string; completedAction: TreeAction }> = {
+  obedient: { displayName: "Obedient", completedAction: "obedient" },
+  autonomous: { displayName: "Autonomous", completedAction: "autonomous_llm" },
+  converse: { displayName: "Converse", completedAction: "autonomous_converse" },
+};
+
 /**
- * Run one agent tick (obedient or autonomous): build user message, call LLM, report usage,
+ * Run one agent tick (obedient / converse): build user message, call LLM, report usage,
  * send fallback chat if the agent didn't use the chat tool, clear owner messages.
  */
 async function runAgentTickWithFallback(
@@ -39,10 +55,11 @@ async function runAgentTickWithFallback(
   config: ClawConfig,
   systemContent: string,
   runTick: (client: DoppelClient, store: ClawStore, config: ClawConfig, system: string, user: string) => Promise<RunTickResult>,
-  label: "obedient" | "autonomous",
+  label: keyof typeof LLM_TICK_LABELS,
   onUsageReportFailure?: (message: string) => void
 ): Promise<void> {
-  clawLog(`runner: Run${label === "obedient" ? "Obedient" : "Autonomous"}Agent start`);
+  const { displayName, completedAction } = LLM_TICK_LABELS[label];
+  clawLog(`runner: Run${displayName}Agent start`);
   const userContent = buildUserMessage(store, config);
   store.setThinking(true);
   try {
@@ -70,13 +87,40 @@ async function runAgentTickWithFallback(
     }
     if (result.ok) {
       store.clearOwnerMessages();
-      store.setLastCompletedAction(label === "obedient" ? "obedient" : "autonomous_llm");
+      store.setLastCompletedAction(completedAction);
     } else {
       store.setCurrentAction("error");
     }
   } finally {
     store.setThinking(false);
   }
+}
+
+/**
+ * Shared logic: set movement state and call moveTo for a chosen occupant.
+ * Used by TryMoveToNearestOccupant (wander) and SeekSocialTarget (approach-for-conversation).
+ *
+ * @param beforeMove - Optional callback after common state updates (e.g. set autonomousGoal, socialSeekCooldownUntil).
+ */
+function startMoveToOccupant(
+  store: ClawStore,
+  client: DoppelClient,
+  occupant: Occupant,
+  stopDistanceM: number,
+  beforeMove?: (store: ClawStore) => void
+): void {
+  const pos = occupant.position;
+  if (!pos) return;
+  const now = Date.now();
+  store.setMovementIntent(null);
+  store.setMovementTarget({ x: pos.x, z: pos.z });
+  store.setLastMoveToFailed(null);
+  store.setMovementStopDistanceM(stopDistanceM);
+  store.setMovementSprint(false);
+  store.setAutonomousEmoteStandStillUntil(0);
+  store.setNextAutonomousMoveAt(now + randomCooldownMs());
+  beforeMove?.(store);
+  client.moveTo(pos.x, pos.z);
 }
 
 /** Options for creating the runner (store, config, optional client and callbacks). */
@@ -118,7 +162,7 @@ export function createRunner(options: RunnerOptions): AgentLoop {
           )
       : undefined;
 
-  const runAutonomousAgent =
+  const runConverseAgent =
     client != null
       ? () =>
           runAgentTickWithFallback(
@@ -126,8 +170,8 @@ export function createRunner(options: RunnerOptions): AgentLoop {
             store,
             config,
             systemContent,
-            runAutonomousAgentTick,
-            "autonomous",
+            runConverseAgentTick,
+            "converse",
             onUsageReportFailure
           )
       : undefined;
@@ -148,34 +192,40 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     }
   };
 
-  /** Tree action: move toward nearest occupant (no LLM). Tree gates on NotInConversation; we skip if already moving, on cooldown, or going to talk. */
+  /** Tree action: move toward nearest occupant (no LLM). Used when autonomous goal is wander. */
   const tryMoveToNearestOccupant = (): void => {
     if (!client) return;
     const state = store.getState();
-    if (state.movementTarget || state.followTargetSessionId) return;
-    const now = Date.now();
-    if (state.nextAutonomousMoveAt > now) return;
-    if (state.pendingGoTalkToAgent) return;
+    if (state.movementTarget || state.followTargetSessionId || state.nextAutonomousMoveAt > Date.now() || state.pendingGoTalkToAgent)
+      return;
     const nearest = findNearestOccupantByPriority(state.occupants, state.mySessionId, state.myPosition);
-    if (!nearest?.position) return;
-    const { x, z } = nearest.position;
-    store.setMovementIntent(null);
-    store.setMovementTarget({ x, z });
-    store.setLastMoveToFailed(null);
-    store.setMovementSprint(false);
-    store.setAutonomousEmoteStandStillUntil(0);
-    store.setNextAutonomousMoveAt(now + randomCooldownMs());
-    client.moveTo(x, z);
+    if (!nearest) return;
+    startMoveToOccupant(store, client, nearest, DEFAULT_STOP_DISTANCE_M);
     clawLog("tree: TryMoveToNearestOccupant", nearest.username ?? nearest.clientId);
+  };
+
+  /** Tree action: pick best social target (nearest by priority), set approach goal, moveTo within conversation range. */
+  const seekSocialTarget = (): void => {
+    if (!client) return;
+    const state = store.getState();
+    const nearest = findNearestOccupantByPriority(state.occupants, state.mySessionId, state.myPosition);
+    if (!nearest) return;
+    startMoveToOccupant(store, client, nearest, CONVERSATION_RANGE_M, (s) => {
+      s.setAutonomousGoal("approach");
+      s.setAutonomousTargetSessionId(nearest.clientId);
+      s.setSocialSeekCooldownUntil(Date.now() + SOCIAL_SEEK_COOLDOWN_MS);
+    });
+    clawLog("tree: SeekSocialTarget", nearest.username ?? nearest.clientId);
   };
 
   const loop = createAgentLoop({
     store,
     config,
     runObedientAgent,
-    runAutonomousAgent,
+    runConverseAgent,
     executeMovementAndDrain: executeMovementAndDrain ?? defaultExecuteMovementAndDrain,
     tryMoveToNearestOccupant,
+    seekSocialTarget,
   });
 
   if (client == null) {

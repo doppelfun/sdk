@@ -6,5 +6,6 @@ export {
   movementDriverTick,
   MOVEMENT_INPUT_INTERVAL_MS,
   DEFAULT_STOP_DISTANCE_M,
+  CONVERSATION_RANGE_M,
   type MovementDriverOptions,
 } from "./movementDriver.js";

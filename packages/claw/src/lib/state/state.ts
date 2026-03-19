@@ -49,9 +49,14 @@ export type TreeAction =
   | "obedient"
   | "autonomous_llm"
   | "autonomous_move"
+  | "autonomous_seek_social"
+  | "autonomous_converse"
   | "clearing_wake_insufficient_credits"
   | "requesting_autonomous_wake"
   | "error";
+
+/** Decision-layer goal for autonomous agent (navigation + social). Obedient agent ignores this. */
+export type AutonomousGoal = "idle" | "wander" | "approach" | "converse";
 
 export type ClawState = {
   blockSlotId: string;
@@ -124,6 +129,13 @@ export type ClawState = {
   lastDocumentsList: string | null;
   /** Cached list_catalog compact for build subagent. */
   lastCatalogContext: string | null;
+  /** --- Autonomous blackboard (decision layer). Obedient agent ignores these. --- */
+  /** Current high-level goal: idle/wander → seek or move; approach → moving to target; converse → in conversation. */
+  autonomousGoal: AutonomousGoal;
+  /** SessionId we are approaching or in conversation with (set by SeekSocialTarget, cleared on ExitConversationToWander). */
+  autonomousTargetSessionId: string | null;
+  /** Next time (ms) we may look for a new social target; cooldown after SeekSocialTarget or after conversation end. */
+  socialSeekCooldownUntil: number;
 };
 
 /**
@@ -183,6 +195,9 @@ export function createInitialState(blockSlotId: string): ClawState {
     documentsByBlockSlot: {},
     lastDocumentsList: null,
     lastCatalogContext: null,
+    autonomousGoal: "wander",
+    autonomousTargetSessionId: null,
+    socialSeekCooldownUntil: 0,
   };
 }
 

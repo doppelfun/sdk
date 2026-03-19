@@ -82,7 +82,7 @@ function generatePyramidBlocks(
         if (!onEdge) continue;
 
         if (
-          layer < DOOR_HEIGHT_LAYERS && bz === 0 &&
+          layer < DOOR_HEIGHT_LAYERS && (bz === 0 || bz === span - 1) &&
           bx >= doorCentre - doorHalf && bx <= doorCentre + doorHalf
         ) continue;
 

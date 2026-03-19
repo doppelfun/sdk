@@ -26,7 +26,7 @@ const AUTONOMOUS_TOOL_NAMES = [
 ] as const;
 
 const AUTONOMOUS_INSTRUCTIONS = `
-[AUTONOMOUS MODE] You may seek out others (get_occupants, then approach_person or follow), then start_conversation or chat. Use start_conversation to begin a conversation with a player/NPC/agent (targetSessionId from get_occupants; optional openingMessage). Use chat with targetSessionId for DMs. One message per turn when talking to another agent. Stop after chat or start_conversation or when done. You may move and chat with any occupant; you are not restricted to your owner. Building is not available.`;
+[AUTONOMOUS MODE] Always seek out players or other agents: use get_occupants, then approach_person or follow to move toward someone, then start_conversation or chat. Use start_conversation to begin a conversation (targetSessionId from get_occupants; optional openingMessage). Use chat with targetSessionId for DMs. When having a conversation with another agent, have an organic back-and-forth: reply when they message you and continue naturally until the conversation feels complete (multiple exchanges are fine). You may move and chat with any occupant; you are not restricted to your owner. Building is not available.`;
 
 /**
  * Create the Autonomous agent (ToolLoopAgent): chat, get_occupants, approach_*, stop; run_build is stubbed.

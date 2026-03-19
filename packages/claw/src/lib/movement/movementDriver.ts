@@ -19,6 +19,8 @@ const LOCAL_X_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
 const LOCAL_Z_MIN = BOUNDS_MARGIN;
 const LOCAL_Z_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
 export const DEFAULT_STOP_DISTANCE_M = 1;
+/** Stop distance (m) when approaching for conversation; used by SeekSocialTarget. */
+export const CONVERSATION_RANGE_M = 2.5;
 
 // --- Random wander (aligned with engine NpcDriver) ---
 /** When to pick next pathfinding wander target (engine PATHFIND_RETARGET_MS). */
@@ -156,6 +158,7 @@ export type MovementDriverOptions = {
 
 /**
  * On arrival at movement target: send zero input, clear target, optionally send pendingGoTalkToAgent DM and clear lastBuildTarget.
+ * When this move was a social approach (autonomous goal "approach"), transition to "converse" and queue a greeting so the next drain sends it.
  */
 function applyArrival(
   client: DoppelClient,
@@ -166,14 +169,23 @@ function applyArrival(
   options: MovementDriverOptions | undefined,
   logLabel: string
 ): void {
+  // Autonomous social flow: we just reached conversation range → set goal to converse and send opening greeting.
+  if (state.autonomousGoal === "approach" && state.autonomousTargetSessionId) {
+    store.setAutonomousGoal("converse");
+    store.setPendingGoTalkToAgent({
+      targetSessionId: state.autonomousTargetSessionId,
+      openingMessage: "Hi!",
+    });
+  }
   const rotY = getFacingTowardNearestOccupant(state.occupants, state.mySessionId, state.myPosition);
   client.sendInput?.({ moveX: 0, moveZ: 0, sprint: false, jump: false, ...(rotY != null && { rotY }) });
   store.setMovementTarget(null);
   store.setNextAutonomousMoveAt(Date.now() + randomCooldownMs());
   clawLog("arrived at target", logLabel);
-  const pending = state.pendingGoTalkToAgent;
+  const currentState = store.getState();
+  const pending = currentState.pendingGoTalkToAgent;
   if (pending) {
-    if (pending.targetSessionId === state.mySessionId) {
+    if (pending.targetSessionId === currentState.mySessionId) {
       store.setPendingGoTalkToAgent(null);
     } else if (alreadyInConversationWith(store, pending.targetSessionId)) {
       store.setPendingGoTalkToAgent(null);
@@ -242,7 +254,10 @@ export function movementDriverTick(
       state = store.getState();
     } else {
       const now = Date.now();
-      if (state.nextWanderDestinationAt <= now) {
+      const others = state.occupants.filter(
+        (o) => o.clientId !== state.mySessionId && o.position != null
+      );
+      if (state.nextWanderDestinationAt <= now && others.length > 0) {
         pickWanderDestinationAndMoveTo(client, store);
         state = store.getState();
       } else {

@@ -13,6 +13,7 @@ import {
   type BuildTarget,
   type BlockDocument,
   type TreeAction,
+  type AutonomousGoal,
 } from "./state.js";
 
 export type ClawStore = ReturnType<typeof createClawStore>;
@@ -58,6 +59,15 @@ function createClawStore(blockSlotId: string) {
     },
     setLastOwnerConversationAt(ts: number) {
       setState({ lastOwnerConversationAt: ts });
+    },
+    setAutonomousGoal(goal: AutonomousGoal) {
+      setState({ autonomousGoal: goal });
+    },
+    setAutonomousTargetSessionId(sessionId: string | null) {
+      setState({ autonomousTargetSessionId: sessionId });
+    },
+    setSocialSeekCooldownUntil(ts: number) {
+      setState({ socialSeekCooldownUntil: ts });
     },
     setCurrentAction(action: TreeAction) {
       setState({ currentAction: action });
@@ -131,6 +141,9 @@ function createClawStore(blockSlotId: string) {
     },
     setMovementSprint(value: boolean) {
       setState({ movementSprint: value });
+    },
+    setMovementStopDistanceM(m: number) {
+      setState({ movementStopDistanceM: m });
     },
     setAutonomousEmoteStandStillUntil(ts: number) {
       setState({ autonomousEmoteStandStillUntil: ts });

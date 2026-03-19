@@ -135,7 +135,7 @@ function generatePyramidForCell(
       for (let bz = 0; bz < span; bz++) {
         const onEdge = bx === 0 || bx === span - 1 || bz === 0 || bz === span - 1;
         if (!onEdge) continue;
-        if (layer < DOOR_HEIGHT_LAYERS && bz === 0 &&
+        if (layer < DOOR_HEIGHT_LAYERS && (bz === 0 || bz === span - 1) &&
             bx >= doorCentre - doorHalf && bx <= doorCentre + doorHalf) continue;
 
         const x = -half + bx * PYRAMID_BLOCK_SIZE + PYRAMID_BLOCK_SIZE / 2;

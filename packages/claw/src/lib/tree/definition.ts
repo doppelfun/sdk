@@ -3,7 +3,13 @@
  *
  * Root: sequence of ExecuteMovementAndDrain then a selector over wake branches.
  * Selector order (priority): owner wake (obedient) → autonomous wake → time-based wake → clear idle.
- * Autonomous branch: if CanRunAutonomousLlm run LLM; else if NotInConversation run TryMoveToNearestOccupant (no LLM).
+ *
+ * Autonomous branch (when HasAutonomousWake && OwnerAway): decision layer drives flow without LLM for movement.
+ * - InConversation → RunConverseAgent (chat-only LLM).
+ * - WasConverseButNowIdle → ExitConversationToWander.
+ * - HasApproachGoal → ContinueApproach (no-op; movement driver handles pathing).
+ * - ShouldSeekSocialTarget → SeekSocialTarget (set target + moveTo); else SetWanderGoal + TryMoveToNearestOccupant.
+ *
  * @see docs/PLAN-AGENT-WAKE-DRIVEN.md §6
  */
 
@@ -23,20 +29,35 @@ export const TREE_DEFINITION = `root {
             }
             sequence {
                 condition [HasAutonomousWake]
+                condition [OwnerAway]
                 selector {
                     sequence {
-                        condition [CanRunAutonomousLlm]
+                        condition [InConversation]
                         condition [HasEnoughCredits]
-                        action [RunAutonomousAgent]
+                        action [RunConverseAgent]
                     }
                     sequence {
-                        condition [NotInConversation]
+                        condition [WasConverseButNowIdle]
+                        action [ExitConversationToWander]
+                    }
+                    sequence {
+                        condition [HasApproachGoal]
+                        action [ContinueApproach]
+                    }
+                    sequence {
+                        condition [ShouldSeekSocialTarget]
+                        condition [HasEnoughCredits]
+                        action [SeekSocialTarget]
+                    }
+                    sequence {
+                        action [SetWanderGoal]
                         action [TryMoveToNearestOccupant]
                     }
                 }
             }
             sequence {
                 condition [HasAutonomousWake]
+                condition [OwnerAway]
                 condition [InsufficientCredits]
                 action [ClearWakeInsufficientCredits]
             }

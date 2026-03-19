@@ -1,12 +1,21 @@
 /**
  * Mistreevous agent object: actions and conditions for the behaviour tree.
- * Built from store, config, and optional client + runObedient/runAutonomous.
+ * Built from store, config, and optional callbacks (movement, obedient, converse).
+ *
+ * Structure:
+ * - Wake/credits: HasOwnerWake, HasEnoughCredits, InsufficientCredits, ClearWakeInsufficientCredits
+ * - Obedient: RunObedientAgent (owner or scheduled task)
+ * - Autonomous: OwnerAway, InConversation, WasConverseButNowIdle, HasApproachGoal, ShouldSeekSocialTarget,
+ *   RunConverseAgent, ExitConversationToWander, ContinueApproach, SeekSocialTarget, SetWanderGoal, TryMoveToNearestOccupant
+ * - Wake timing: TimeForAutonomousWake, RequestAutonomousWake, ClearWakeIdle
+ *
  * @see docs/PLAN-AGENT-WAKE-DRIVEN.md §11
  */
 
 import { State } from "mistreevous";
 import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
+import type { ClawState } from "../state/index.js";
 import { hasEnoughCredits, MIN_BALANCE_THRESHOLD } from "../credits/index.js";
 import { isOwnerNearby } from "../../util/position.js";
 import { clawLog } from "../../util/log.js";
@@ -23,20 +32,32 @@ export type TreeAgentContext = {
   executeMovementAndDrain?: () => void;
   /** Optional: move to nearest occupant (no LLM). When absent, TryMoveToNearestOccupant no-ops. */
   tryMoveToNearestOccupant?: () => void;
+  /** Optional: decision-layer seek social target; sets approach goal and moveTo. Autonomous only. */
+  seekSocialTarget?: () => void;
+  /** Optional: run one Converse tick (chat-only LLM). When absent, RunConverseAgent no-ops. */
+  runConverseAgent?: () => Promise<void>;
 };
+
+/** True when wake was triggered by owner (DM) or by a scheduled task. Used to gate Obedient branch and credit clearing. */
+function isOwnerTrigger(s: ClawState, config: ClawConfig): boolean {
+  const isOwner = config.ownerUserId != null && s.lastTriggerUserId === config.ownerUserId;
+  const hasScheduledTask = s.pendingScheduledTask != null;
+  return isOwner || hasScheduledTask;
+}
 
 /**
  * Build the Mistreevous agent object for BehaviourTree(definition, agent).
  * Keys match tree node names (ExecuteMovementAndDrain, HasOwnerWake, RunObedientAgent, etc.).
  * Condition methods return boolean; action methods return State or Promise<State>.
  *
- * @param ctx - Store, config, and optional callbacks for movement, obedient, autonomous
+ * @param ctx - Store, config, and optional callbacks for movement, obedient, converse
  * @returns Agent object keyed by action/condition names
  */
 export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => State | boolean | Promise<State>> {
-  const { store, config, runObedientAgent, runAutonomousAgent, executeMovementAndDrain, tryMoveToNearestOccupant } = ctx;
+  const { store, config, runObedientAgent, runAutonomousAgent, executeMovementAndDrain, tryMoveToNearestOccupant, seekSocialTarget, runConverseAgent } = ctx;
 
   return {
+    // --- Movement (every tick) ---
     ExecuteMovementAndDrain(): State {
       setCurrentActionForNode(store, "ExecuteMovementAndDrain");
       if (executeMovementAndDrain) executeMovementAndDrain();
@@ -44,25 +65,23 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       return State.SUCCEEDED;
     },
 
+    // --- Wake & credits (selector gates) ---
     /** True only when wake was triggered by the owner (DM) or a scheduled task. Guest DMs must not run Obedient. */
     HasOwnerWake(): boolean {
       const s = store.getState();
-      const isOwner = config.ownerUserId != null && s.lastTriggerUserId === config.ownerUserId;
-      const hasScheduledTask = s.pendingScheduledTask != null;
-      return s.wakePending && (isOwner || hasScheduledTask);
+      return s.wakePending && isOwnerTrigger(s, config);
     },
 
     HasEnoughCredits(): boolean {
       return hasEnoughCredits(store, config);
     },
 
+    /** True when current wake branch would run but credits are insufficient (owner, scheduled, or autonomous). */
     InsufficientCredits(): boolean {
       const s = store.getState();
       if (!s.wakePending) return false;
-      const isOwner = config.ownerUserId != null && s.lastTriggerUserId === config.ownerUserId;
-      const hasScheduledTask = s.pendingScheduledTask != null;
-      const isAutonomous = s.lastTriggerUserId !== config.ownerUserId && !hasScheduledTask;
-      if (!isOwner && !hasScheduledTask && !isAutonomous) return false;
+      const isAutonomous = s.lastTriggerUserId !== config.ownerUserId && !s.pendingScheduledTask;
+      if (!isOwnerTrigger(s, config) && !isAutonomous) return false;
       return !hasEnoughCredits(store, config);
     },
 
@@ -91,26 +110,61 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       return State.SUCCEEDED;
     },
 
+    // --- Obedient (owner or scheduled task) ---
+    // RunObedientAgent above consumes wake and runs LLM.
+
+    // --- Autonomous wake gate ---
     HasAutonomousWake(): boolean {
       const s = store.getState();
       if (!s.wakePending || s.pendingScheduledTask != null) return false;
       return s.lastTriggerUserId !== config.ownerUserId;
     },
 
-    /** True when not in a conversation (phase is idle). Gates TryMoveToNearestOccupant so we don't move toward someone while talking. */
+    /** True when owner is not nearby (or we have no owner). Prevents autonomous mode when owner is in range. */
+    OwnerAway(): boolean {
+      const s = store.getState();
+      if (!config.ownerUserId) return true;
+      if (!s.myPosition) return true;
+      return !isOwnerNearby(s.occupants, s.myPosition, config.ownerUserId, config.ownerNearbyRadiusM);
+    },
+
+    // --- Conversation / social (autonomous decision layer) ---
+    /** True when not in a conversation (phase is idle). Gates movement so we don't move toward someone while talking. */
     NotInConversation(): boolean {
       return store.getState().conversationPhase === "idle";
     },
 
-    /** True when we should run the autonomous LLM: real DM (lastTriggerUserId set) or cooldown elapsed. Prevents LLM spam in soul mode. */
-    CanRunAutonomousLlm(): boolean {
-      const s = store.getState();
-      if (s.lastTriggerUserId != null) return true;
-      const elapsed = Date.now() - s.lastAutonomousRunAt;
-      return elapsed >= config.autonomousLlmCooldownMs;
+    /** True when in an active conversation (phase not idle). BT runs RunConverseAgent (chat-only LLM). */
+    InConversation(): boolean {
+      return store.getState().conversationPhase !== "idle";
     },
 
-    /** Tree-driven move (no LLM). Used when autonomous wake but cooldown not elapsed. */
+    /** True when we were in converse goal but conversation just ended (phase idle). Transition to wander. */
+    WasConverseButNowIdle(): boolean {
+      const s = store.getState();
+      return s.autonomousGoal === "converse" && s.conversationPhase === "idle";
+    },
+
+    /** True when decision layer set approach goal and we have a target; movement handles the rest. */
+    HasApproachGoal(): boolean {
+      const s = store.getState();
+      return s.autonomousGoal === "approach" && s.autonomousTargetSessionId != null;
+    },
+
+    /** True when we may look for a new social target (wander/idle, not in conversation, cooldown elapsed, not already moving). */
+    ShouldSeekSocialTarget(): boolean {
+      const s = store.getState();
+      if (s.autonomousGoal === "approach" || s.autonomousGoal === "converse") return false;
+      if (s.conversationPhase !== "idle") return false;
+      if (Date.now() < s.socialSeekCooldownUntil) return false;
+      if (s.movementTarget != null || s.followTargetSessionId != null) return false;
+      if (Date.now() < s.nextAutonomousMoveAt) return false;
+      const others = s.occupants.filter((o) => o.clientId !== s.mySessionId && o.position != null);
+      return others.length > 0;
+    },
+
+    // --- Autonomous actions (movement and Converse) ---
+    /** Tree-driven move (no LLM). Used when autonomous goal is wander. */
     TryMoveToNearestOccupant(): State {
       setCurrentActionForNode(store, "TryMoveToNearestOccupant");
       if (tryMoveToNearestOccupant) tryMoveToNearestOccupant();
@@ -118,19 +172,54 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       return State.SUCCEEDED;
     },
 
-    /** Consume wake and owner messages first; then run LLM. Clear owner so autonomous doesn't re-run last command. */
-    async RunAutonomousAgent(): Promise<State> {
-      setCurrentActionForNode(store, "RunAutonomousAgent");
-      clawLog("tree: RunAutonomousAgent");
-      store.clearWake();
-      store.clearOwnerMessages();
-      if (runAutonomousAgent) await runAutonomousAgent();
-      store.setLastAutonomousRunAt(Date.now());
-      setLastCompletedActionForNode(store, "RunAutonomousAgent");
+    /** Decision layer: pick best social target, set approach goal, start moveTo. */
+    SeekSocialTarget(): State {
+      setCurrentActionForNode(store, "SeekSocialTarget");
+      if (seekSocialTarget) seekSocialTarget();
+      setLastCompletedActionForNode(store, "SeekSocialTarget");
       return State.SUCCEEDED;
     },
 
-    /** Min ms since last owner conversation before autonomous wake (soul tick) can fire. */
+    /** Movement is handling approach; no-op. */
+    ContinueApproach(): State {
+      setCurrentActionForNode(store, "ContinueApproach");
+      setLastCompletedActionForNode(store, "ContinueApproach");
+      return State.SUCCEEDED;
+    },
+
+    /** Conversation ended; set goal to wander, clear target, set cooldown. */
+    ExitConversationToWander(): State {
+      setCurrentActionForNode(store, "ExitConversationToWander");
+      const s = store.getState();
+      const peer = s.conversationPeerSessionId ?? s.autonomousTargetSessionId;
+      store.setAutonomousGoal("wander");
+      store.setAutonomousTargetSessionId(null);
+      if (peer) store.setSocialSeekCooldownUntil(Date.now() + 15_000);
+      setLastCompletedActionForNode(store, "ExitConversationToWander");
+      return State.SUCCEEDED;
+    },
+
+    /** Set decision-layer goal to wander so we don't immediately seek again. */
+    SetWanderGoal(): State {
+      setCurrentActionForNode(store, "SetWanderGoal");
+      store.setAutonomousGoal("wander");
+      setLastCompletedActionForNode(store, "SetWanderGoal");
+      return State.SUCCEEDED;
+    },
+
+    /** Run one Converse tick (chat-only LLM). */
+    async RunConverseAgent(): Promise<State> {
+      setCurrentActionForNode(store, "RunConverseAgent");
+      clawLog("tree: RunConverseAgent");
+      store.clearWake();
+      if (runConverseAgent) await runConverseAgent();
+      store.setLastAutonomousRunAt(Date.now());
+      setLastCompletedActionForNode(store, "RunConverseAgent");
+      return State.SUCCEEDED;
+    },
+
+    // --- Wake timing (soul tick) ---
+    /** True when enough time since last owner conversation and since last autonomous run → request autonomous wake. */
     TimeForAutonomousWake(): boolean {
       const s = store.getState();
       if (s.wakePending) return false;

@@ -1,49 +1,26 @@
 /**
- * Recipe loader: auto-discovers recipe folders under recipes/ and builds a registry.
+ * Recipe registry: known recipes under recipes/<id>/ with recipe.json and run().
  *
- * - Scans the recipes/ directory (next to this file in dist/) for subdirectories.
- * - Each subdirectory is loaded via dynamic import; if it exports recipeManifest and run,
- *   it is registered. Folders that fail to load or don't export both are skipped.
- * - Uses top-level await so discovery runs once when the package is first imported.
+ * Static imports avoid top-level await so tools like tsx (esbuild CJS transform) and
+ * other bundlers can load this package without "Top-level await is not supported with cjs".
  */
 
-import { readdirSync } from "fs";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
 import type { RecipeManifest, RecipeRunner } from "./types.js";
 
 /** A loaded recipe: manifest (from recipe.json) + run function. */
 export type RecipeEntry = { manifest: RecipeManifest; run: RecipeRunner };
 
-// Resolve recipes dir relative to this module (works from dist/ after build).
-const loaderDir = dirname(fileURLToPath(import.meta.url));
-const recipesDir = join(loaderDir, "recipes");
+import { recipeManifest as cityManifest, run as runCity } from "./recipes/city/index.js";
+import { recipeManifest as grassManifest, run as runGrass } from "./recipes/grass/index.js";
+import { recipeManifest as pyramidManifest, run as runPyramid } from "./recipes/pyramid/index.js";
+import { recipeManifest as treesManifest, run as runTrees } from "./recipes/trees/index.js";
 
-/**
- * Scan recipesDir for subdirectories and dynamically import each as a recipe module.
- * Only directories that export both recipeManifest and run are included.
- */
-async function loadRecipes(): Promise<RecipeEntry[]> {
-  const entries = readdirSync(recipesDir, { withFileTypes: true });
-  const loaded: RecipeEntry[] = [];
-
-  for (const e of entries) {
-    if (!e.isDirectory() || e.name.startsWith(".")) continue;
-
-    try {
-      const mod = await import(`./recipes/${e.name}/index.js`);
-      if (mod?.recipeManifest && typeof mod.run === "function") {
-        loaded.push({ manifest: mod.recipeManifest, run: mod.run });
-      }
-    } catch {
-      // Not a valid recipe module (e.g. missing index or invalid export); skip.
-    }
-  }
-
-  return loaded;
-}
-
-const RECIPES = await loadRecipes();
+const RECIPES: RecipeEntry[] = [
+  { manifest: cityManifest, run: runCity },
+  { manifest: grassManifest, run: runGrass },
+  { manifest: pyramidManifest, run: runPyramid },
+  { manifest: treesManifest, run: runTrees },
+];
 
 /** kind (lowercase id) → run function. Throws on duplicate id. */
 function buildHandlerMap(): Record<string, RecipeRunner> {

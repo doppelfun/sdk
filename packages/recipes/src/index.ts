@@ -1,8 +1,8 @@
 /**
  * @doppelfun/recipes — pure recipe packages.
  *
- * Recipes are isolated folders under src/recipes/<id>/ with recipe.json and a run() function.
- * The loader auto-discovers them; claw uses listRecipes(), runRecipe(), and
+ * Recipes live under src/recipes/<id>/ with recipe.json and a run() function.
+ * The loader registers all built-in recipes; claw uses listRecipes(), runRecipe(), and
  * getRecipeManifests() for list_recipes / run_recipe tools.
  */
 

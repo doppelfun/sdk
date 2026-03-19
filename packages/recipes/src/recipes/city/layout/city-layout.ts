@@ -207,6 +207,10 @@ export function generateCityLayout(
     height: b.height ?? 1,
   }));
 
+  if (pool.length === 0) {
+    return { streets, buildings: placements, config: cfg };
+  }
+
   const sortedPool = [...pool].sort((a, b) => a.width - b.width);
   const narrowest = sortedPool[0]!.width;
   const curbOffset = cfg.streetWidth / 2 + cfg.buildingSetback;

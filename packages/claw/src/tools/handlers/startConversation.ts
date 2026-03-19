@@ -73,7 +73,7 @@ export async function handleStartConversation(ctx: ToolContext) {
     const voiceId = config.voiceId ?? undefined;
     clawLog("start_conversation: sendChat DM", openingMessage.slice(0, 50));
     client.sendChat(openingMessage, buildChatSendOptions({ targetSessionId, voiceId }));
-    if (voiceId && config.voiceEnabled) {
+    if (voiceId) {
       reportVoiceUsageToHub(config, store, openingMessage.length);
     }
     store.setLastAgentChatMessage(openingMessage);

@@ -77,7 +77,7 @@ export async function refreshBalance(
 }
 
 /**
- * Report voice (TTS) character usage to hub (fire-and-forget). No-op when !hosted or !voiceEnabled or skipCreditReport.
+ * Report voice (TTS) character usage to hub (fire-and-forget). No-op when !hosted or !voiceId or skipCreditReport.
  * Intentionally non-blocking: never await this; the request runs in the background.
  */
 export function reportVoiceUsageToHub(
@@ -86,7 +86,7 @@ export function reportVoiceUsageToHub(
   characters: number,
   onFailure?: (message: string) => void
 ): void {
-  if (config.skipCreditReport || !config.hosted || !config.voiceEnabled) return;
+  if (config.skipCreditReport || !config.hosted || !config.voiceId) return;
   if (characters <= 0) return;
   void reportVoiceUsage(config.agentApiUrl, config.apiKey, {
     characters,

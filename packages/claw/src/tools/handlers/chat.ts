@@ -75,7 +75,7 @@ export async function handleChat(ctx: ToolContext) {
       (typeof args.voiceId === "string" ? args.voiceId.trim() : null) || config.voiceId || undefined;
     clawLog("chat tool: sendChat", targetSessionId ? "DM" : "global", text.slice(0, 50));
     client.sendChat(text, buildChatSendOptions({ targetSessionId: targetSessionId ?? undefined, voiceId }));
-    if (voiceId && config.voiceEnabled) {
+    if (voiceId) {
       reportVoiceUsageToHub(config, store, text.length);
     }
     store.setLastAgentChatMessage(text);

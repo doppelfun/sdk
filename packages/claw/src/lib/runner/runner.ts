@@ -79,7 +79,7 @@ async function runAgentTickWithFallback(
       const dmTarget = state.lastDmPeerSessionId ?? undefined;
       const voiceId = config.voiceId ?? undefined;
       client.sendChat?.(result.replyText, { targetSessionId: dmTarget, voiceId });
-      if (voiceId && config.voiceEnabled) {
+      if (voiceId) {
         reportVoiceUsageToHub(config, store, result.replyText.length, onUsageReportFailure);
       }
       store.setLastAgentChatMessage(result.replyText);
@@ -181,7 +181,7 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     movementDriverTick(client, store, {
       voiceId: config.voiceId,
       onVoiceSent:
-        config.voiceEnabled && config.voiceId
+        config.voiceId
           ? (characters) => reportVoiceUsageToHub(config, store, characters, onUsageReportFailure)
           : undefined,
       ownerUserId: config.ownerUserId ?? undefined,
@@ -190,7 +190,11 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     const pending = drainPendingReply(store);
     if (pending) {
       clawLog("runner: drain pending DM", pending.targetSessionId, pending.text.slice(0, 40));
-      client.sendChat?.(pending.text, { targetSessionId: pending.targetSessionId });
+      const voiceId = config.voiceId ?? undefined;
+      client.sendChat?.(pending.text, { targetSessionId: pending.targetSessionId, voiceId });
+      if (voiceId) {
+        reportVoiceUsageToHub(config, store, pending.text.length, onUsageReportFailure);
+      }
     }
   };
 

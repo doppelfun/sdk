@@ -15,6 +15,9 @@ export const RECEIVE_REPLY_DELAY_MIN_MS = 3000;
 /** Cooldown after conversation end before autonomous agent can seek again (ms). */
 export const CONVERSATION_END_SEEK_COOLDOWN_MS = 3 * 60 * 1000;
 
+/** Max back-and-forth rounds with the same peer; after this we clear conversation so the agent can wander and find someone else. */
+export const MAX_CONVERSATION_ROUNDS = 8;
+
 const TTS_CHARS_PER_SECOND = 14;
 
 // --- Types ---
@@ -102,7 +105,7 @@ export function onWeSentDm(store: ClawStoreApi, targetSessionId: string, now = g
   });
 }
 
-/** Update store when we received a DM: phase can_reply, set receiveDelayUntil and conversation peer. */
+/** Update store when we received a DM: phase can_reply, set receiveDelayUntil and conversation peer. Breaks conversation after MAX_CONVERSATION_ROUNDS so the agent can wander again. */
 export function onWeReceivedDm(
   store: ClawStoreApi,
   fromSessionId: string,
@@ -110,19 +113,24 @@ export function onWeReceivedDm(
   now = getNow()
 ): void {
   const state = store.getState();
+  const wasSamePeer = state.conversationPeerSessionId === fromSessionId;
+  const nextRoundCount = wasSamePeer ? state.conversationRoundCount + 1 : 1;
+  if (wasSamePeer && nextRoundCount > MAX_CONVERSATION_ROUNDS) {
+    clearConversation(store);
+    return;
+  }
   const { audioDurationMs, messageLength = 0 } = options;
   const delayMs =
     audioDurationMs != null
       ? RECEIVE_REPLY_DELAY_MIN_MS + audioDurationMs
       : RECEIVE_REPLY_DELAY_MIN_MS + Math.round((messageLength / TTS_CHARS_PER_SECOND) * 1000);
-  const wasSamePeer = state.conversationPeerSessionId === fromSessionId;
   store.setState({
     conversationPhase: "can_reply",
     conversationPeerSessionId: fromSessionId,
     lastDmPeerSessionId: fromSessionId,
     receiveDelayUntil: now + delayMs,
     waitingForReplySince: 0,
-    conversationRoundCount: wasSamePeer ? state.conversationRoundCount + 1 : 1,
+    conversationRoundCount: nextRoundCount,
   });
 }
 

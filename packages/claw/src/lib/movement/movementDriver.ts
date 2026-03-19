@@ -19,8 +19,8 @@ const LOCAL_X_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
 const LOCAL_Z_MIN = BOUNDS_MARGIN;
 const LOCAL_Z_MAX = BLOCK_SIZE_M - BOUNDS_MARGIN;
 export const DEFAULT_STOP_DISTANCE_M = 1;
-/** Stop distance (m) when approaching for conversation; used by SeekSocialTarget. */
-export const CONVERSATION_RANGE_M = 2.5;
+/** Stop distance (m) when approaching for conversation; used by SeekSocialTarget. Closer = stand nearer when talking. */
+export const CONVERSATION_RANGE_M = 1.5;
 
 // --- Random wander (aligned with engine NpcDriver) ---
 /** When to pick next pathfinding wander target (engine PATHFIND_RETARGET_MS). */

@@ -9,10 +9,11 @@ import type { ClawStore } from "../state/index.js";
 
 /**
  * Apply hub profile to config (mutates config).
- * Sets voiceEnabled, dailyCreditBudget, soul; when hub has hosted, can set config.hosted.
+ * Sets voiceEnabled, voiceId, dailyCreditBudget, soul; when hub has hosted, can set config.hosted.
  */
 export function applyHubProfileToConfig(config: ClawConfig, profile: HubAgentProfile): void {
   if (typeof profile.voiceEnabled === "boolean") config.voiceEnabled = profile.voiceEnabled;
+  if (profile.voiceId !== undefined) config.voiceId = profile.voiceId ?? null;
   if (typeof profile.dailyCreditBudget === "number" && profile.dailyCreditBudget >= 0) {
     config.dailyCreditBudget = profile.dailyCreditBudget;
   }

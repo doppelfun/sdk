@@ -24,6 +24,8 @@ export type HubAgentProfile = {
   accountId?: string | null;
   /** TTS/voice enabled for this agent. */
   voiceEnabled?: boolean;
+  /** Voice ID for TTS (e.g. ElevenLabs voice). */
+  voiceId?: string | null;
   /** Daily credit budget (cap). */
   dailyCreditBudget?: number;
   /** Personality/backstory for system prompt. */

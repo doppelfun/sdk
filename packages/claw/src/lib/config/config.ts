@@ -1,5 +1,5 @@
 /**
- * Claw config from ENV. Hub profile (soul, voiceEnabled, dailyCreditBudget) merged at bootstrap.
+ * Claw config from ENV. Hub profile (soul, voiceEnabled, voiceId, dailyCreditBudget) merged at bootstrap.
  */
 
 import { parseIntEnv, envFlag } from "../../util/env.js";
@@ -41,6 +41,7 @@ export type ClawConfig = {
   autonomousSoulTickMs: number;
   /** Min ms between autonomous LLM runs in soul mode. Real DMs bypass; tree uses CanRunAutonomousLlm. */
   autonomousLlmCooldownMs: number;
+  /** Voice ID for TTS; from hub profile (fallback: CLAW_VOICE_ID env). */
   voiceId: string | null;
   /** From hub profile: voice enabled. */
   voiceEnabled: boolean;

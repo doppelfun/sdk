@@ -1,6 +1,9 @@
 # DoppelClaw
 
-**DoppelClaw** is a lightweight agent runtime that runs a single behaviour tree (Mistreevous) on a 50ms tick. Wakes—from chat (DM), cron, or an autonomous scheduler—decide whether the **Obedient** agent (user-driven) or **Autonomous** agent runs each tick. One loop, one tree, plug in your LLM and tools.
+**DoppelClaw** is a lightweight agent runtime that runs a single behaviour tree (Mistreevous) on a 50ms tick. Wakes—from chat (DM), cron, or an autonomous scheduler—route each tick to the **Obedient** or **Autonomous** branch.
+
+- **Obedient:** Owner or cron triggered. Full LLM with all tools (chat, move, build/recipe, documents). Used when the owner DMs the agent or a scheduled task runs.
+- **Autonomous:** Self-driven when the owner is away (or when already in a conversation so the owner can observe). No LLM for movement; the tree drives approach/wander. When in conversation with another agent, **RunConverseAgent** runs a chat-only LLM to generate replies. Conversations cap at `MAX_CONVERSATION_ROUNDS` (8) then the agent exits to wander and can seek a new partner.
 
 See [docs/PLAN-AGENT-WAKE-DRIVEN.md](docs/PLAN-AGENT-WAKE-DRIVEN.md) for the design.
 
@@ -120,12 +123,20 @@ flowchart TB
     C1 -->|yes| Obedient["RunObedientAgent"]
     C1 -->|no| Clear["ClearWakeInsufficientCredits"]
     O1 -->|no| A1{"Autonomous wake?"}
-    A1 -->|yes| C2{"Enough credits?"}
-    C2 -->|yes| Autonomous["RunAutonomousAgent"]
-    C2 -->|no| Clear
     A1 -->|no| T1{"Time for autonomous?"}
     T1 -->|yes| ReqAuto["RequestAutonomousWake"]
     T1 -->|no| Idle["ClearWakeIdle"]
+    A1 -->|yes| A2{"Owner away or in conversation?"}
+    A2 -->|no| Idle
+    A2 -->|yes| C2{"Enough credits?"}
+    C2 -->|no| Clear
+    C2 -->|yes| AutoSel["Autonomous (first match)"]
+    AutoSel --> Converse["InConversation + can_reply → RunConverseAgent"]
+    AutoSel --> Wait["InConversation + waiting → ContinueWaiting"]
+    AutoSel --> Exit["WasConverseButNowIdle → ExitConversationToWander"]
+    AutoSel --> ContApproach["HasApproachGoal → ContinueApproach"]
+    AutoSel --> SeekSocial["ShouldSeekSocialTarget → SeekSocialTarget"]
+    AutoSel --> Wander["else SetWanderGoal + TryMoveToNearestOccupant"]
   end
 
   WS -->|"handleChatMessage → requestWake('dm')"| Store
@@ -133,8 +144,9 @@ flowchart TB
   ReqAuto --> Store
   Store --> Step
   Step --> Move
-  Obedient --> LLM[("LLM + tools\n(chat, move, build/recipe tools)")]
-  Autonomous --> LLM
+  Obedient --> LLMFull[("LLM + full tools\n(chat, move, build/recipe)")]
+  Converse --> LLMChat[("ConverseAgent\n(chat-only LLM)")]
+  SeekSocial --> Engine["Engine approach\n(stop at conversation range)"]
 ```
 
 **State:** `currentAction` (type `TreeAction`) is set by the behaviour tree and is the single place to read what the agent is currently doing. It is set to `"error"` when an LLM tick fails (cleared on the next tree step). `isThinking` is true only while an LLM tick is in progress (runner sets it around the call). Use `isAgentRunningLlm(state)`, `isAgentInError(state)`, and `state.isThinking` for UI.
@@ -147,7 +159,7 @@ flowchart TB
 - **State:** `createClawStore`, `createInitialState`, `isAgentRunningLlm`, `isAgentInError`, `ClawState`, `ClawStore`, `TreeAction`, etc.
 - **Config:** `loadConfig`, `ClawConfig`
 - **Prompts:** `buildSystemContent`, `buildUserMessage`
-- **Agents:** `runObedientAgentTick`, `runAutonomousAgentTick`
+- **Agents:** `runObedientAgentTick`, `runAutonomousAgentTick` (ConverseAgent runs internally when autonomous branch is in conversation)
 - **Build:** `createRunBuildStubTool` (from lib/build; Obedient uses direct build/recipe tools from the tool registry)
 - **Hub:** `getAgentProfile`, `reportUsage`, `checkBalance`, `applyHubProfileToConfig`, `HubAgentProfile`
 - **Credits:** `reportUsageToHub`, `reportVoiceUsageToHub`, `hasEnoughCredits`, `refreshBalance`, `MIN_BALANCE_THRESHOLD`

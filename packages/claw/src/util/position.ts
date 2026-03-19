@@ -16,6 +16,29 @@ export function parsePositionHint(hint: string): { x: number; y: number; z: numb
   return { x, y, z };
 }
 
+/** Priority order for choosing who to move toward: 1 agents, 2 players (user), 3 NPCs/observers. */
+const OCCUPANT_PRIORITY_ORDER: Array<"agent" | "user" | "observer"> = ["agent", "user", "observer"];
+
+function nearestInGroup(
+  group: Occupant[],
+  myPosition: { x: number; z: number }
+): Occupant | null {
+  if (group.length === 0) return null;
+  let nearest = group[0]!;
+  let minD2 = Infinity;
+  for (const o of group) {
+    if (!o.position) continue;
+    const dx = o.position.x - myPosition.x;
+    const dz = o.position.z - myPosition.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < minD2 && d2 > MIN_DISTANCE_SQ) {
+      minD2 = d2;
+      nearest = o;
+    }
+  }
+  return nearest;
+}
+
 /**
  * Find the nearest occupant (excluding self) with a position. Returns null if none or self has no position.
  */
@@ -40,6 +63,26 @@ export function findNearestOccupant(
     }
   }
   return nearest;
+}
+
+/**
+ * Find the nearest occupant by priority: agents first, then players (user), then observers/NPCs.
+ * Used for TryMoveToNearestOccupant and consistent with wander destination priority.
+ */
+export function findNearestOccupantByPriority(
+  occupants: Occupant[],
+  mySessionId: string | null,
+  myPosition: { x: number; z: number } | null
+): Occupant | null {
+  if (!mySessionId || !myPosition) return null;
+  const others = occupants.filter((o) => o.clientId !== mySessionId && o.position != null);
+  if (others.length === 0) return null;
+  for (const tier of OCCUPANT_PRIORITY_ORDER) {
+    const group = others.filter((o) => o.type === tier);
+    const nearest = nearestInGroup(group, myPosition);
+    if (nearest) return nearest;
+  }
+  return nearestInGroup(others, myPosition);
 }
 
 /**

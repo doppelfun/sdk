@@ -1,6 +1,6 @@
 /**
  * Movement driver: apply movementIntent or check arrival for movementTarget (server-driven move_to).
- * When idle, uses pathfinding-based wander (engine NPC-style): pick random point every 12–28s via moveTo;
+ * When idle, uses pathfinding-based wander: pick another occupant (prioritize agents) or random point every 12–28s via moveTo;
  * between pathfinding legs uses heading/speed drift.
  */
 import type { DoppelClient } from "@doppelfun/sdk";
@@ -111,22 +111,39 @@ function wanderTick(store: ClawStore): void {
 }
 
 /**
- * Pick a random point in block bounds and start server pathfinding (moveTo).
- * Used when idle and it's time for the next pathfinding wander leg (engine NPC-style).
+ * Pick a wander destination: another occupant (prioritizing agents) when available, else a random point in block bounds.
+ * Starts server pathfinding via moveTo. Used when idle and it's time for the next pathfinding wander leg.
  */
 function pickWanderDestinationAndMoveTo(
   client: DoppelClient,
   store: ClawStore,
 ): void {
-  const x = randomRange(LOCAL_X_MIN, LOCAL_X_MAX);
-  const z = randomRange(LOCAL_Z_MIN, LOCAL_Z_MAX);
+  const state = store.getState();
+  const others = state.occupants.filter(
+    (o) => o.clientId !== state.mySessionId && o.position != null
+  );
+  let x: number;
+  let z: number;
+  if (others.length > 0) {
+    const agents = others.filter((o) => o.type === "agent");
+    const users = others.filter((o) => o.type === "user");
+    const rest = others.filter((o) => o.type !== "agent" && o.type !== "user");
+    const pool = agents.length > 0 ? agents : users.length > 0 ? users : rest;
+    const chosen = pool[Math.floor(Math.random() * pool.length)]!;
+    x = chosen.position!.x;
+    z = chosen.position!.z;
+    clawLog("wander pathfind toward", chosen.type, chosen.username ?? chosen.clientId);
+  } else {
+    x = randomRange(LOCAL_X_MIN, LOCAL_X_MAX);
+    z = randomRange(LOCAL_Z_MIN, LOCAL_Z_MAX);
+    clawLog("wander pathfind", x.toFixed(1), z.toFixed(1));
+  }
   store.setMovementIntent(null);
   store.setMovementTarget({ x, z });
   store.setLastMoveToFailed(null);
   store.setMovementSprint(false);
   store.setNextWanderDestinationAt(Date.now() + randomRange(PATHFIND_RETARGET_MS.min, PATHFIND_RETARGET_MS.max));
   client.moveTo(x, z);
-  clawLog("wander pathfind", x.toFixed(1), z.toFixed(1));
 }
 
 export type MovementDriverOptions = {
@@ -156,7 +173,9 @@ function applyArrival(
   clawLog("arrived at target", logLabel);
   const pending = state.pendingGoTalkToAgent;
   if (pending) {
-    if (alreadyInConversationWith(store, pending.targetSessionId)) {
+    if (pending.targetSessionId === state.mySessionId) {
+      store.setPendingGoTalkToAgent(null);
+    } else if (alreadyInConversationWith(store, pending.targetSessionId)) {
       store.setPendingGoTalkToAgent(null);
     } else if (canSendDmTo(store, pending.targetSessionId)) {
       const voiceId = options?.voiceId;
@@ -209,7 +228,7 @@ export function movementDriverTick(
   }
 
   // When idle (no target, no intent, not following): don't move if busy (in conversation or going to talk).
-  // Prefer move-to-each-other: only pick random point when alone; with others the tree sets move-to-nearest. Cooldown shared with runner.
+  // When it's time for next wander leg: pick another occupant (prioritize agents) or random point and moveTo. Cooldown shared with runner.
   if (!target && !state.movementIntent && !state.followTargetSessionId) {
     const busy = state.conversationPhase !== "idle" || state.pendingGoTalkToAgent != null;
     if (busy) {
@@ -223,8 +242,7 @@ export function movementDriverTick(
       state = store.getState();
     } else {
       const now = Date.now();
-      const hasOthers = state.occupants.length > 1;
-      if (state.nextWanderDestinationAt <= now && !hasOthers) {
+      if (state.nextWanderDestinationAt <= now) {
         pickWanderDestinationAndMoveTo(client, store);
         state = store.getState();
       } else {

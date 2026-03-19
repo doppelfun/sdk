@@ -130,12 +130,15 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       return State.SUCCEEDED;
     },
 
+    /** Min ms since last owner conversation before autonomous wake (soul tick) can fire. */
     TimeForAutonomousWake(): boolean {
       const s = store.getState();
       if (s.wakePending) return false;
       if (!config.ownerUserId || config.autonomousSoulTickMs <= 0) return false;
       const ownerAway = s.myPosition != null && !isOwnerNearby(s.occupants, s.myPosition, config.ownerUserId, config.ownerNearbyRadiusM);
       if (!ownerAway) return false;
+      const AUTONOMOUS_WAKE_MIN_AFTER_OWNER_MS = 60_000;
+      if (s.lastOwnerConversationAt > 0 && Date.now() - s.lastOwnerConversationAt < AUTONOMOUS_WAKE_MIN_AFTER_OWNER_MS) return false;
       const elapsed = Date.now() - s.lastAutonomousRunAt;
       return elapsed >= config.autonomousSoulTickMs;
     },

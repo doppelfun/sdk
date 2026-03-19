@@ -36,6 +36,13 @@ export async function handleChat(ctx: ToolContext) {
     };
   }
 
+  if (text && targetSessionId && state.mySessionId && targetSessionId === state.mySessionId) {
+    return {
+      ok: false,
+      error: "You cannot send a DM to yourself. Use targetSessionId from get_occupants for another person.",
+    };
+  }
+
   if (text && targetSessionId) {
     if (!isTargetOwner(state.occupants, targetSessionId, config.ownerUserId)) {
       if (!state.myPosition) {

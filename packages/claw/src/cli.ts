@@ -57,6 +57,15 @@ async function main(): Promise<void> {
     store.setLastFollowFailed(typeof p?.targetSessionId === "string" ? p.targetSessionId : "");
   });
 
+  client.onMessage("move_to_failed", (payload: unknown) => {
+    const p = payload as { x?: number; z?: number };
+    store.setMovementTarget(null);
+    store.setLastMoveToFailed(
+      typeof p?.x === "number" && typeof p?.z === "number" ? { x: p.x, z: p.z } : null
+    );
+    store.setNextWanderDestinationAt(Date.now() + 2000);
+  });
+
   const loop = createRunner({
     store,
     config,

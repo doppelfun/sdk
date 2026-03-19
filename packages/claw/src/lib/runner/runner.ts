@@ -15,7 +15,7 @@ import { createAgentLoop, type AgentLoop } from "../tree/index.js";
 import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
 import { clawLog } from "../../util/log.js";
-import { findNearestOccupant } from "../../util/position.js";
+import { findNearestOccupantByPriority } from "../../util/position.js";
 
 /** Interval (ms) to refresh occupants so myPosition is set and TimeForAutonomousWake can fire when owner is away. */
 const OCCUPANTS_REFRESH_MS = 10_000;
@@ -156,7 +156,7 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     const now = Date.now();
     if (state.nextAutonomousMoveAt > now) return;
     if (state.pendingGoTalkToAgent) return;
-    const nearest = findNearestOccupant(state.occupants, state.mySessionId, state.myPosition);
+    const nearest = findNearestOccupantByPriority(state.occupants, state.mySessionId, state.myPosition);
     if (!nearest?.position) return;
     const { x, z } = nearest.position;
     store.setMovementIntent(null);

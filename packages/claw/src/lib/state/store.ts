@@ -56,6 +56,9 @@ function createClawStore(blockSlotId: string) {
     setLastAutonomousRunAt(ts: number) {
       setState({ lastAutonomousRunAt: ts });
     },
+    setLastOwnerConversationAt(ts: number) {
+      setState({ lastOwnerConversationAt: ts });
+    },
     setCurrentAction(action: TreeAction) {
       setState({ currentAction: action });
     },

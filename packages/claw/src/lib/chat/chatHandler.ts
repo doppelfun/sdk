@@ -72,6 +72,7 @@ export function handleChatMessage(
 
   if (fromOwner) {
     clearConversation(store);
+    store.setLastOwnerConversationAt(Date.now());
     // Keep DM context so the agent replies in DM — unless the user is asking the agent to talk to someone else
     if (sessionId && !isTalkToSomeoneElseMessage(message)) {
       store.setLastDmPeerSessionId(sessionId);

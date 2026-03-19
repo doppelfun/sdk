@@ -109,6 +109,8 @@ export type ClawState = {
   pendingScheduledTask: PendingScheduledTask | null;
   /** Last time we ran the autonomous agent (for TimeForAutonomousWake). */
   lastAutonomousRunAt: number;
+  /** Timestamp (ms) of last owner-triggered conversation; autonomous wake only after 1 min since this. */
+  lastOwnerConversationAt: number;
   lastToolRun: string | null;
   lastTickToolNames: string[] | null;
   lastOccupantsSummary: string | null;
@@ -172,6 +174,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     wakePending: true,
     pendingScheduledTask: null,
     lastAutonomousRunAt: 0,
+    lastOwnerConversationAt: 0,
     lastToolRun: null,
     lastTickToolNames: null,
     lastOccupantsSummary: null,

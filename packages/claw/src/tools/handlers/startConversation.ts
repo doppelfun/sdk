@@ -24,6 +24,10 @@ export async function handleStartConversation(ctx: ToolContext) {
   }
 
   const state = store.getState();
+  if (state.mySessionId && targetSessionId === state.mySessionId) {
+    return { ok: false as const, error: "You cannot start a conversation with yourself. Use get_occupants and pick another person's clientId." };
+  }
+
   if (!isTargetOwner(state.occupants, targetSessionId, config.ownerUserId)) {
     if (!state.myPosition) {
       return {

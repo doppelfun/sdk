@@ -27,66 +27,85 @@ function getParams(raw: Record<string, unknown>): Record<string, unknown> {
   return {};
 }
 
+/** Coerce a single raw catalog item to CatalogLike; returns null if id missing. */
+function rawItemToCatalogLike(item: unknown): CatalogLike | null {
+  if (!item || typeof item !== "object") return null;
+  const o = item as Record<string, unknown>;
+  const id = typeof o.id === "string" ? o.id.trim() : "";
+  if (!id) return null;
+  const numOrNull = (v: unknown): number | null | undefined =>
+    typeof v === "number" ? v : (v as null) === null ? null : undefined;
+  return {
+    id,
+    name: typeof o.name === "string" ? o.name : undefined,
+    url: typeof o.url === "string" ? o.url : undefined,
+    category: typeof o.category === "string" ? o.category : undefined,
+    assetType: typeof (o as { assetType?: unknown }).assetType === "string" ? (o as { assetType: string }).assetType : undefined,
+    width: numOrNull(o.width),
+    depth: numOrNull(o.depth),
+    height: numOrNull(o.height),
+  };
+}
+
 /** Normalize catalog param to CatalogLike[] or null. */
 function normalizeCatalogParam(raw: unknown): CatalogLike[] | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
   const out: CatalogLike[] = [];
   for (const item of raw) {
-    if (!item || typeof item !== "object") continue;
-    const o = item as Record<string, unknown>;
-    const id = typeof o.id === "string" ? o.id.trim() : "";
-    if (!id) continue;
-    out.push({
-      id,
-      name: typeof o.name === "string" ? o.name : undefined,
-      url: typeof o.url === "string" ? o.url : undefined,
-      category: typeof o.category === "string" ? o.category : undefined,
-      assetType: typeof (o as { assetType?: unknown }).assetType === "string" ? (o as { assetType: string }).assetType : undefined,
-      width: typeof o.width === "number" ? o.width : (o.width as null) === null ? null : undefined,
-      depth: typeof o.depth === "number" ? o.depth : (o.depth as null) === null ? null : undefined,
-      height: typeof o.height === "number" ? o.height : (o.height as null) === null ? null : undefined,
-    });
+    const entry = rawItemToCatalogLike(item);
+    if (entry) out.push(entry);
   }
   return out.length > 0 ? out : null;
 }
 
+/** Read one numeric param with optional fallback key (e.g. rows vs gridRows). */
+function numParam(c: Record<string, unknown>, primary: string, fallback?: string): number | undefined {
+  const v = c[primary];
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (fallback != null) {
+    const w = c[fallback];
+    if (typeof w === "number" && Number.isFinite(w)) return w;
+  }
+  return undefined;
+}
+
+/** Read string array from params with two possible keys (e.g. vehicleCatalogIds / vehicle_catalog_ids). */
+function stringArrayParam(
+  c: Record<string, unknown>,
+  key1: string,
+  key2: string
+): string[] | undefined {
+  const arr = (c[key1] ?? c[key2]) as unknown;
+  if (!Array.isArray(arr) || !arr.every((id): id is string => typeof id === "string")) return undefined;
+  return arr.length > 0 ? arr : undefined;
+}
+
 export const run: RecipeRunner = (raw: Record<string, unknown>): string => {
   const c = getParams(raw);
+  const rawCatalog = c.catalog ?? (raw as { catalog?: unknown }).catalog;
+  const rawBuildings = c.buildings ?? (raw as { buildings?: unknown }).buildings;
 
-  // If full catalog is passed, parse it to buildings, vehicleCatalogIds, trafficLightCatalogIds.
-  const catalogEntries = normalizeCatalogParam(c.catalog) ?? normalizeCatalogParam((raw as { catalog?: unknown }).catalog);
+  // Prefer full catalog: derive buildings, vehicle IDs, and traffic-light IDs from it.
+  const catalogEntries = normalizeCatalogParam(c.catalog) ?? normalizeCatalogParam(rawCatalog);
   let buildingsFromParams: ReturnType<typeof normalizeBuildingsParam> = null;
   let vehicleIds: string[] | undefined;
   let trafficLightIds: string[] | undefined;
 
-  if (catalogEntries && catalogEntries.length > 0) {
+  if (catalogEntries?.length) {
     buildingsFromParams = catalogEntriesToSeedBuildings(catalogEntries);
     vehicleIds = getCatalogIdsByCategory(catalogEntries, CATEGORY_VEHICLES);
     trafficLightIds = getTrafficLightCatalogIds(catalogEntries);
   }
 
-  // Otherwise fall back to explicit params (backward compat).
+  // Fallback to explicit params (backward compat).
   if (!buildingsFromParams?.length) {
-    buildingsFromParams =
-      normalizeBuildingsParam(c.buildings) ?? normalizeBuildingsParam((raw as { buildings?: unknown }).buildings);
+    buildingsFromParams = normalizeBuildingsParam(c.buildings) ?? normalizeBuildingsParam(rawBuildings);
   }
   if (!vehicleIds?.length) {
-    vehicleIds =
-      Array.isArray(c.vehicleCatalogIds) && c.vehicleCatalogIds.every((id): id is string => typeof id === "string")
-        ? c.vehicleCatalogIds
-        : Array.isArray(c.vehicle_catalog_ids) && c.vehicle_catalog_ids.every((id): id is string => typeof id === "string")
-          ? c.vehicle_catalog_ids
-          : undefined;
+    vehicleIds = stringArrayParam(c, "vehicleCatalogIds", "vehicle_catalog_ids");
   }
   if (!trafficLightIds?.length) {
-    trafficLightIds =
-      Array.isArray(c.trafficLightCatalogIds) &&
-      c.trafficLightCatalogIds.every((id): id is string => typeof id === "string")
-        ? c.trafficLightCatalogIds
-        : Array.isArray(c.traffic_light_catalog_ids) &&
-            c.traffic_light_catalog_ids.every((id): id is string => typeof id === "string")
-          ? c.traffic_light_catalog_ids
-          : undefined;
+    trafficLightIds = stringArrayParam(c, "trafficLightCatalogIds", "traffic_light_catalog_ids");
   }
 
   // Pyramid cell: disable if explicitly false/none/off.
@@ -94,15 +113,14 @@ export const run: RecipeRunner = (raw: Record<string, unknown>): string => {
     c.pyramid === false || c.noPyramid === true || c.pyramid === "none" || c.pyramid === "off";
 
   const cfg = clampCityConfig({
-    gridRows: typeof c.rows === "number" ? c.rows : typeof c.gridRows === "number" ? c.gridRows : undefined,
-    gridCols: typeof c.cols === "number" ? c.cols : typeof c.gridCols === "number" ? c.gridCols : undefined,
-    blockSize: typeof c.blockSize === "number" ? c.blockSize : undefined,
-    streetWidth: typeof c.streetWidth === "number" ? c.streetWidth : undefined,
-    buildingSetback:
-      typeof c.setback === "number" ? c.setback : typeof c.buildingSetback === "number" ? c.buildingSetback : undefined,
-    seed: typeof c.seed === "number" ? c.seed : undefined,
-    pyramidRow: typeof c.pyramidRow === "number" ? c.pyramidRow : undefined,
-    pyramidCol: typeof c.pyramidCol === "number" ? c.pyramidCol : undefined,
+    gridRows: numParam(c, "rows", "gridRows"),
+    gridCols: numParam(c, "cols", "gridCols"),
+    blockSize: numParam(c, "blockSize"),
+    streetWidth: numParam(c, "streetWidth"),
+    buildingSetback: numParam(c, "setback", "buildingSetback"),
+    seed: numParam(c, "seed"),
+    pyramidRow: numParam(c, "pyramidRow"),
+    pyramidCol: numParam(c, "pyramidCol"),
     noPyramid,
   });
 

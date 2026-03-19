@@ -4,7 +4,6 @@
  */
 import {
   BLOCK_SIZE_M,
-  fetchCityCatalogFromHub,
   generateCityLayout,
   type BuildingPlacement,
   type StreetSegment,
@@ -695,26 +694,4 @@ export function generateCityMml(
     c.gridRows,
     c.gridCols,
   );
-}
-
-/**
- * Fetch catalog from hub by category (Buildings, Vehicles, traffic-light Props), then generate city MML.
- * No catalog IDs are hardcoded; vehicles and traffic lights use category-driven IDs.
- */
-export async function generateCityMmlFromCatalog(
-  hubUrl: string,
-  blockId: string,
-  config: Partial<CityGenConfig> = {},
-  apiKey?: string,
-): Promise<string> {
-  const { buildings, vehicleCatalogIds, trafficLightCatalogIds } = await fetchCityCatalogFromHub(
-    hubUrl,
-    blockId,
-    apiKey,
-  );
-  return generateCityMml(config, {
-    buildings: buildings.length > 0 ? buildings : undefined,
-    vehicleCatalogIds: vehicleCatalogIds.length > 0 ? vehicleCatalogIds : undefined,
-    trafficLightCatalogIds: trafficLightCatalogIds.length > 0 ? trafficLightCatalogIds : undefined,
-  });
 }

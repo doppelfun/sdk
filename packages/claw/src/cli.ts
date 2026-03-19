@@ -54,7 +54,23 @@ async function main(): Promise<void> {
 
   client.onMessage("follow_failed", (payload: unknown) => {
     const p = payload as { targetSessionId?: string };
-    store.setLastFollowFailed(typeof p?.targetSessionId === "string" ? p.targetSessionId : "");
+    const tid = typeof p?.targetSessionId === "string" ? p.targetSessionId : "";
+    store.setLastFollowFailed(tid);
+    const state = store.getState();
+    if (state.autonomousGoal === "approach" && state.autonomousTargetSessionId === tid) {
+      store.setAutonomousGoal("wander");
+      store.setAutonomousTargetSessionId(null);
+    }
+  });
+
+  client.onMessage("approach_arrived", (payload: unknown) => {
+    const p = payload as { targetSessionId?: string };
+    const targetSessionId = typeof p?.targetSessionId === "string" ? p.targetSessionId : null;
+    if (targetSessionId) {
+      store.setAutonomousGoal("converse");
+      store.setPendingGoTalkToAgent({ targetSessionId, openingMessage: "Hi!" });
+    }
+    store.setFollowTargetSessionId(null);
   });
 
   client.onMessage("move_to_failed", (payload: unknown) => {

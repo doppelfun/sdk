@@ -1,9 +1,11 @@
 /**
- * Recipe city layout: axis-aligned street grid + greedy building packing.
+ * City layout: axis-aligned street grid plus greedy building packing along curbs.
+ * 1) Build grid of horizontal/vertical street segments. 2) Treat streets as collision rects. 3) Pack buildings along each side of each street with gap and setback.
  */
 import type { SeedBuildingEntry } from "./catalog-bridge.js";
 import { mulberry32 } from "../prng.js";
 
+/** One segment of the street grid (axis-aligned line). */
 export type StreetSegment = {
   startX: number;
   startZ: number;
@@ -12,6 +14,7 @@ export type StreetSegment = {
   alongX: boolean;
 };
 
+/** Placed building: catalog id, center (x,z), rotation, and dimensions. */
 export type BuildingPlacement = {
   catalogId: string;
   x: number;
@@ -50,8 +53,11 @@ const DEFAULT_CONFIG: Required<CityLayoutConfig> = {
   seed: 12345,
 };
 
+/** Gap between adjacent buildings along the curb. */
 const SIDE_GAP = 0.2;
+/** Padding used for overlap checks (avoid buildings clipping streets or each other). */
 const OVERLAP_PAD = 0.1;
+/** Skip this distance from street ends (intersections) when packing. */
 const INTERSECTION_MARGIN = 1;
 const MAX_ATTEMPTS_PER_SLOT = 6;
 
@@ -67,6 +73,7 @@ function rectsOverlap(a: Rect, b: Rect, pad: number): boolean {
   );
 }
 
+/** True if candidate overlaps any street rect or existing placement. */
 function collides(candidate: Rect, streetRects: Rect[], placements: BuildingPlacement[]): boolean {
   for (const r of streetRects) {
     if (rectsOverlap(candidate, r, OVERLAP_PAD)) return true;
@@ -79,6 +86,7 @@ function collides(candidate: Rect, streetRects: Rect[], placements: BuildingPlac
   return false;
 }
 
+/** Build horizontal and vertical street segments from grid (rows × cols, blockSize spacing). */
 function buildStreetGrid(cfg: Required<CityLayoutConfig>): StreetSegment[] {
   const streets: StreetSegment[] = [];
   const totalW = (cfg.gridCols - 1) * cfg.blockSize;
@@ -97,6 +105,7 @@ function buildStreetGrid(cfg: Required<CityLayoutConfig>): StreetSegment[] {
   return streets;
 }
 
+/** Convert street segments to axis-aligned rects for collision (streetWidth thick). */
 function buildStreetRects(streets: StreetSegment[], streetWidth: number): Rect[] {
   return streets.map((s) =>
     s.alongX
@@ -105,6 +114,7 @@ function buildStreetRects(streets: StreetSegment[], streetWidth: number): Rect[]
   );
 }
 
+/** Rotation (radians) so building faces the street; sideSign is +1 or -1 for which side of the segment. */
 function facingAngle(alongX: boolean, sideSign: number): number {
   const base = alongX
     ? sideSign > 0
@@ -116,6 +126,7 @@ function facingAngle(alongX: boolean, sideSign: number): number {
   return base - Math.PI / 2;
 }
 
+/** Greedily pack buildings along one side of a street (curbOffset from center; sideSign ±1). */
 function packOneSide(
   street: StreetSegment,
   pool: ResolvedBuilding[],
@@ -177,6 +188,7 @@ function packOneSide(
   }
 }
 
+/** Generate street grid and building placements from seed buildings and config. */
 export function generateCityLayout(
   buildings: SeedBuildingEntry[],
   config: CityLayoutConfig = {},

@@ -18,6 +18,7 @@ export const TREE_NODE_TO_ACTION: Record<string, TreeAction> = {
   TryMoveToNearestOccupant: "autonomous_move",
   SeekSocialTarget: "autonomous_seek_social",
   ContinueApproach: "autonomous_move",
+  ContinueWaiting: "autonomous_move",
   ExitConversationToWander: "autonomous_move",
   SetWanderGoal: "autonomous_move",
   ClearWakeInsufficientCredits: "clearing_wake_insufficient_credits",

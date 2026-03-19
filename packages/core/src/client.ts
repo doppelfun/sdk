@@ -372,7 +372,8 @@ export class DoppelClient {
   }
 
   /**
-   * Follow another occupant by sessionId. Server re-paths to the target's position periodically (like move_to with a moving destination).
+   * Follow another occupant by sessionId. Server re-paths to the target's current position periodically (real-time).
+   * For stopping at a distance (e.g. conversation range), use approach() instead.
    */
   follow(targetSessionId: string): void {
     if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
@@ -385,6 +386,23 @@ export class DoppelClient {
   cancelFollow(): void {
     if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
     this.ws.send(JSON.stringify({ type: "cancel_follow" }));
+  }
+
+  /**
+   * Approach another occupant by sessionId; server re-paths to target's current position and stops when within stopDistanceM, then sends approach_arrived.
+   */
+  approach(targetSessionId: string, options: { stopDistanceM: number }): void {
+    if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
+    const stopDistanceM = typeof options?.stopDistanceM === "number" && options.stopDistanceM > 0 ? options.stopDistanceM : 1;
+    this.ws.send(JSON.stringify({ type: "approach", targetSessionId: String(targetSessionId).trim(), stopDistanceM }));
+  }
+
+  /**
+   * Cancel current approach.
+   */
+  cancelApproach(): void {
+    if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
+    this.ws.send(JSON.stringify({ type: "cancel_approach" }));
   }
 
   /**

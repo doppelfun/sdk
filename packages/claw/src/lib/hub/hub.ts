@@ -4,6 +4,12 @@
  */
 
 import { normalizeUrl } from "../../util/url.js";
+import {
+  buildUsagePayload,
+  buildVoicePayload,
+  generateNonce,
+  signPayload,
+} from "../attestation.js";
 
 /** Result of POST /api/blocks/:id/join */
 export type JoinBlockResult =
@@ -124,6 +130,7 @@ export async function getAgentProfile(
 /**
  * POST /api/agents/me/report-usage.
  * Pass model + tokens; optionally costUsd for Google. Hub deducts from ledger.
+ * When agentId and CLAW_ATTESTATION_PRIVATE_KEY are set, adds attestation (and blockId) for reward attribution.
  */
 export async function reportUsage(
   baseUrl: string,
@@ -133,6 +140,8 @@ export async function reportUsage(
     completionTokens: number;
     model?: string;
     costUsd?: number;
+    agentId?: string | null;
+    blockId?: string | null;
   }
 ): Promise<ReportUsageResult> {
   const base = normalizeUrl(baseUrl);
@@ -142,6 +151,22 @@ export async function reportUsage(
     ...(options.model && { model: options.model }),
     ...(options.costUsd != null && Number.isFinite(options.costUsd) && { costUsd: options.costUsd }),
   };
+  const privateKey = process.env.CLAW_ATTESTATION_PRIVATE_KEY?.trim();
+  if (privateKey && options.agentId) {
+    const timestamp = new Date().toISOString();
+    const nonce = generateNonce();
+    const payload = buildUsagePayload({
+      agentId: options.agentId,
+      blockId: options.blockId ?? null,
+      promptTokens: options.promptTokens,
+      completionTokens: options.completionTokens,
+      model: options.model ?? "",
+      timestamp,
+      nonce,
+    });
+    body.attestation = { signature: signPayload(payload, privateKey), timestamp, nonce };
+    if (options.blockId) body.blockId = options.blockId;
+  }
   const res = await hubPost(`${base}/api/agents/me/report-usage`, apiKey, body);
   if (!res.ok) return { ok: false, error: res.error, status: res.status };
   try {
@@ -182,18 +207,30 @@ export async function checkBalance(
 
 /**
  * POST /api/agents/me/report-usage with voice characters (TTS).
- * Hub may use a dedicated endpoint or the same with type/characters; adjust body as needed.
+ * When agentId and CLAW_ATTESTATION_PRIVATE_KEY are set, adds attestation (and blockId).
  */
 export async function reportVoiceUsage(
   baseUrl: string,
   apiKey: string,
-  options: { characters: number }
+  options: { characters: number; agentId?: string | null; blockId?: string | null }
 ): Promise<ReportUsageResult> {
   const base = normalizeUrl(baseUrl);
-  const body: Record<string, unknown> = {
-    type: "voice",
-    characters: Math.max(0, Math.floor(options.characters)),
-  };
+  const characters = Math.max(0, Math.floor(options.characters));
+  const body: Record<string, unknown> = { type: "voice", characters };
+  const privateKey = process.env.CLAW_ATTESTATION_PRIVATE_KEY?.trim();
+  if (privateKey && options.agentId) {
+    const timestamp = new Date().toISOString();
+    const nonce = generateNonce();
+    const payload = buildVoicePayload({
+      agentId: options.agentId,
+      blockId: options.blockId ?? null,
+      characters,
+      timestamp,
+      nonce,
+    });
+    body.attestation = { signature: signPayload(payload, privateKey), timestamp, nonce };
+    if (options.blockId) body.blockId = options.blockId;
+  }
   const res = await hubPost(`${base}/api/agents/me/report-usage`, apiKey, body);
   if (!res.ok) return { ok: false, error: res.error, status: res.status };
   try {

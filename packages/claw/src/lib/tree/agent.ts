@@ -134,9 +134,19 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       return store.getState().conversationPhase === "idle";
     },
 
-    /** True when in an active conversation (phase not idle). BT runs RunConverseAgent (chat-only LLM). */
+    /** True when in an active conversation (phase not idle). */
     InConversation(): boolean {
       return store.getState().conversationPhase !== "idle";
+    },
+
+    /** True when we can send a reply (phase can_reply). Gates RunConverseAgent so we only run LLM when we have received a message. */
+    CanReplyInConversation(): boolean {
+      return store.getState().conversationPhase === "can_reply";
+    },
+
+    /** True when we sent and are waiting for peer reply (phase waiting_for_reply). Run ContinueWaiting to avoid spinning LLM. */
+    WaitingForReply(): boolean {
+      return store.getState().conversationPhase === "waiting_for_reply";
     },
 
     /** True when we were in converse goal but conversation just ended (phase idle). Transition to wander. */
@@ -184,6 +194,13 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
     ContinueApproach(): State {
       setCurrentActionForNode(store, "ContinueApproach");
       setLastCompletedActionForNode(store, "ContinueApproach");
+      return State.SUCCEEDED;
+    },
+
+    /** In conversation but waiting for peer reply; no-op so we don't run LLM or wander. */
+    ContinueWaiting(): State {
+      setCurrentActionForNode(store, "ContinueWaiting");
+      setLastCompletedActionForNode(store, "ContinueWaiting");
       return State.SUCCEEDED;
     },
 

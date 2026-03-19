@@ -1,3 +1,8 @@
+/**
+ * Catalog bridge: map catalog entries to seed buildings and filter by category.
+ * Supports both CatalogLike (from recipe params) and raw objects with id/url/dimensions.
+ */
+
 export type SeedBuildingEntry = {
   id: string;
   name: string;
@@ -7,6 +12,7 @@ export type SeedBuildingEntry = {
   height?: number;
 };
 
+/** Minimal catalog entry shape used by city recipe (id required; rest optional). */
 export type CatalogLike = {
   id: string;
   name?: string;
@@ -23,6 +29,8 @@ const DEFAULT_BUILDING_CATEGORY_HINTS = ["building", "buildings"];
 
 export const CATEGORY_VEHICLES = "Vehicles";
 
+const HAS_GLB_URL = /\.glb(\?|$)/i;
+
 function mergeDims(id: string, partial: Partial<SeedBuildingEntry>): SeedBuildingEntry {
   return {
     id,
@@ -34,7 +42,7 @@ function mergeDims(id: string, partial: Partial<SeedBuildingEntry>): SeedBuildin
   };
 }
 
-function canAddEntry(e: CatalogLike, requireUrl: boolean): boolean {
+function hasValidIdAndUrl(e: CatalogLike, requireUrl: boolean): boolean {
   const id = (e.id || "").trim();
   if (!id) return false;
   if (requireUrl && !(e.url && String(e.url).trim())) return false;
@@ -49,6 +57,13 @@ function isBuildingLike(e: CatalogLike, hints: string[]): boolean {
   return categoryMatch && !vehicleLike;
 }
 
+function hasGlbUrl(e: CatalogLike): boolean {
+  return Boolean(e.url && HAS_GLB_URL.test(e.url));
+}
+
+/**
+ * Convert catalog entries to seed buildings: filter by building-like category (or fallback to any .glb), dedupe by id, apply fallback dimensions.
+ */
 export function catalogEntriesToSeedBuildings(
   entries: CatalogLike[],
   options?: { categoryHints?: string[]; requireUrl?: boolean }
@@ -60,78 +75,61 @@ export function catalogEntriesToSeedBuildings(
 
   const pushEntry = (e: CatalogLike) => {
     const id = (e.id || "").trim();
-    if (!id || seen.has(id) || (requireUrl && !(e.url && String(e.url).trim()))) return;
+    if (!id || seen.has(id) || !hasValidIdAndUrl(e, requireUrl)) return;
     seen.add(id);
     out.push(mergeDims(id, { name: e.name, url: e.url, width: e.width ?? undefined, depth: e.depth ?? undefined, height: e.height ?? undefined }));
   };
 
   for (const e of entries) {
-    if (!canAddEntry(e, requireUrl)) continue;
+    if (!hasValidIdAndUrl(e, requireUrl)) continue;
     if (isBuildingLike(e, hints)) pushEntry(e);
   }
   if (out.length === 0) {
     seen.clear();
     for (const e of entries) {
-      if (canAddEntry(e, requireUrl) && e.url && /\.glb(\?|$)/i.test(e.url)) pushEntry(e);
+      if (hasValidIdAndUrl(e, requireUrl) && hasGlbUrl(e)) pushEntry(e);
     }
   }
   return out;
 }
 
+/**
+ * Collect unique catalog ids for entries that have a .glb url and pass the predicate.
+ */
+function collectCatalogIds(
+  entries: CatalogLike[],
+  predicate: (e: CatalogLike) => boolean
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const e of entries) {
+    const id = (e.id ?? "").trim();
+    if (!id || seen.has(id) || !hasGlbUrl(e) || !predicate(e)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/** Return catalog ids whose category includes the given string (e.g. "Vehicles"), with .glb url. */
 export function getCatalogIdsByCategory(entries: CatalogLike[], category: string): string[] {
   const want = category.trim().toLowerCase();
   if (!want) return [];
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const e of entries) {
-    const cat = (e.category ?? "").toLowerCase();
-    const id = (e.id ?? "").trim();
-    if (!id || !cat.includes(want) || seen.has(id)) continue;
-    if (e.url && /\.glb(\?|$)/i.test(e.url)) {
-      seen.add(id);
-      out.push(id);
-    }
-  }
-  return out;
+  return collectCatalogIds(entries, (e) => (e.category ?? "").toLowerCase().includes(want));
 }
 
+/** Return catalog ids for traffic-light props (category contains "prop", id/name contain "traffic"), with .glb url. */
 export function getTrafficLightCatalogIds(entries: CatalogLike[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
   const traffic = "traffic";
-  for (const e of entries) {
-    const id = (e.id ?? "").trim();
-    const name = (e.name ?? "").toLowerCase();
+  return collectCatalogIds(entries, (e) => {
     const cat = (e.category ?? "").toLowerCase();
-    if (!id || seen.has(id)) continue;
-    if (!(e.url && /\.glb(\?|$)/i.test(e.url))) continue;
-    if ((cat.includes("prop") && (id.toLowerCase().includes(traffic) || name.includes(traffic)))) {
-      seen.add(id);
-      out.push(id);
-    }
-  }
-  return out;
+    const name = (e.name ?? "").toLowerCase();
+    const id = (e.id ?? "").toLowerCase();
+    return cat.includes("prop") && (id.includes(traffic) || name.includes(traffic));
+  });
 }
 
-export type CityCatalogFromHub = {
-  buildings: SeedBuildingEntry[];
-  vehicleCatalogIds: string[];
-  trafficLightCatalogIds: string[];
-};
-
-export async function fetchCityCatalogFromHub(
-  hubUrl: string,
-  blockId: string,
-  apiKey?: string
-): Promise<CityCatalogFromHub> {
-  const { getBlockCatalog } = await import("@doppelfun/sdk");
-  const entries = await getBlockCatalog(hubUrl, blockId, apiKey);
-  const buildings = catalogEntriesToSeedBuildings(entries);
-  const vehicleCatalogIds = getCatalogIdsByCategory(entries, CATEGORY_VEHICLES);
-  const trafficLightCatalogIds = getTrafficLightCatalogIds(entries);
-  return { buildings, vehicleCatalogIds, trafficLightCatalogIds };
-}
-
+/** Parse raw params.buildings (array of { id, name?, url?, width?, depth?, height? }) into SeedBuildingEntry[]. */
 export function normalizeBuildingsParam(raw: unknown): SeedBuildingEntry[] | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
   const out: SeedBuildingEntry[] = [];

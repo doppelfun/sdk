@@ -9,6 +9,8 @@ export type LlmProviderId = "openrouter" | "google" | "google-vertex" | "bankr";
 
 export type ClawConfig = {
   apiKey: string;
+  /** Agent UUID from hub profile (for attestation). */
+  agentId: string | null;
   hubUrl: string;
   agentApiUrl: string;
   engineUrl: string;
@@ -101,6 +103,7 @@ export function loadConfig(): ClawConfig {
   const agentApiUrl = normalizeUrl(process.env.AGENT_API_URL?.trim() || hubUrl);
   const engineUrl = normalizeUrl(process.env.ENGINE_URL?.trim() || DEFAULT_ENGINE);
   const blockId = process.env.BLOCK_ID?.trim() || null;
+  const agentId = process.env.DOPPEL_AGENT_ID?.trim() || null;
   const ownerUserId = process.env.OWNER_USER_ID?.trim() || null;
   const skillIdsRaw = process.env.SKILL_IDS?.trim() || "doppel-claw";
   const skillIds =
@@ -131,6 +134,7 @@ export function loadConfig(): ClawConfig {
         : "gemini-3.1-pro-preview";
   return {
     apiKey,
+    agentId,
     hubUrl,
     agentApiUrl,
     engineUrl,

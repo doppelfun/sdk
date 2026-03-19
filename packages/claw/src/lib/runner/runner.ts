@@ -204,18 +204,24 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     clawLog("tree: TryMoveToNearestOccupant", nearest.username ?? nearest.clientId);
   };
 
-  /** Tree action: pick best social target (nearest by priority), set approach goal, moveTo within conversation range. */
+  /** Tree action: pick best social target, set approach goal, start engine-driven follow with stop at conversation range (real-time target position). */
   const seekSocialTarget = (): void => {
     if (!client) return;
     const state = store.getState();
     const nearest = findNearestOccupantByPriority(state.occupants, state.mySessionId, state.myPosition);
     if (!nearest) return;
-    startMoveToOccupant(store, client, nearest, CONVERSATION_RANGE_M, (s) => {
-      s.setAutonomousGoal("approach");
-      s.setAutonomousTargetSessionId(nearest.clientId);
-      s.setSocialSeekCooldownUntil(Date.now() + SOCIAL_SEEK_COOLDOWN_MS);
-    });
-    clawLog("tree: SeekSocialTarget", nearest.username ?? nearest.clientId);
+    const now = Date.now();
+    store.setAutonomousGoal("approach");
+    store.setAutonomousTargetSessionId(nearest.clientId);
+    store.setMovementIntent(null);
+    store.setMovementTarget(null);
+    store.setLastMoveToFailed(null);
+    store.setAutonomousEmoteStandStillUntil(0);
+    store.setNextAutonomousMoveAt(now + randomCooldownMs());
+    store.setSocialSeekCooldownUntil(now + SOCIAL_SEEK_COOLDOWN_MS);
+    store.setFollowTargetSessionId(nearest.clientId);
+    client.approach(nearest.clientId, { stopDistanceM: CONVERSATION_RANGE_M });
+    clawLog("tree: SeekSocialTarget (engine follow)", nearest.username ?? nearest.clientId);
   };
 
   const loop = createAgentLoop({

@@ -96,7 +96,7 @@ export type AgentWsCancelMoveMessage = {
   type: "cancel_move";
 };
 
-/** Follow another occupant by sessionId. Server re-paths to target's position periodically (like move_to with a moving destination). */
+/** Follow another occupant by sessionId. Server re-paths to target's position periodically. No stop; use approach for conversation range. */
 export type AgentWsFollowMessage = {
   type: "follow";
   targetSessionId: string;
@@ -105,6 +105,18 @@ export type AgentWsFollowMessage = {
 /** Cancel current follow (stop following). */
 export type AgentWsCancelFollowMessage = {
   type: "cancel_follow";
+};
+
+/** Approach another occupant by sessionId; server stops when within stopDistanceM and sends approach_arrived (e.g. conversation range). */
+export type AgentWsApproachMessage = {
+  type: "approach";
+  targetSessionId: string;
+  stopDistanceM: number;
+};
+
+/** Cancel current approach. */
+export type AgentWsCancelApproachMessage = {
+  type: "cancel_approach";
 };
 
 /** All outbound Agent WebSocket message types. Send as JSON after receiving `authenticated`. */
@@ -118,7 +130,9 @@ export type AgentWsClientMessage =
   | AgentWsMoveToMessage
   | AgentWsCancelMoveMessage
   | AgentWsFollowMessage
-  | AgentWsCancelFollowMessage;
+  | AgentWsCancelFollowMessage
+  | AgentWsApproachMessage
+  | AgentWsCancelApproachMessage;
 
 // --- Inbound (server → client) ---
 
@@ -183,10 +197,17 @@ export type AgentWsFollowFailedMessage = {
   targetSessionId: string;
 };
 
+/** Sent when follow had stopDistanceM and follower reached that distance to target (e.g. approach for conversation). */
+export type AgentWsApproachArrivedMessage = {
+  type: "approach_arrived";
+  targetSessionId: string;
+};
+
 /**
  * Inbound Agent WebSocket messages. Movement: client sends move_to(x,z); server pathfinds and drives movement each tick (no waypoints sent back).
  * move_to_failed: server sends when no path; agent can inform user.
  * follow_failed: server sends when follow target left or no path.
+ * approach_arrived: server sends when follow with stopDistanceM reached range.
  */
 export type AgentWsServerMessage =
   | AgentWsAuthenticatedMessage
@@ -196,7 +217,8 @@ export type AgentWsServerMessage =
   | AgentWsThinkingServerMessage
   | AgentWsChatServerMessage
   | AgentWsMoveToFailedMessage
-  | AgentWsFollowFailedMessage;
+  | AgentWsFollowFailedMessage
+  | AgentWsApproachArrivedMessage;
 
 export function isAgentWsAuthenticated(msg: AgentWsServerMessage): msg is AgentWsAuthenticatedMessage {
   return msg.type === "authenticated";

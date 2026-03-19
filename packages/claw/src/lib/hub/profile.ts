@@ -18,6 +18,7 @@ export function applyHubProfileToConfig(config: ClawConfig, profile: HubAgentPro
   }
   if (profile.soul !== undefined) config.soul = profile.soul ?? null;
   if (typeof profile.hosted === "boolean") config.hosted = profile.hosted;
+  if (typeof profile.id === "string") config.agentId = profile.id;
 }
 
 /**

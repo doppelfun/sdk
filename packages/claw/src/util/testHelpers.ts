@@ -4,6 +4,7 @@ import type { ClawConfig } from "../lib/config/index.js";
 export function testConfig(overrides: Partial<ClawConfig> = {}): ClawConfig {
   return {
     apiKey: "test-key",
+    agentId: null,
     hubUrl: "http://localhost:4000",
     agentApiUrl: "http://localhost:4000",
     engineUrl: "http://localhost:2567",

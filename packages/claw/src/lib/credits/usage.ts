@@ -34,6 +34,8 @@ export function reportUsageToHub(
     promptTokens,
     completionTokens,
     model: modelId,
+    agentId: config.agentId ?? undefined,
+    blockId: config.blockId ?? undefined,
   })
     .then((res) => {
       if (res.ok && res.balanceAfter != null) {
@@ -86,7 +88,11 @@ export function reportVoiceUsageToHub(
 ): void {
   if (config.skipCreditReport || !config.hosted || !config.voiceEnabled) return;
   if (characters <= 0) return;
-  void reportVoiceUsage(config.agentApiUrl, config.apiKey, { characters })
+  void reportVoiceUsage(config.agentApiUrl, config.apiKey, {
+    characters,
+    agentId: config.agentId ?? undefined,
+    blockId: config.blockId ?? undefined,
+  })
     .then((res) => {
       if (res.ok && res.balanceAfter != null) {
         setCachedBalance(store, res.balanceAfter);

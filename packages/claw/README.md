@@ -106,7 +106,7 @@ flowchart TB
     Cron["Cron scheduler"]
   end
 
-  Store[("Store\nwakePending, pendingScheduledTask")]
+  Store[("Store\nwakePending, currentAction, ...")]
 
   subgraph loop["50ms tick loop"]
     Step["behaviourTree.step()"]
@@ -137,12 +137,14 @@ flowchart TB
   Autonomous --> LLM
 ```
 
+**State:** `currentAction` (type `TreeAction`) is set by the behaviour tree and is the single place to read what the agent is currently doing. It is set to `"error"` when an LLM tick fails (cleared on the next tree step). `isThinking` is true only while an LLM tick is in progress (runner sets it around the call). Use `isAgentRunningLlm(state)`, `isAgentInError(state)`, and `state.isThinking` for UI.
+
 ## Exports
 
 - **Loop:** `createAgentLoop`, `createRunner`, `createTreeAgent`, `TREE_DEFINITION`
 - **Wake:** `requestWake`, `WakeType`, `WakePayload`
 - **Handlers:** `handleChatMessage`, `ChatPayload` (wire WS chat → store + requestWake)
-- **State:** `createClawStore`, `createInitialState`, `ClawState`, `ClawStore`, etc.
+- **State:** `createClawStore`, `createInitialState`, `isAgentRunningLlm`, `isAgentInError`, `ClawState`, `ClawStore`, `TreeAction`, etc.
 - **Config:** `loadConfig`, `ClawConfig`
 - **Prompts:** `buildSystemContent`, `buildUserMessage`
 - **Agents:** `runObedientAgentTick`, `runAutonomousAgentTick`

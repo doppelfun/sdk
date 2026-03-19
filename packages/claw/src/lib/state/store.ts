@@ -1,6 +1,6 @@
 /**
- * Zustand store for wake-driven agent state.
- * One store per agent; tree and agents read/write via getState/setState and actions.
+ * Claw store — Zustand-backed state for one agent.
+ * One store per agent; tree, runner, movement, and tools read/write via getState/setState and named actions.
  */
 
 import { createStore } from "zustand/vanilla";
@@ -12,6 +12,7 @@ import {
   type PendingScheduledTask,
   type BuildTarget,
   type BlockDocument,
+  type TreeAction,
 } from "./state.js";
 
 export type ClawStore = ReturnType<typeof createClawStore>;
@@ -54,6 +55,15 @@ function createClawStore(blockSlotId: string) {
     },
     setLastAutonomousRunAt(ts: number) {
       setState({ lastAutonomousRunAt: ts });
+    },
+    setCurrentAction(action: TreeAction) {
+      setState({ currentAction: action });
+    },
+    setLastCompletedAction(action: TreeAction) {
+      setState({ lastCompletedAction: action, lastCompletedActionAt: Date.now() });
+    },
+    setThinking(value: boolean) {
+      setState({ isThinking: value });
     },
 
     // --- Chat / owner ---
@@ -109,6 +119,9 @@ function createClawStore(blockSlotId: string) {
     },
     setNextWanderDestinationAt(ts: number) {
       setState({ nextWanderDestinationAt: ts });
+    },
+    setNextAutonomousMoveAt(ts: number) {
+      setState({ nextAutonomousMoveAt: ts });
     },
     setLastBuildTarget(target: BuildTarget | null) {
       setState({ lastBuildTarget: target });

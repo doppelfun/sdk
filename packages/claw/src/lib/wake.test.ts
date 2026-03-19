@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { requestWake, requestCronWake } from "../wake.js";
+import { requestWake, requestCronWake } from "./wake.js";
 import { createClawStore } from "./state/index.js";
 import type { PendingScheduledTask } from "./state/index.js";
 

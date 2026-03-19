@@ -42,8 +42,27 @@ export type PendingScheduledTask = {
 /** Tracked document per block for replace/append (build tools). */
 export type BlockDocument = { documentId: string; mml: string };
 
+/** Set by tree agent callbacks (and runner on LLM failure). Single source of truth for "what is the agent doing." */
+export type TreeAction =
+  | "idle"
+  | "movement_only"
+  | "obedient"
+  | "autonomous_llm"
+  | "autonomous_move"
+  | "clearing_wake_insufficient_credits"
+  | "requesting_autonomous_wake"
+  | "error";
+
 export type ClawState = {
   blockSlotId: string;
+  /** Set by behaviour tree action callbacks. Single place to read current flow. */
+  currentAction: TreeAction;
+  /** Last action that completed (for debugging/audit). Set when an action callback finishes. */
+  lastCompletedAction: TreeAction | null;
+  /** Timestamp when lastCompletedAction was set (0 when null). */
+  lastCompletedActionAt: number;
+  /** True while an LLM tick is in progress (runner sets around sendThinking). Use for UI "thinking" indicator. */
+  isThinking: boolean;
   mySessionId: string | null;
   occupants: Occupant[];
   chat: ChatEntry[];
@@ -64,6 +83,8 @@ export type ClawState = {
   wanderState: WanderState | null;
   /** Next time (ms) to pick a pathfinding wander destination; 0 = pick as soon as idle. Aligned with engine PATHFIND_RETARGET_MS. */
   nextWanderDestinationAt: number;
+  /** Next time (ms) to allow autonomous move (move-to-nearest or wander); 0 = allowed. Set when starting move and on arrival. */
+  nextAutonomousMoveAt: number;
   lastBuildTarget: BuildTarget | null;
   /** When set, movement driver sends greeting then clears. */
   pendingGoTalkToAgent: { targetSessionId: string; openingMessage: string } | null;
@@ -112,6 +133,10 @@ export type ClawState = {
 export function createInitialState(blockSlotId: string): ClawState {
   return {
     blockSlotId,
+    currentAction: "idle",
+    lastCompletedAction: null,
+    lastCompletedActionAt: 0,
+    isThinking: false,
     mySessionId: null,
     occupants: [],
     chat: [],
@@ -128,6 +153,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     movementIntent: null,
     wanderState: null,
     nextWanderDestinationAt: 0,
+    nextAutonomousMoveAt: 0,
     lastBuildTarget: null,
     pendingGoTalkToAgent: null,
     autonomousEmoteStandStillUntil: 0,
@@ -155,4 +181,16 @@ export function createInitialState(blockSlotId: string): ClawState {
     lastDocumentsList: null,
     lastCatalogContext: null,
   };
+}
+
+/**
+ * True when the agent is in an LLM run (obedient or autonomous). Use for UI "thinking" or to avoid starting another run.
+ */
+export function isAgentRunningLlm(state: ClawState): boolean {
+  return state.currentAction === "obedient" || state.currentAction === "autonomous_llm";
+}
+
+/** True when the last LLM tick failed. Cleared when the next tree step runs. */
+export function isAgentInError(state: ClawState): boolean {
+  return state.currentAction === "error";
 }

@@ -1,12 +1,13 @@
 /**
- * Request-wake API: all "there is work to do" goes through requestWake.
+ * Wake API — all "there is work to do" flows through requestWake.
  * Sets store so the next tree tick sees the wake and routes to Obedient or Autonomous.
  * @see docs/PLAN-AGENT-WAKE-DRIVEN.md
  */
 
-import type { ClawStore } from "./lib/state/index.js";
-import type { PendingScheduledTask } from "./lib/state/index.js";
+import type { ClawStore } from "./state/index.js";
+import type { PendingScheduledTask } from "./state/index.js";
 
+/** Source of the wake: DM (owner/guest), autonomous scheduler, or cron. */
 export type WakeType = "dm" | "autonomous" | "cron";
 
 export type WakePayload = {
@@ -15,8 +16,9 @@ export type WakePayload = {
 };
 
 /**
- * Enqueue a wake. For DM, the chat handler should set lastTriggerUserId and push chat before this.
- * For cron, payload.task is stored as pendingScheduledTask so Obedient can see it.
+ * Enqueue a wake. Next tree tick will run the matching branch (owner/cron → Obedient, else Autonomous).
+ * For DM, the chat handler must set lastTriggerUserId and push chat before calling this.
+ * For cron, pass payload.task so Obedient can read the scheduled task.
  */
 export function requestWake(
   store: ClawStore,
@@ -29,7 +31,7 @@ export function requestWake(
   }
 }
 
-/** Convenience: request a cron wake with a scheduled task. Tree routes owner/cron to Obedient. */
+/** Request a cron wake with a scheduled task. Tree routes cron to Obedient. */
 export function requestCronWake(store: ClawStore, task: PendingScheduledTask): void {
   requestWake(store, "cron", { task });
 }

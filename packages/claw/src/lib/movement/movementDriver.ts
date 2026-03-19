@@ -5,7 +5,7 @@
  */
 import type { DoppelClient } from "@doppelfun/sdk";
 import { buildChatSendOptions } from "../../util/chatSendOptions.js";
-import { canSendDmTo, onWeSentDm } from "../conversation.js";
+import { alreadyInConversationWith, canSendDmTo, onWeSentDm } from "../conversation.js";
 import { getFacingTowardNearestOccupant } from "../../util/position.js";
 import type { ClawStore } from "../state/index.js";
 import type { WanderState } from "../state/index.js";
@@ -23,6 +23,12 @@ export const DEFAULT_STOP_DISTANCE_M = 1;
 // --- Random wander (aligned with engine NpcDriver) ---
 /** When to pick next pathfinding wander target (engine PATHFIND_RETARGET_MS). */
 const PATHFIND_RETARGET_MS = { min: 12_000, max: 28_000 };
+/** Cooldown (ms) after arrival before next autonomous move; must match runner so move-to-nearest and wander share cooldown. */
+const AUTONOMOUS_MOVE_COOLDOWN_MS = { min: 20_000, max: 45_000 };
+
+function randomCooldownMs(): number {
+  return AUTONOMOUS_MOVE_COOLDOWN_MS.min + Math.random() * (AUTONOMOUS_MOVE_COOLDOWN_MS.max - AUTONOMOUS_MOVE_COOLDOWN_MS.min);
+}
 const HEADING_RETARGET_MS = { min: 800, max: 2800 };
 const SPEED_RETARGET_MS = { min: 600, max: 2200 };
 /** Below this speed we send 0,0 so walk animation doesn't play. */
@@ -129,6 +135,8 @@ export type MovementDriverOptions = {
   onVoiceSent?: (characters: number) => void;
 };
 
+// --- Arrival handling ---
+
 /**
  * On arrival at movement target: send zero input, clear target, optionally send pendingGoTalkToAgent DM and clear lastBuildTarget.
  */
@@ -144,21 +152,26 @@ function applyArrival(
   const rotY = getFacingTowardNearestOccupant(state.occupants, state.mySessionId, state.myPosition);
   client.sendInput?.({ moveX: 0, moveZ: 0, sprint: false, jump: false, ...(rotY != null && { rotY }) });
   store.setMovementTarget(null);
+  store.setNextAutonomousMoveAt(Date.now() + randomCooldownMs());
   clawLog("arrived at target", logLabel);
   const pending = state.pendingGoTalkToAgent;
-  if (pending && canSendDmTo(store, pending.targetSessionId)) {
-    const voiceId = options?.voiceId;
-    client.sendChat?.(
-      pending.openingMessage,
-      buildChatSendOptions({ targetSessionId: pending.targetSessionId, voiceId }) ?? undefined
-    );
-    if (voiceId && options?.onVoiceSent) {
-      options.onVoiceSent(pending.openingMessage.length);
+  if (pending) {
+    if (alreadyInConversationWith(store, pending.targetSessionId)) {
+      store.setPendingGoTalkToAgent(null);
+    } else if (canSendDmTo(store, pending.targetSessionId)) {
+      const voiceId = options?.voiceId;
+      client.sendChat?.(
+        pending.openingMessage,
+        buildChatSendOptions({ targetSessionId: pending.targetSessionId, voiceId }) ?? undefined
+      );
+      if (voiceId && options?.onVoiceSent) {
+        options.onVoiceSent(pending.openingMessage.length);
+      }
+      store.setLastAgentChatMessage(pending.openingMessage);
+      onWeSentDm(store, pending.targetSessionId);
+      store.setPendingGoTalkToAgent(null);
+      store.setAutonomousSeekCooldownUntil(Date.now() + 5000);
     }
-    store.setLastAgentChatMessage(pending.openingMessage);
-    onWeSentDm(store, pending.targetSessionId);
-    store.setPendingGoTalkToAgent(null);
-    store.setAutonomousSeekCooldownUntil(Date.now() + 5000);
   }
   if (
     state.lastBuildTarget &&
@@ -195,16 +208,29 @@ export function movementDriverTick(
     return true;
   }
 
-  // When idle (no target, no intent, not following): pathfinding-based wander like engine NPCs.
-  // When it's time to pick a destination, moveTo so server pathfinds; between legs use heading/speed drift.
+  // When idle (no target, no intent, not following): don't move if busy (in conversation or going to talk).
+  // Prefer move-to-each-other: only pick random point when alone; with others the tree sets move-to-nearest. Cooldown shared with runner.
   if (!target && !state.movementIntent && !state.followTargetSessionId) {
-    const now = Date.now();
-    if (state.nextWanderDestinationAt <= now) {
-      pickWanderDestinationAndMoveTo(client, store);
-      state = store.getState();
-    } else {
+    const busy = state.conversationPhase !== "idle" || state.pendingGoTalkToAgent != null;
+    if (busy) {
+      store.setMovementIntent(null);
+      client.sendInput?.({ moveX: 0, moveZ: 0, sprint: false, jump: false });
+      return true;
+    }
+    if (state.nextAutonomousMoveAt > Date.now()) {
+      // On cooldown — drift only, don't pick new destination
       wanderTick(store);
       state = store.getState();
+    } else {
+      const now = Date.now();
+      const hasOthers = state.occupants.length > 1;
+      if (state.nextWanderDestinationAt <= now && !hasOthers) {
+        pickWanderDestinationAndMoveTo(client, store);
+        state = store.getState();
+      } else {
+        wanderTick(store);
+        state = store.getState();
+      }
     }
   }
 

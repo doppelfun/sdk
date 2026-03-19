@@ -1,20 +1,73 @@
 /**
  * Conversation FSM: turn-taking, receive delay, drain pending DM.
+ *
+ * Phases: idle → can_reply (after we receive) → waiting_for_reply (after we send).
+ * receiveDelayUntil enforces a minimum delay before replying; pendingDmReply queues when we can't send yet.
  */
 
+import { getNow } from "../util/time.js";
 import type { ClawStoreApi } from "./state/index.js";
 
+// --- Constants ---
+
 export const RECEIVE_REPLY_DELAY_MIN_MS = 3000;
+
+/** Cooldown after conversation end before autonomous agent can seek again (ms). */
+export const CONVERSATION_END_SEEK_COOLDOWN_MS = 3 * 60 * 1000;
+
 const TTS_CHARS_PER_SECOND = 14;
 
-function getNow(): number {
-  return Date.now();
-}
+// --- Types ---
 
 /** Result of evaluating whether we can send a DM now or must queue. */
 export type SendReplyAction =
   | { action: "send_now" }
   | { action: "queue"; pendingDmReply: { text: string; targetSessionId: string } };
+
+// --- Greeting / conversation checks ---
+
+/** True if text looks like an opening greeting (hi, hello, hey, etc.). Used to avoid saying hi again when already in conversation. */
+export function isGreeting(text: string): boolean {
+  const t = text.trim().toLowerCase().replace(/\s+/g, " ").replace(/[!.]/g, "");
+  if (!t) return false;
+  return /^(hi|hello|hey|hi there|hey there|hello there|what'?s up|howdy|greetings)$/.test(t);
+}
+
+/** True if we're already in a conversation with this session (phase not idle and peer matches — we already said something). */
+export function alreadyInConversationWith(store: ClawStoreApi, sessionId: string): boolean {
+  const state = store.getState();
+  return state.conversationPhase !== "idle" && state.conversationPeerSessionId === sessionId;
+}
+
+/** True if we should skip sending this opening message to this peer (already in conversation and message is just a greeting). */
+export function shouldSkipOpeningGreeting(
+  store: ClawStoreApi,
+  sessionId: string,
+  openingMessage: string,
+): boolean {
+  return openingMessage.length > 0 && alreadyInConversationWith(store, sessionId) && isGreeting(openingMessage);
+}
+
+// --- Send / reply evaluation ---
+
+/**
+ * True if we can send a DM to this session (phase allows it and receive delay elapsed).
+ */
+export function canSendDmTo(
+  store: ClawStoreApi,
+  sessionId: string,
+  now = getNow()
+): boolean {
+  const state = store.getState();
+  const phase = state.conversationPhase;
+  if (phase === "idle") return true;
+  if (phase === "waiting_for_reply") return false;
+  if (phase === "can_reply") {
+    if (state.conversationPeerSessionId !== sessionId) return false;
+    return state.receiveDelayUntil <= 0 || now >= state.receiveDelayUntil;
+  }
+  return false;
+}
 
 /**
  * Decide whether to send a DM now or queue it (turn-taking / receive delay).
@@ -36,24 +89,7 @@ export function evaluateSendReply(
   return { action: "queue", pendingDmReply: { text, targetSessionId } };
 }
 
-/**
- * True if we can send a DM to this session (phase allows it and receive delay elapsed).
- */
-export function canSendDmTo(
-  store: ClawStoreApi,
-  sessionId: string,
-  now = getNow()
-): boolean {
-  const state = store.getState();
-  const phase = state.conversationPhase;
-  if (phase === "idle") return true;
-  if (phase === "waiting_for_reply") return false;
-  if (phase === "can_reply") {
-    if (state.conversationPeerSessionId !== sessionId) return false;
-    return state.receiveDelayUntil <= 0 || now >= state.receiveDelayUntil;
-  }
-  return false;
-}
+// --- Phase transitions (store updaters) ---
 
 /** Update store after we sent a DM: phase waiting_for_reply, set peer and lastDmPeerSessionId. */
 export function onWeSentDm(store: ClawStoreApi, targetSessionId: string, now = getNow()): void {
@@ -90,9 +126,6 @@ export function onWeReceivedDm(
   });
 }
 
-/** Cooldown after conversation end before autonomous agent can seek again (ms). */
-export const CONVERSATION_END_SEEK_COOLDOWN_MS = 3 * 60 * 1000;
-
 /** Reset conversation state to idle; optionally set conversationEndedSeekCooldownUntil. */
 export function clearConversation(
   store: ClawStoreApi,
@@ -110,6 +143,8 @@ export function clearConversation(
     conversationEndedSeekCooldownUntil: cooldown,
   });
 }
+
+// --- Drain pending ---
 
 /**
  * If we can reply now and there is a pending DM, clear it and return it for sending.

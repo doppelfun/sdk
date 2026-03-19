@@ -3,7 +3,7 @@
  * Uses intervalMs per task (last run + intervalMs <= now). Profile cronTasks can set intervalMs or we derive from schedule.
  */
 import type { ClawStore } from "../state/index.js";
-import { requestCronWake } from "../../wake.js";
+import { requestCronWake } from "../wake.js";
 import type { PendingScheduledTask } from "../state/index.js";
 import { clawLog } from "../../util/log.js";
 

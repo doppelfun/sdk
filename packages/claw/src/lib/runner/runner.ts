@@ -1,31 +1,36 @@
 /**
- * Wire the behaviour tree loop with Obedient and Autonomous agents.
- * Pass a client to run real LLM agents; omit for a loop that only ticks the tree (stubs).
+ * Runner — wires the behaviour tree loop with Obedient and Autonomous agents.
+ * Pass a client to run real LLM ticks; omit for a loop that only ticks the tree (stubs).
  */
+
 import type { DoppelClient } from "@doppelfun/sdk";
-import { buildSystemContent } from "./lib/prompts/index.js";
-import { buildUserMessage } from "./lib/prompts/index.js";
-import { runObedientAgentTick } from "./lib/agent/obedientAgent.js";
-import { runAutonomousAgentTick } from "./lib/agent/autonomousAgent.js";
-import { drainPendingReply } from "./lib/conversation.js";
-import { movementDriverTick } from "./lib/movement/index.js";
-import { reportUsageToHub, reportVoiceUsageToHub } from "./lib/credits/index.js";
-import { createAgentLoop, type AgentLoop } from "./lib/tree/index.js";
-import type { ClawStore } from "./lib/state/index.js";
-import type { ClawConfig } from "./lib/config/index.js";
-import { clawLog } from "./util/log.js";
-import { findNearestOccupant } from "./util/position.js";
+import { buildSystemContent } from "../prompts/index.js";
+import { buildUserMessage } from "../prompts/index.js";
+import { runObedientAgentTick } from "../agent/obedientAgent.js";
+import { runAutonomousAgentTick } from "../agent/autonomousAgent.js";
+import { drainPendingReply } from "../conversation.js";
+import { movementDriverTick } from "../movement/index.js";
+import { reportUsageToHub, reportVoiceUsageToHub } from "../credits/index.js";
+import { createAgentLoop, type AgentLoop } from "../tree/index.js";
+import type { ClawStore } from "../state/index.js";
+import type { ClawConfig } from "../config/index.js";
+import { clawLog } from "../../util/log.js";
+import { findNearestOccupant } from "../../util/position.js";
 
 /** Interval (ms) to refresh occupants so myPosition is set and TimeForAutonomousWake can fire when owner is away. */
 const OCCUPANTS_REFRESH_MS = 10_000;
 
-/** Chance (0–1) to skip moving to nearest when in autonomous "soul" mode; adds variety. */
-const TRY_MOVE_TO_NEAREST_SKIP_CHANCE = 0.15;
+/** Min/max cooldown (ms) before next autonomous move (move-to-nearest or wander). Applied when starting move and on arrival. */
+const AUTONOMOUS_MOVE_COOLDOWN_MS = { min: 20_000, max: 45_000 };
+
+function randomCooldownMs(): number {
+  return AUTONOMOUS_MOVE_COOLDOWN_MS.min + Math.random() * (AUTONOMOUS_MOVE_COOLDOWN_MS.max - AUTONOMOUS_MOVE_COOLDOWN_MS.min);
+}
 
 type RunTickResult = Awaited<ReturnType<typeof runObedientAgentTick>>;
 
 /**
- * Run one agent tick (obedient or autonomous): build context, call LLM, report usage,
+ * Run one agent tick (obedient or autonomous): build user message, call LLM, report usage,
  * send fallback chat if the agent didn't use the chat tool, clear owner messages.
  */
 async function runAgentTickWithFallback(
@@ -39,29 +44,39 @@ async function runAgentTickWithFallback(
 ): Promise<void> {
   clawLog(`runner: Run${label === "obedient" ? "Obedient" : "Autonomous"}Agent start`);
   const userContent = buildUserMessage(store, config);
-  const result = await runTick(client, store, config, systemContent, userContent);
-  const state = store.getState();
-  clawLog(
-    `runner: ${label} tick done`,
-    "ok=" + result.ok,
-    "replyText=" + (result.ok && result.replyText ? result.replyText.slice(0, 60) + "…" : "null"),
-    "lastTickSentChat=" + state.lastTickSentChat
-  );
-  if (result.ok && result.usage) {
-    reportUsageToHub(config, store, result.usage, config.chatLlmModel, onUsageReportFailure);
-  }
-  if (result.ok && result.replyText && !state.lastTickSentChat) {
-    clawLog("runner: sending fallback chat", result.replyText.slice(0, 80));
-    const dmTarget = state.lastDmPeerSessionId ?? undefined;
-    const voiceId = config.voiceId ?? undefined;
-    client.sendChat?.(result.replyText, { targetSessionId: dmTarget, voiceId });
-    if (voiceId && config.voiceEnabled) {
-      reportVoiceUsageToHub(config, store, result.replyText.length, onUsageReportFailure);
+  store.setThinking(true);
+  try {
+    const result = await runTick(client, store, config, systemContent, userContent);
+    const state = store.getState();
+    clawLog(
+      `runner: ${label} tick done`,
+      "ok=" + result.ok,
+      "replyText=" + (result.ok && result.replyText ? result.replyText.slice(0, 60) + "…" : "null"),
+      "lastTickSentChat=" + state.lastTickSentChat
+    );
+    if (result.ok && result.usage) {
+      reportUsageToHub(config, store, result.usage, config.chatLlmModel, onUsageReportFailure);
     }
-    store.setLastAgentChatMessage(result.replyText);
-    store.setLastTickSentChat(true);
+    if (result.ok && result.replyText && !state.lastTickSentChat) {
+      clawLog("runner: sending fallback chat", result.replyText.slice(0, 80));
+      const dmTarget = state.lastDmPeerSessionId ?? undefined;
+      const voiceId = config.voiceId ?? undefined;
+      client.sendChat?.(result.replyText, { targetSessionId: dmTarget, voiceId });
+      if (voiceId && config.voiceEnabled) {
+        reportVoiceUsageToHub(config, store, result.replyText.length, onUsageReportFailure);
+      }
+      store.setLastAgentChatMessage(result.replyText);
+      store.setLastTickSentChat(true);
+    }
+    if (result.ok) {
+      store.clearOwnerMessages();
+      store.setLastCompletedAction(label === "obedient" ? "obedient" : "autonomous_llm");
+    } else {
+      store.setCurrentAction("error");
+    }
+  } finally {
+    store.setThinking(false);
   }
-  if (result.ok) store.clearOwnerMessages();
 }
 
 /** Options for creating the runner (store, config, optional client and callbacks). */
@@ -117,7 +132,7 @@ export function createRunner(options: RunnerOptions): AgentLoop {
           )
       : undefined;
 
-  const defaultExecuteMovementAndDrain = () => {
+  const defaultExecuteMovementAndDrain = (): void => {
     if (!client) return;
     movementDriverTick(client, store, {
       voiceId: config.voiceId,
@@ -133,12 +148,14 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     }
   };
 
-  /** Tree action: move toward nearest occupant (no LLM). Skips if already moving or 15% random. */
+  /** Tree action: move toward nearest occupant (no LLM). Tree gates on NotInConversation; we skip if already moving, on cooldown, or going to talk. */
   const tryMoveToNearestOccupant = (): void => {
     if (!client) return;
     const state = store.getState();
     if (state.movementTarget || state.followTargetSessionId) return;
-    if (Math.random() < TRY_MOVE_TO_NEAREST_SKIP_CHANCE) return;
+    const now = Date.now();
+    if (state.nextAutonomousMoveAt > now) return;
+    if (state.pendingGoTalkToAgent) return;
     const nearest = findNearestOccupant(state.occupants, state.mySessionId, state.myPosition);
     if (!nearest?.position) return;
     const { x, z } = nearest.position;
@@ -147,6 +164,7 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     store.setLastMoveToFailed(null);
     store.setMovementSprint(false);
     store.setAutonomousEmoteStandStillUntil(0);
+    store.setNextAutonomousMoveAt(now + randomCooldownMs());
     client.moveTo(x, z);
     clawLog("tree: TryMoveToNearestOccupant", nearest.username ?? nearest.clientId);
   };
@@ -160,8 +178,6 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     tryMoveToNearestOccupant,
   });
 
-  // Always refresh occupants when we have a client so myPosition/occupants are set. Required for
-  // TimeForAutonomousWake (owner-away check), TryMoveToNearestOccupant, and movement arrival detection.
   if (client == null) {
     return loop;
   }
@@ -195,5 +211,6 @@ export function createRunner(options: RunnerOptions): AgentLoop {
       }
     },
     step: loop.step.bind(loop),
+    getTreeState: loop.getTreeState.bind(loop),
   };
 }

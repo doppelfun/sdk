@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { createTreeAgent } from "./agent.js";
+import { createAgentLoop } from "./loop.js";
 import { createClawStore } from "../state/index.js";
 import { testConfig } from "../../util/testHelpers.js";
+import type { ClawConfig } from "../config/index.js";
 
-function createTestContext(overrides?: { ownerUserId?: string | null; hosted?: boolean }) {
+function createTestContext(overrides?: Partial<ClawConfig>) {
   const store = createClawStore("0_0");
   const config = testConfig(overrides);
   return { store, config };
@@ -41,6 +43,24 @@ describe("createTreeAgent", () => {
       store.setLastTriggerUserId("owner-1");
       const agent = createTreeAgent({ store, config });
       expect(agent.HasOwnerWake()).toBe(false);
+    });
+  });
+
+  describe("NotInConversation", () => {
+    it("returns true when conversationPhase is idle", () => {
+      const { store, config } = createTestContext();
+      store.setConversationPhase("idle");
+      const agent = createTreeAgent({ store, config });
+      expect(agent.NotInConversation()).toBe(true);
+    });
+
+    it("returns false when conversationPhase is can_reply or waiting_for_reply", () => {
+      const { store, config } = createTestContext();
+      store.setConversationPhase("can_reply");
+      const agent = createTreeAgent({ store, config });
+      expect(agent.NotInConversation()).toBe(false);
+      store.setConversationPhase("waiting_for_reply");
+      expect(agent.NotInConversation()).toBe(false);
     });
   });
 
@@ -86,6 +106,71 @@ describe("createTreeAgent", () => {
       const { State } = await import("mistreevous");
       expect(agent.ClearWakeIdle()).toBe(State.SUCCEEDED);
       expect(store.getState().wakePending).toBe(false);
+    });
+
+    it("sets currentAction to idle", () => {
+      const { store, config } = createTestContext();
+      const agent = createTreeAgent({ store, config });
+      agent.ClearWakeIdle();
+      expect(store.getState().currentAction).toBe("idle");
+    });
+
+    it("sets lastCompletedAction and lastCompletedActionAt on completion", () => {
+      const { store, config } = createTestContext();
+      const agent = createTreeAgent({ store, config });
+      agent.ClearWakeIdle();
+      const s = store.getState();
+      expect(s.lastCompletedAction).toBe("idle");
+      expect(typeof s.lastCompletedActionAt).toBe("number");
+      expect(s.lastCompletedActionAt).toBeGreaterThan(0);
+    });
+  });
+
+  describe("currentAction", () => {
+    it("ExecuteMovementAndDrain sets currentAction to movement_only", () => {
+      const { store, config } = createTestContext();
+      const agent = createTreeAgent({ store, config });
+      agent.ExecuteMovementAndDrain();
+      expect(store.getState().currentAction).toBe("movement_only");
+    });
+
+    it("ClearWakeInsufficientCredits sets currentAction to clearing_wake_insufficient_credits", () => {
+      const { store, config } = createTestContext({
+        hosted: true,
+        ownerUserId: "owner-1",
+      });
+      store.setWakePending(true);
+      store.setLastTriggerUserId("owner-1");
+      store.setState({ cachedBalance: 0, dailySpend: 0 });
+      const agent = createTreeAgent({ store, config });
+      agent.ClearWakeInsufficientCredits();
+      expect(store.getState().currentAction).toBe("clearing_wake_insufficient_credits");
+    });
+
+    it("RequestAutonomousWake sets currentAction to requesting_autonomous_wake", () => {
+      const { store, config } = createTestContext({ ownerUserId: "owner-1" });
+      const agent = createTreeAgent({ store, config });
+      agent.RequestAutonomousWake();
+      expect(store.getState().currentAction).toBe("requesting_autonomous_wake");
+    });
+
+    it("TryMoveToNearestOccupant sets currentAction to autonomous_move", () => {
+      const { store, config } = createTestContext();
+      const agent = createTreeAgent({ store, config });
+      agent.TryMoveToNearestOccupant();
+      expect(store.getState().currentAction).toBe("autonomous_move");
+    });
+  });
+
+  describe("getTreeState", () => {
+    it("returns snapshot with state string after step", () => {
+      const { store, config } = createTestContext();
+      const loop = createAgentLoop({ store, config });
+      loop.step();
+      const snapshot = loop.getTreeState();
+      expect(snapshot).toHaveProperty("state");
+      expect(typeof snapshot.state).toBe("string");
+      expect(snapshot.state.length).toBeGreaterThan(0);
     });
   });
 });

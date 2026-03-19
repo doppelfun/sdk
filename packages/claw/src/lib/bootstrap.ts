@@ -1,24 +1,25 @@
 /**
- * Bootstrap and session helpers: fetch profile, join block, create store, refresh balance.
- * Use before starting the runner so config and store are ready.
+ * Bootstrap and session — load config, fetch hub profile, join block, create store.
+ * Call bootstrapAgent() then createSession() before starting the runner.
  */
-import { loadConfig, type ClawConfig } from "./lib/config/index.js";
-import { getAgentProfile, joinBlock, type HubAgentProfile } from "./lib/hub/index.js";
-import { applyHubProfileToConfig } from "./lib/hub/profile.js";
-import { createClawStore, type ClawStore } from "./lib/state/index.js";
-import { refreshBalance } from "./lib/credits/index.js";
+
+import { loadConfig, type ClawConfig } from "./config/index.js";
+import { getAgentProfile, joinBlock, type HubAgentProfile } from "./hub/index.js";
+import { applyHubProfileToConfig } from "./hub/profile.js";
+import { createClawStore, type ClawStore } from "./state/index.js";
+import { refreshBalance } from "./credits/index.js";
 
 export type BootstrapResult = {
   config: ClawConfig;
-  /** Applied profile (if fetch succeeded). */
+  /** Whether hub profile was applied to config. */
   profileApplied: boolean;
-  /** Raw profile when fetch succeeded (e.g. for defaultBlock, cronTasks). */
+  /** Raw profile when fetch succeeded (e.g. defaultBlock, cronTasks). */
   profile?: HubAgentProfile;
 };
 
 /**
  * Load config and fetch agent profile from hub; merge profile into config.
- * Call once at startup. Returns config with voiceEnabled, dailyCreditBudget, soul, etc. from hub.
+ * Call once at startup. Config gets voiceEnabled, dailyCreditBudget, soul, etc. from hub.
  */
 export async function bootstrapAgent(): Promise<BootstrapResult> {
   const config = loadConfig();
@@ -42,7 +43,9 @@ export async function bootstrapAgent(): Promise<BootstrapResult> {
   return { config, profileApplied, profile };
 }
 
-/** Resolve block id for join: profile defaultBlock / default_space_id, then config.blockId, then fallback. */
+/**
+ * Resolve block id for join: profile defaultBlock / default_space_id, then config.blockId, then fallback.
+ */
 export function getDefaultBlockId(profile: HubAgentProfile | undefined, config: ClawConfig, fallback: string): string {
   const fromProfile =
     (profile?.defaultBlock as { blockId?: string } | undefined)?.blockId ??
@@ -58,7 +61,7 @@ export type SessionResult =
 
 /**
  * Join a block and create the agent store. Optionally refresh balance for hosted agents.
- * Call after bootstrapAgent(); use jwt and engineUrl to create and connect the engine client.
+ * Call after bootstrapAgent(); use returned jwt and engineUrl to create and connect the engine client.
  */
 export async function createSession(
   config: ClawConfig,

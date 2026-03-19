@@ -10,6 +10,7 @@ import type { ClawConfig } from "../config/index.js";
 import { hasEnoughCredits, MIN_BALANCE_THRESHOLD } from "../credits/index.js";
 import { isOwnerNearby } from "../../util/position.js";
 import { clawLog } from "../../util/log.js";
+import { setCurrentActionForNode, setLastCompletedActionForNode } from "./mapping.js";
 
 export type TreeAgentContext = {
   store: ClawStore;
@@ -37,7 +38,9 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
 
   return {
     ExecuteMovementAndDrain(): State {
+      setCurrentActionForNode(store, "ExecuteMovementAndDrain");
       if (executeMovementAndDrain) executeMovementAndDrain();
+      setLastCompletedActionForNode(store, "ExecuteMovementAndDrain");
       return State.SUCCEEDED;
     },
 
@@ -64,6 +67,7 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
     },
 
     ClearWakeInsufficientCredits(): State {
+      setCurrentActionForNode(store, "ClearWakeInsufficientCredits");
       const state = store.getState();
       clawLog(
         "credits: blocking run — insufficient credits (cachedBalance=%s, threshold=%s)",
@@ -72,15 +76,18 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       );
       store.clearWake();
       store.clearPendingScheduledTask();
+      setLastCompletedActionForNode(store, "ClearWakeInsufficientCredits");
       return State.SUCCEEDED;
     },
 
     /** Consume wake and scheduled task first so the next tree step doesn't re-enter. */
     async RunObedientAgent(): Promise<State> {
+      setCurrentActionForNode(store, "RunObedientAgent");
       clawLog("tree: RunObedientAgent");
       store.clearWake();
       store.clearPendingScheduledTask();
       if (runObedientAgent) await runObedientAgent();
+      setLastCompletedActionForNode(store, "RunObedientAgent");
       return State.SUCCEEDED;
     },
 
@@ -88,6 +95,11 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       const s = store.getState();
       if (!s.wakePending || s.pendingScheduledTask != null) return false;
       return s.lastTriggerUserId !== config.ownerUserId;
+    },
+
+    /** True when not in a conversation (phase is idle). Gates TryMoveToNearestOccupant so we don't move toward someone while talking. */
+    NotInConversation(): boolean {
+      return store.getState().conversationPhase === "idle";
     },
 
     /** True when we should run the autonomous LLM: real DM (lastTriggerUserId set) or cooldown elapsed. Prevents LLM spam in soul mode. */
@@ -100,17 +112,21 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
 
     /** Tree-driven move (no LLM). Used when autonomous wake but cooldown not elapsed. */
     TryMoveToNearestOccupant(): State {
+      setCurrentActionForNode(store, "TryMoveToNearestOccupant");
       if (tryMoveToNearestOccupant) tryMoveToNearestOccupant();
+      setLastCompletedActionForNode(store, "TryMoveToNearestOccupant");
       return State.SUCCEEDED;
     },
 
     /** Consume wake and owner messages first; then run LLM. Clear owner so autonomous doesn't re-run last command. */
     async RunAutonomousAgent(): Promise<State> {
+      setCurrentActionForNode(store, "RunAutonomousAgent");
       clawLog("tree: RunAutonomousAgent");
       store.clearWake();
       store.clearOwnerMessages();
       if (runAutonomousAgent) await runAutonomousAgent();
       store.setLastAutonomousRunAt(Date.now());
+      setLastCompletedActionForNode(store, "RunAutonomousAgent");
       return State.SUCCEEDED;
     },
 
@@ -125,14 +141,18 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
     },
 
     RequestAutonomousWake(): State {
+      setCurrentActionForNode(store, "RequestAutonomousWake");
       store.setWakePending(true);
       // So the next tick HasOwnerWake is false and HasAutonomousWake is true (selector runs autonomous branch).
       store.setLastTriggerUserId(null);
+      setLastCompletedActionForNode(store, "RequestAutonomousWake");
       return State.SUCCEEDED;
     },
 
     ClearWakeIdle(): State {
+      setCurrentActionForNode(store, "ClearWakeIdle");
       store.clearWake();
+      setLastCompletedActionForNode(store, "ClearWakeIdle");
       return State.SUCCEEDED;
     },
   };

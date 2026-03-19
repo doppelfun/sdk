@@ -3,7 +3,7 @@
  */
 import type { ToolContext } from "../types.js";
 import { buildChatSendOptions } from "../../util/chatSendOptions.js";
-import { clearConversation, evaluateSendReply, onWeSentDm } from "../../lib/conversation.js";
+import { clearConversation, evaluateSendReply, onWeSentDm, shouldSkipOpeningGreeting } from "../../lib/conversation.js";
 import { isTargetOwner, isOccupantNearby } from "../../util/position.js";
 import { reportVoiceUsageToHub } from "../../lib/credits/index.js";
 import { clawLog } from "../../util/log.js";
@@ -52,6 +52,12 @@ export async function handleStartConversation(ctx: ToolContext) {
 
   // Always set conversation target so subsequent chat() calls default to this peer
   store.setState({ lastDmPeerSessionId: targetSessionId });
+
+  // If already in conversation with this peer and opening is just a greeting, don't say hi again
+  if (shouldSkipOpeningGreeting(store, targetSessionId, openingMessage)) {
+    logAction("start_conversation (target set; already said hi)");
+    return { ok: true as const, summary: "conversation target set; already in conversation" };
+  }
 
   if (openingMessage) {
     const action = evaluateSendReply(store, targetSessionId, openingMessage);

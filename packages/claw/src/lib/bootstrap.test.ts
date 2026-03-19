@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getDefaultBlockId } from "../bootstrap.js";
+import { getDefaultBlockId } from "./bootstrap.js";
 import { testConfig } from "../util/testHelpers.js";
 import type { HubAgentProfile } from "./hub/index.js";
 

@@ -5,7 +5,7 @@
 import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
 import { clearConversation, onWeReceivedDm } from "../conversation.js";
-import { requestWake } from "../../wake.js";
+import { requestWake } from "../wake.js";
 import { isDmChannel, isParticipantInDmChannel } from "../../util/dm.js";
 import { hashString } from "../../util/hash.js";
 import { isTalkToSomeoneElseMessage } from "../prompts/userMessage.js";

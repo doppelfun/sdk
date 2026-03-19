@@ -4,7 +4,10 @@
 export { createClawStore, type ClawStore, type ClawStoreApi } from "./store.js";
 export {
   createInitialState,
+  isAgentRunningLlm,
+  isAgentInError,
   type ClawState,
+  type TreeAction,
   type ChatEntry,
   type OwnerMessage,
   type PendingScheduledTask,

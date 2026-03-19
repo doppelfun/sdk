@@ -1,14 +1,19 @@
 /**
  * @doppelfun/claw — Wake-driven agent with Mistreevous behaviour tree.
+ *
+ * Entry points: createRunner (wire tree + LLM), bootstrapAgent + createSession (hub + block join),
+ * requestWake / requestCronWake (enqueue work), handleChatMessage (wire chat → store + wake).
  * @see docs/PLAN-AGENT-WAKE-DRIVEN.md
  */
 
-export { createAgentLoop, createTreeAgent, TREE_DEFINITION, type AgentLoop, type TreeAgentContext } from "./lib/tree/index.js";
-export { requestWake, requestCronWake, type WakeType, type WakePayload } from "./wake.js";
+export { createAgentLoop, createTreeAgent, TREE_DEFINITION, type AgentLoop, type TreeAgentContext, type TreeStateSnapshot } from "./lib/tree/index.js";
+export { requestWake, requestCronWake, type WakeType, type WakePayload } from "./lib/wake.js";
 export { loadConfig, type ClawConfig, type LlmProviderId } from "./lib/config/index.js";
 export {
   createClawStore,
   createInitialState,
+  isAgentRunningLlm,
+  isAgentInError,
   type ClawState,
   type ClawStore,
   type ClawStoreApi,
@@ -18,8 +23,9 @@ export {
   type Position3,
   type BuildTarget,
   type BlockDocument,
+  type TreeAction,
 } from "./lib/state/index.js";
-export { createRunner, type RunnerOptions } from "./runner.js";
+export { createRunner, type RunnerOptions } from "./lib/runner/index.js";
 export { handleChatMessage, type ChatPayload } from "./lib/chat/chatHandler.js";
 export { buildSystemContent, buildUserMessage } from "./lib/prompts/index.js";
 export { runObedientAgentTick } from "./lib/agent/obedientAgent.js";
@@ -50,7 +56,7 @@ export {
   getDefaultBlockId,
   type BootstrapResult,
   type SessionResult,
-} from "./bootstrap.js";
+} from "./lib/bootstrap.js";
 export {
   startCronScheduler,
   type CronTaskDef,

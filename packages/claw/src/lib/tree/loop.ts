@@ -9,6 +9,12 @@ import { createTreeAgent, type TreeAgentContext } from "./agent.js";
 
 const LOOP_INTERVAL_MS = 50;
 
+/** Tree state from Mistreevous (e.g. "mistreevous.succeeded", "mistreevous.running"). */
+export type TreeStateSnapshot = {
+  /** Current tree-level state; RUNNING while an async action is in progress. */
+  state: string;
+};
+
 /** Main agent loop: start/stop the 50ms tick; step() runs one tree tick (for tests). */
 export type AgentLoop = {
   /** Start the interval; no-op if already running. */
@@ -17,6 +23,8 @@ export type AgentLoop = {
   stop(): void;
   /** Run one behaviour tree step (used by interval and tests). */
   step(): void;
+  /** Current tree state (for debugging and tests). RUNNING when e.g. RunObedientAgent is in progress. */
+  getTreeState(): TreeStateSnapshot;
 };
 
 /**
@@ -48,5 +56,9 @@ export function createAgentLoop(ctx: TreeAgentContext): AgentLoop {
       }
     },
     step,
+    getTreeState(): TreeStateSnapshot {
+      const state = (behaviourTree as { getState?: () => string }).getState?.() ?? "UNKNOWN";
+      return { state };
+    },
   };
 }

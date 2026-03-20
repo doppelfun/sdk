@@ -1,0 +1,19 @@
+{
+  "name": "doppel-sdk",
+  "version": "0.2.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Doppel SDK monorepo: core client and agent claw",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "clean": "pnpm -r run clean",
+    "test": "pnpm -r run test",
+    "pack:check": "pnpm run build && pnpm publish -r --dry-run --no-git-checks --access public",
+    "docker:build": "docker buildx build --platform=linux/amd64 -t cr3labs/doppel-claw:latest .",
+    "docker:push": "docker buildx build --platform=linux/amd64 --push -t cr3labs/doppel-claw:latest ."
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.14.2"
+}

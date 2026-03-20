@@ -1,0 +1,17 @@
+{
+  "id": "pyramid",
+  "name": "Pyramid",
+  "description": "Hollow stepped pyramid with doorway and glowing corners",
+  "inputs": [
+    { "name": "baseWidth", "type": "number", "optional": true, "description": "Base width in metres" },
+    { "name": "layers", "type": "number", "optional": true, "description": "Number of stepped layers" },
+    { "name": "blockSize", "type": "number", "optional": true, "description": "Size of each cube block in metres" },
+    { "name": "doorWidthBlocks", "type": "number", "optional": true, "description": "Doorway width in blocks" },
+    { "name": "seed", "type": "number", "optional": true, "description": "PRNG seed" },
+    { "name": "cx", "type": "number", "optional": true, "description": "Centre X in block space" },
+    { "name": "cz", "type": "number", "optional": true, "description": "Centre Z in block space" },
+    { "name": "cornerColors", "type": "array", "optional": true, "description": "Optional palette for emissive corner cubes" },
+    { "name": "cornerEmissionIntensity", "type": "number", "optional": true, "description": "Fixed emission intensity for corners" }
+  ],
+  "output": "mml"
+}

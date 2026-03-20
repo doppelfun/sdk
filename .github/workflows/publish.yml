@@ -1,0 +1,49 @@
+# Publish @doppelfun/sdk and @doppelfun/claw to npm using Trusted Publishing (OIDC).
+# No NPM_TOKEN needed. Configure Trusted Publisher on npmjs.com for each package:
+#   Package → Settings → Trusted publishing → GitHub Actions → Workflow filename: publish.yml
+# Requires: npm CLI 11.5.1+, Node 22.14+ (see https://docs.npmjs.com/trusted-publishers)
+
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install npm 11 (required for Trusted Publishing)
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Publish @doppelfun/sdk
+        working-directory: packages/core
+        run: npm publish --access public
+
+      - name: Publish @doppelfun/claw
+        working-directory: packages/claw
+        run: npm publish --access public

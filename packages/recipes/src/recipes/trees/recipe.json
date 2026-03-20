@@ -1,0 +1,14 @@
+{
+  "id": "trees",
+  "name": "Trees",
+  "description": "Recipe: tree placement (m-model catalog ids)",
+  "inputs": [
+    { "name": "count", "type": "number", "optional": true, "description": "Number of trees" },
+    { "name": "catalogId", "type": "string", "optional": true, "description": "Single catalog id (e.g. def-tree)" },
+    { "name": "catalogIds", "type": "array", "optional": true, "description": "Catalog ids to pick from randomly" },
+    { "name": "seed", "type": "number", "optional": true, "description": "PRNG seed" },
+    { "name": "margin", "type": "number", "optional": true, "description": "Margin inside block" },
+    { "name": "collide", "type": "boolean", "optional": true, "description": "Collide on m-model" }
+  ],
+  "output": "mml"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "grass",
+  "name": "Grass",
+  "description": "Recipe: grass patches (m-grass)",
+  "inputs": [
+    { "name": "patches", "type": "number", "optional": true, "description": "Number of patches" },
+    { "name": "count", "type": "number", "optional": true, "description": "Blades per patch" },
+    { "name": "spreadMin", "type": "number", "optional": true, "description": "Min patch spread in m" },
+    { "name": "spreadMax", "type": "number", "optional": true, "description": "Max patch spread in m" },
+    { "name": "height", "type": "number", "optional": true, "description": "Grass blade height" },
+    { "name": "y", "type": "number", "optional": true, "description": "Y position of patch center" },
+    { "name": "seed", "type": "number", "optional": true, "description": "PRNG seed" },
+    { "name": "margin", "type": "number", "optional": true, "description": "Margin inside block edge" },
+    { "name": "emissionIntensity", "type": "number", "optional": true, "description": "Emission intensity" }
+  ],
+  "output": "mml"
+}

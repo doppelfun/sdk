@@ -25,7 +25,7 @@ async function main(): Promise<void> {
   const { config, profile } = await bootstrapAgent();
   const blockId = getDefaultBlockId(profile, config, "0_0");
 
-  const session = await createSession(config, blockId, { refreshBalance: true });
+  const session = await createSession(config, blockId);
   if (!session.ok) {
     console.error("[agent] Session failed:", session.error);
     process.exit(1);

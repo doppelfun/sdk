@@ -31,7 +31,7 @@ import {
 } from "@doppelfun/claw";
 
 const { config } = await bootstrapAgent();  // fetches profile, applies voiceEnabled/soul/dailyCreditBudget
-const session = await createSession(config, config.blockId!, { refreshBalance: true });
+const session = await createSession(config, config.blockId!); // refreshes credit balance by default when hosted
 if (!session.ok) throw new Error(session.error);
 const { store, jwt, engineUrl, blockSlotId } = session;
 
@@ -164,7 +164,7 @@ flowchart TB
 - **Hub:** `getAgentProfile`, `reportUsage`, `checkBalance`, `applyHubProfileToConfig`, `HubAgentProfile`
 - **Credits:** `reportUsageToHub`, `reportVoiceUsageToHub`, `hasEnoughCredits`, `refreshBalance`, `MIN_BALANCE_THRESHOLD`
 - **Cron:** `requestCronWake(store, task)`, `startCronScheduler(store, getTasks, options)` — tree routes cron to Obedient
-- **Bootstrap:** `bootstrapAgent()`, `createSession(config, blockId, { refreshBalance })`, `getDefaultBlockId(profile, config, fallback)`
+- **Bootstrap:** `bootstrapAgent()`, `createSession(config, blockId, { refreshBalance?: false })`, `getDefaultBlockId(profile, config, fallback)` — hosted agents refresh credits after join by default; the runner also polls the hub every 30s while connected.
 
 ## Build
 

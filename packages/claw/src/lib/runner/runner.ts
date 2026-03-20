@@ -15,7 +15,7 @@ import { runObedientAgentTick } from "../agent/obedientAgent.js";
 import { runConverseAgentTick } from "../agent/converseAgent.js";
 import { drainPendingReply } from "../conversation.js";
 import { movementDriverTick, CONVERSATION_RANGE_M, DEFAULT_STOP_DISTANCE_M } from "../movement/index.js";
-import { reportUsageToHub, reportVoiceUsageToHub } from "../credits/index.js";
+import { reportUsageToHub, reportVoiceUsageToHub, refreshBalance } from "../credits/index.js";
 import { createAgentLoop, type AgentLoop } from "../tree/index.js";
 import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
@@ -25,6 +25,9 @@ import { findNearestOccupantByPriority } from "../../util/position.js";
 
 /** Interval (ms) to refresh occupants so myPosition is set and TimeForAutonomousWake can fire when owner is away. */
 const OCCUPANTS_REFRESH_MS = 10_000;
+
+/** Interval (ms) to re-fetch account credits from the hub so cached balance matches top-ups and gates unblock. */
+const CREDIT_BALANCE_REFRESH_MS = 30_000;
 
 /** Min/max cooldown (ms) before next autonomous move. Shared by move-to-nearest, seek-social, and movement driver on arrival. */
 const AUTONOMOUS_MOVE_COOLDOWN_MS = { min: 20_000, max: 45_000 };
@@ -245,6 +248,8 @@ export function createRunner(options: RunnerOptions): AgentLoop {
   }
 
   let occupantsInterval: ReturnType<typeof setInterval> | null = null;
+  let creditBalanceInterval: ReturnType<typeof setInterval> | null = null;
+  let creditBalanceRefreshInFlight = false;
 
   const refreshOccupants = (): void => {
     client.getOccupants().then(
@@ -258,11 +263,29 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     );
   };
 
+  const refreshCreditBalanceFromHub = (): void => {
+    if (!config.hosted || config.skipCreditReport || creditBalanceRefreshInFlight) return;
+    creditBalanceRefreshInFlight = true;
+    void refreshBalance(store, config)
+      .then((res) => {
+        if (res.ok) {
+          clawLog("runner: credit balance refreshed", res.balance.toFixed(2));
+        } else {
+          clawLog("runner: credit balance refresh failed", res.error);
+        }
+      })
+      .finally(() => {
+        creditBalanceRefreshInFlight = false;
+      });
+  };
+
   return {
     start() {
       if (occupantsInterval != null) return;
       refreshOccupants();
       occupantsInterval = setInterval(refreshOccupants, OCCUPANTS_REFRESH_MS);
+      refreshCreditBalanceFromHub();
+      creditBalanceInterval = setInterval(refreshCreditBalanceFromHub, CREDIT_BALANCE_REFRESH_MS);
       loop.start();
     },
     stop() {
@@ -270,6 +293,10 @@ export function createRunner(options: RunnerOptions): AgentLoop {
       if (occupantsInterval != null) {
         clearInterval(occupantsInterval);
         occupantsInterval = null;
+      }
+      if (creditBalanceInterval != null) {
+        clearInterval(creditBalanceInterval);
+        creditBalanceInterval = null;
       }
     },
     step: loop.step.bind(loop),

@@ -60,7 +60,8 @@ export type SessionResult =
   | { ok: false; error: string };
 
 /**
- * Join a block and create the agent store. Optionally refresh balance for hosted agents.
+ * Join a block and create the agent store. Refreshes credit balance by default for hosted agents
+ * (so HasEnoughCredits is not stuck on the initial 0 cache). Pass `{ refreshBalance: false }` to skip.
  * Call after bootstrapAgent(); use returned jwt and engineUrl to create and connect the engine client.
  */
 export async function createSession(
@@ -71,7 +72,9 @@ export async function createSession(
   const join = await joinBlock(config.agentApiUrl, config.apiKey, blockId);
   if (!join.ok) return { ok: false, error: join.error };
   const store = createClawStore(join.blockSlotId);
-  if (options?.refreshBalance && config.hosted) {
+  const shouldRefreshBalance =
+    options?.refreshBalance !== false && config.hosted && !config.skipCreditReport;
+  if (shouldRefreshBalance) {
     const balanceRes = await refreshBalance(store, config);
     if (balanceRes.ok) {
       console.log("[claw] Credits: fetched balance", balanceRes.balance.toFixed(2));

@@ -82,7 +82,7 @@ export function createObedientAgent(
       hasToolCall("approach_person"),
       hasToolCall("follow"),
       hasToolCall("stop"),
-      hasToolCall("list_recipes"),
+      // Do not stop after list_recipes — the model should follow with run_recipe or chat with the list (same idea as get_occupants).
       hasToolCall("run_recipe"),
       hasToolCall("place_catalog_model"),
       hasToolCall("build_full"),

@@ -147,6 +147,26 @@ describe("createTreeAgent", () => {
       expect(store.getState().currentAction).toBe("clearing_wake_insufficient_credits");
     });
 
+    it("ClearWakeInsufficientCredits invokes onInsufficientCreditsBlocked when set", () => {
+      let called = false;
+      const { store, config } = createTestContext({
+        hosted: true,
+        ownerUserId: "owner-1",
+      });
+      store.setWakePending(true);
+      store.setLastTriggerUserId("owner-1");
+      store.setState({ cachedBalance: 0, dailySpend: 0 });
+      const agent = createTreeAgent({
+        store,
+        config,
+        onInsufficientCreditsBlocked: () => {
+          called = true;
+        },
+      });
+      agent.ClearWakeInsufficientCredits();
+      expect(called).toBe(true);
+    });
+
     it("RequestAutonomousWake sets currentAction to requesting_autonomous_wake", () => {
       const { store, config } = createTestContext({ ownerUserId: "owner-1" });
       const agent = createTreeAgent({ store, config });

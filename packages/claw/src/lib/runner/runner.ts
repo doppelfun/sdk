@@ -13,9 +13,14 @@ import { buildSystemContent } from "../prompts/index.js";
 import { buildUserMessage } from "../prompts/index.js";
 import { runObedientAgentTick } from "../agent/obedientAgent.js";
 import { runConverseAgentTick } from "../agent/converseAgent.js";
-import { drainPendingReply } from "../conversation.js";
+import { drainPendingReply, onWeSentDm } from "../conversation.js";
 import { movementDriverTick, CONVERSATION_RANGE_M, DEFAULT_STOP_DISTANCE_M } from "../movement/index.js";
-import { reportUsageToHub, reportVoiceUsageToHub, refreshBalance } from "../credits/index.js";
+import {
+  INSUFFICIENT_CREDITS_REPLY_MESSAGE,
+  reportUsageToHub,
+  reportVoiceUsageToHub,
+  refreshBalance,
+} from "../credits/index.js";
 import { createAgentLoop, type AgentLoop } from "../tree/index.js";
 import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
@@ -233,6 +238,30 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     clawLog("tree: SeekSocialTarget (engine follow)", nearest.username ?? nearest.clientId);
   };
 
+  const onInsufficientCreditsBlocked =
+    client != null
+      ? () => {
+          if (!config.hosted || config.skipCreditReport) return;
+          const s = store.getState();
+          const targetSessionId = s.conversationPeerSessionId ?? s.lastDmPeerSessionId;
+          if (!targetSessionId) return;
+          const voiceId = config.voiceId ?? undefined;
+          clawLog("runner: insufficient credits — replying to", targetSessionId);
+          client.sendChat?.(INSUFFICIENT_CREDITS_REPLY_MESSAGE, { targetSessionId, voiceId });
+          onWeSentDm(store, targetSessionId);
+          if (voiceId) {
+            reportVoiceUsageToHub(
+              config,
+              store,
+              INSUFFICIENT_CREDITS_REPLY_MESSAGE.length,
+              onUsageReportFailure
+            );
+          }
+          store.setLastAgentChatMessage(INSUFFICIENT_CREDITS_REPLY_MESSAGE);
+          store.setLastTickSentChat(true);
+        }
+      : undefined;
+
   const loop = createAgentLoop({
     store,
     config,
@@ -241,6 +270,7 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     executeMovementAndDrain: executeMovementAndDrain ?? defaultExecuteMovementAndDrain,
     tryMoveToNearestOccupant,
     seekSocialTarget,
+    onInsufficientCreditsBlocked,
   });
 
   if (client == null) {

@@ -3,7 +3,7 @@
  * Built from store, config, and optional callbacks (movement, obedient, converse).
  *
  * Structure:
- * - Wake/credits: HasOwnerWake, HasEnoughCredits, InsufficientCredits, ClearWakeInsufficientCredits
+ * - Wake/credits: HasOwnerWake, HasEnoughCredits, InsufficientCredits, ClearWakeInsufficientCredits (+ optional user chat)
  * - Obedient: RunObedientAgent (owner or scheduled task)
  * - Autonomous: OwnerAway, OwnerAwayOrInConversation, InConversation, WasConverseButNowIdle, HasApproachGoal, ShouldSeekSocialTarget,
  *   RunConverseAgent, ExitConversationToWander, ContinueApproach, SeekSocialTarget, SetWanderGoal, TryMoveToNearestOccupant
@@ -36,6 +36,10 @@ export type TreeAgentContext = {
   seekSocialTarget?: () => void;
   /** Optional: run one Converse tick (chat-only LLM). When absent, RunConverseAgent no-ops. */
   runConverseAgent?: () => Promise<void>;
+  /**
+   * Optional: notify user when credits block a wake (e.g. send DM). Invoked from ClearWakeInsufficientCredits before clearing wake state.
+   */
+  onInsufficientCreditsBlocked?: () => void;
 };
 
 /** True when wake was triggered by owner (DM) or by a scheduled task. Used to gate Obedient branch and credit clearing. */
@@ -54,7 +58,17 @@ function isOwnerTrigger(s: ClawState, config: ClawConfig): boolean {
  * @returns Agent object keyed by action/condition names
  */
 export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => State | boolean | Promise<State>> {
-  const { store, config, runObedientAgent, runAutonomousAgent, executeMovementAndDrain, tryMoveToNearestOccupant, seekSocialTarget, runConverseAgent } = ctx;
+  const {
+    store,
+    config,
+    runObedientAgent,
+    runAutonomousAgent,
+    executeMovementAndDrain,
+    tryMoveToNearestOccupant,
+    seekSocialTarget,
+    runConverseAgent,
+    onInsufficientCreditsBlocked,
+  } = ctx;
 
   return {
     // --- Movement (every tick) ---
@@ -93,6 +107,7 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
         state.cachedBalance.toFixed(2),
         MIN_BALANCE_THRESHOLD.toFixed(2)
       );
+      onInsufficientCreditsBlocked?.();
       store.clearWake();
       store.clearPendingScheduledTask();
       setLastCompletedActionForNode(store, "ClearWakeInsufficientCredits");

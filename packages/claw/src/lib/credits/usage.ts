@@ -12,6 +12,9 @@ import { setCachedBalance } from "../hub/profile.js";
 /** Minimum balance (credits) to allow an agent run when hosted. */
 export const MIN_BALANCE_THRESHOLD = 0.1;
 
+/** Shown in chat when a wake is cleared because the account cannot run the LLM (hosted credits gate). */
+export const INSUFFICIENT_CREDITS_REPLY_MESSAGE = "Sorry, I can't chat right now. I'm out of llm tokens.";
+
 /**
  * Report LLM usage to hub (fire-and-forget). Updates cached balance when hub returns balanceAfter.
  * No-op when skipCreditReport or !hosted or usage is null/zero.

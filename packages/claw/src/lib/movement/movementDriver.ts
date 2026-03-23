@@ -15,6 +15,7 @@ import type { ClawStore } from "../state/index.js";
 import type { WanderState } from "../state/index.js";
 import { BLOCK_SIZE_M } from "../../util/blockBounds.js";
 import { clawLog } from "../../util/log.js";
+import { pickWanderMoveTargetOccupant } from "../../util/position.js";
 
 export const MOVEMENT_INPUT_INTERVAL_MS = 50;
 const BOUNDS_MARGIN = 2;
@@ -125,19 +126,12 @@ function pickWanderDestinationAndMoveTo(
   store: ClawStore,
 ): void {
   const state = store.getState();
-  const others = state.occupants.filter(
-    (o) => o.clientId !== state.mySessionId && o.position != null
-  );
+  const chosen = pickWanderMoveTargetOccupant(state.occupants, state.mySessionId, state.myPosition);
   let x: number;
   let z: number;
-  if (others.length > 0) {
-    const agents = others.filter((o) => o.type === "agent");
-    const users = others.filter((o) => o.type === "user");
-    const rest = others.filter((o) => o.type !== "agent" && o.type !== "user");
-    const pool = agents.length > 0 ? agents : users.length > 0 ? users : rest;
-    const chosen = pool[Math.floor(Math.random() * pool.length)]!;
-    x = chosen.position!.x;
-    z = chosen.position!.z;
+  if (chosen?.position) {
+    x = chosen.position.x;
+    z = chosen.position.z;
     clawLog("wander pathfind toward", chosen.type, chosen.username ?? chosen.clientId);
   } else {
     x = randomRange(LOCAL_X_MIN, LOCAL_X_MAX);
@@ -333,7 +327,8 @@ export function movementDriverTick(
     } else {
       const now = Date.now();
       const others = state.occupants.filter(
-        (o) => o.clientId !== state.mySessionId && o.position != null
+        (o) =>
+          o.clientId !== state.mySessionId && o.position != null && o.type !== "observer"
       );
       if (state.nextWanderDestinationAt <= now && others.length > 0) {
         pickWanderDestinationAndMoveTo(client, store);

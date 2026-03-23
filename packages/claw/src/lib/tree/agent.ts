@@ -202,7 +202,9 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       if (Date.now() < s.socialSeekCooldownUntil) return false;
       if (s.movementTarget != null || s.followTargetSessionId != null) return false;
       if (Date.now() < s.nextAutonomousMoveAt) return false;
-      const others = s.occupants.filter((o) => o.clientId !== s.mySessionId && o.position != null);
+      const others = s.occupants.filter(
+        (o) => o.clientId !== s.mySessionId && o.position != null && o.type !== "observer"
+      );
       return others.length > 0;
     },
 

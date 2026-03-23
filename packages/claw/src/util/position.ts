@@ -16,8 +16,23 @@ export function parsePositionHint(hint: string): { x: number; y: number; z: numb
   return { x, y, z };
 }
 
-/** Priority order for choosing who to move toward: 1 agents, 2 players (user), 3 NPCs/observers. */
-const OCCUPANT_PRIORITY_ORDER: Array<"agent" | "user" | "observer"> = ["agent", "user", "observer"];
+/** Priority for autonomous movement (spectator `observer` occupants are excluded — no pathfinding to them). */
+const OCCUPANT_PRIORITY_ORDER: Array<"agent" | "user" | "npc"> = ["agent", "user", "npc"];
+
+/** Fraction of wander / social-seek moves that target NPCs (`type: "npc"`) when any are in range. */
+export const NPC_OCCASIONAL_MOVE_FRACTION = 0.2;
+
+/** Occupants eligible for move-to / approach (have position; exclude spectator observers). */
+function occupantsEligibleForMovement(
+  occupants: Occupant[],
+  mySessionId: string | null,
+  myPosition: { x: number; z: number } | null
+): Occupant[] {
+  if (!mySessionId || !myPosition) return [];
+  return occupants.filter(
+    (o) => o.clientId !== mySessionId && o.position != null && o.type !== "observer"
+  );
+}
 
 function nearestInGroup(
   group: Occupant[],
@@ -90,10 +105,37 @@ function pickRandomOccupant(pool: Occupant[]): Occupant {
 }
 
 /**
+ * Pick a wander / move-to-nearest target: random in tier, with {@link NPC_OCCASIONAL_MOVE_FRACTION}
+ * chance to pick a NPC/observer when any exist (otherwise agents → users → observers).
+ */
+export function pickWanderMoveTargetOccupant(
+  occupants: Occupant[],
+  mySessionId: string | null,
+  myPosition: { x: number; z: number } | null
+): Occupant | null {
+  if (!mySessionId || !myPosition) return null;
+  const others = occupantsEligibleForMovement(occupants, mySessionId, myPosition);
+  if (others.length === 0) return null;
+
+  const agents = others.filter((o) => o.type === "agent");
+  const users = others.filter((o) => o.type === "user");
+  const npcs = others.filter((o) => o.type === "npc");
+
+  if (npcs.length > 0 && Math.random() < NPC_OCCASIONAL_MOVE_FRACTION) {
+    return pickRandomOccupant(npcs);
+  }
+
+  const pool = agents.length > 0 ? agents : users.length > 0 ? users : npcs;
+  if (pool.length === 0) return null;
+  return pickRandomOccupant(pool);
+}
+
+/**
  * Pick someone to approach for autonomous social seek: same priority tiers as
  * {@link findNearestOccupantByPriority}, but chooses **uniformly at random** among valid candidates in
  * the first non-empty tier (wander already does random; this avoids always re-picking the single nearest agent).
  * When `excludeSessionId` is set and other options exist in that tier, it is omitted so agents rotate partners.
+ * Occasionally targets NPCs when any exist, per {@link NPC_OCCASIONAL_MOVE_FRACTION}.
  */
 export function pickSocialSeekTargetOccupant(
   occupants: Occupant[],
@@ -102,8 +144,19 @@ export function pickSocialSeekTargetOccupant(
   excludeSessionId?: string | null
 ): Occupant | null {
   if (!mySessionId || !myPosition) return null;
-  const others = occupants.filter((o) => o.clientId !== mySessionId && o.position != null);
+  const others = occupantsEligibleForMovement(occupants, mySessionId, myPosition);
   if (others.length === 0) return null;
+
+  const npcTier = others.filter((o) => o.type === "npc");
+  let npcPool = poolInTierForSocialSeek(npcTier, myPosition);
+  if (npcPool.length > 0 && Math.random() < NPC_OCCASIONAL_MOVE_FRACTION) {
+    let pool = npcPool;
+    if (excludeSessionId && pool.length > 1) {
+      const filtered = pool.filter((o) => o.clientId !== excludeSessionId);
+      if (filtered.length > 0) pool = filtered;
+    }
+    return pickRandomOccupant(pool);
+  }
 
   for (const tier of OCCUPANT_PRIORITY_ORDER) {
     const inTier = others.filter((o) => o.type === tier);
@@ -126,8 +179,7 @@ export function pickSocialSeekTargetOccupant(
 }
 
 /**
- * Find the nearest occupant by priority: agents first, then players (user), then observers/NPCs.
- * Used for TryMoveToNearestOccupant and consistent with wander destination priority.
+ * Find the nearest occupant by priority: agents, then users, then NPCs. Spectator observers excluded.
  */
 export function findNearestOccupantByPriority(
   occupants: Occupant[],
@@ -135,7 +187,7 @@ export function findNearestOccupantByPriority(
   myPosition: { x: number; z: number } | null
 ): Occupant | null {
   if (!mySessionId || !myPosition) return null;
-  const others = occupants.filter((o) => o.clientId !== mySessionId && o.position != null);
+  const others = occupantsEligibleForMovement(occupants, mySessionId, myPosition);
   if (others.length === 0) return null;
   for (const tier of OCCUPANT_PRIORITY_ORDER) {
     const group = others.filter((o) => o.type === tier);

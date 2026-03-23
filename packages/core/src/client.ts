@@ -21,7 +21,7 @@ const CHAT_LIMIT_MAX = 500;
 const CHAT_LIMIT_DEFAULT = 100;
 
 /** Occupant type from GET /api/occupants. */
-export type OccupantType = "observer" | "user" | "agent";
+export type OccupantType = "observer" | "user" | "agent" | "npc";
 
 export type Occupant = {
   clientId: string;
@@ -560,7 +560,7 @@ export class DoppelClient {
   }
 
   /**
-   * List connected occupants (GET /api/occupants). Any session. Each occupant has type: "observer" | "user" | "agent".
+   * List connected occupants (GET /api/occupants). Any session. Each occupant has type: "observer" | "user" | "agent" | "npc".
    */
   async getOccupants(): Promise<Occupant[]> {
     const token = await this.ensureSession();

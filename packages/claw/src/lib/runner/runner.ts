@@ -26,7 +26,7 @@ import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
 import type { TreeAction } from "../state/index.js";
 import { clawLog } from "../../util/log.js";
-import { findNearestOccupantByPriority, pickSocialSeekTargetOccupant } from "../../util/position.js";
+import { pickSocialSeekTargetOccupant, pickWanderMoveTargetOccupant } from "../../util/position.js";
 
 /** Interval (ms) to refresh occupants so myPosition is set and TimeForAutonomousWake can fire when owner is away. */
 const OCCUPANTS_REFRESH_MS = 10_000;
@@ -212,10 +212,10 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     const state = store.getState();
     if (state.movementTarget || state.followTargetSessionId || state.nextAutonomousMoveAt > Date.now() || state.pendingGoTalkToAgent)
       return;
-    const nearest = findNearestOccupantByPriority(state.occupants, state.mySessionId, state.myPosition);
-    if (!nearest) return;
-    startMoveToOccupant(store, client, nearest, DEFAULT_STOP_DISTANCE_M);
-    clawLog("tree: TryMoveToNearestOccupant", nearest.username ?? nearest.clientId);
+    const target = pickWanderMoveTargetOccupant(state.occupants, state.mySessionId, state.myPosition);
+    if (!target) return;
+    startMoveToOccupant(store, client, target, DEFAULT_STOP_DISTANCE_M);
+    clawLog("tree: TryMoveToNearestOccupant", target.type, target.username ?? target.clientId);
   };
 
   /** Tree action: pick social target (random within priority tier, avoid repeating last when possible), set approach goal, engine follow. */

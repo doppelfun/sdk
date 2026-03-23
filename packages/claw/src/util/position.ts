@@ -116,6 +116,28 @@ export function getFacingTowardNearestOccupant(
 }
 
 /**
+ * Y rotation (radians) to face a specific occupant by session id.
+ *
+ * @returns Angle in radians, or undefined if target missing, no position, coincident, or beyond FACE_NEARBY_RADIUS_M
+ */
+export function getFacingTowardSessionId(
+  occupants: Occupant[],
+  mySessionId: string | null,
+  myPosition: { x: number; z: number } | null,
+  targetSessionId: string | null
+): number | undefined {
+  if (!myPosition || !targetSessionId || targetSessionId === mySessionId) return undefined;
+  const o = occupants.find((x) => x.clientId === targetSessionId);
+  if (!o?.position) return undefined;
+  const dx = o.position.x - myPosition.x;
+  const dz = o.position.z - myPosition.z;
+  const d2 = dx * dx + dz * dz;
+  const max2 = FACE_NEARBY_RADIUS_M * FACE_NEARBY_RADIUS_M;
+  if (d2 > max2 || d2 <= 0.01) return undefined;
+  return Math.atan2(dx, dz);
+}
+
+/**
  * True if the owner (by userId) is within radiusM of myPosition (for TimeForAutonomousWake etc).
  */
 export function isOwnerNearby(

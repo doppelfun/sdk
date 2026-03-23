@@ -6,7 +6,11 @@
 import type { DoppelClient } from "@doppelfun/sdk";
 import { buildChatSendOptions } from "../../util/chatSendOptions.js";
 import { alreadyInConversationWith, canSendDmTo, onWeSentDm } from "../conversation.js";
-import { getFacingTowardNearestOccupant, isOwnerNearby } from "../../util/position.js";
+import {
+  getFacingTowardNearestOccupant,
+  getFacingTowardSessionId,
+  isOwnerNearby,
+} from "../../util/position.js";
 import type { ClawStore } from "../state/index.js";
 import type { WanderState } from "../state/index.js";
 import { BLOCK_SIZE_M } from "../../util/blockBounds.js";
@@ -180,7 +184,17 @@ function applyArrival(
       openingMessage: "Hi!",
     });
   }
-  const rotY = getFacingTowardNearestOccupant(state.occupants, state.mySessionId, state.myPosition);
+  const approachPeer =
+    state.autonomousGoal === "approach" && state.autonomousTargetSessionId
+      ? state.autonomousTargetSessionId
+      : null;
+  let rotY =
+    approachPeer != null
+      ? getFacingTowardSessionId(state.occupants, state.mySessionId, state.myPosition, approachPeer)
+      : undefined;
+  if (rotY == null) {
+    rotY = getFacingTowardNearestOccupant(state.occupants, state.mySessionId, state.myPosition);
+  }
   client.sendInput?.({ moveX: 0, moveZ: 0, sprint: false, jump: false, ...(rotY != null && { rotY }) });
   store.setMovementTarget(null);
   store.setNextAutonomousMoveAt(Date.now() + randomCooldownMs());
@@ -268,7 +282,26 @@ export function movementDriverTick(
     const busy = state.conversationPhase !== "idle" || state.pendingGoTalkToAgent != null;
     if (busy) {
       store.setMovementIntent(null);
-      client.sendInput?.({ moveX: 0, moveZ: 0, sprint: false, jump: false });
+      const peerSessionId =
+        state.conversationPhase !== "idle"
+          ? state.conversationPeerSessionId ?? state.lastDmPeerSessionId
+          : state.pendingGoTalkToAgent?.targetSessionId ?? null;
+      const rotY =
+        peerSessionId != null
+          ? getFacingTowardSessionId(
+              state.occupants,
+              state.mySessionId,
+              state.myPosition,
+              peerSessionId
+            )
+          : undefined;
+      client.sendInput?.({
+        moveX: 0,
+        moveZ: 0,
+        sprint: false,
+        jump: false,
+        ...(rotY != null && { rotY }),
+      });
       return true;
     }
     if (state.nextAutonomousMoveAt > Date.now()) {

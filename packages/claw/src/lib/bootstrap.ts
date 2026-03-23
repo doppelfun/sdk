@@ -8,6 +8,7 @@ import { getAgentProfile, joinBlock, type HubAgentProfile } from "./hub/index.js
 import { applyHubProfileToConfig } from "./hub/profile.js";
 import { createClawStore, type ClawStore } from "./state/index.js";
 import { refreshBalance } from "./credits/index.js";
+import { normalizeUrl } from "../util/url.js";
 
 export type BootstrapResult = {
   config: ClawConfig;
@@ -63,6 +64,10 @@ export type SessionResult =
  * Join a block and create the agent store. Refreshes credit balance by default for hosted agents
  * (so HasEnoughCredits is not stuck on the initial 0 cache). Pass `{ refreshBalance: false }` to skip.
  * Call after bootstrapAgent(); use returned jwt and engineUrl to create and connect the engine client.
+ *
+ * On success, mutates `config` with the hub join response so catalog/usage match the live session:
+ * sets `blockId` to the joined block (so list_catalog uses GET /api/blocks/:id/catalog even when
+ * BLOCK_ID was unset), and `engineUrl` to the assigned engine when the hub returns serverUrl.
  */
 export async function createSession(
   config: ClawConfig,
@@ -71,6 +76,12 @@ export async function createSession(
 ): Promise<SessionResult> {
   const join = await joinBlock(config.agentApiUrl, config.apiKey, blockId);
   if (!join.ok) return { ok: false, error: join.error };
+
+  config.blockId = join.blockId;
+  if (join.serverUrl.trim() !== "") {
+    config.engineUrl = normalizeUrl(join.serverUrl);
+  }
+
   const store = createClawStore(join.blockSlotId);
   const shouldRefreshBalance =
     options?.refreshBalance !== false && config.hosted && !config.skipCreditReport;

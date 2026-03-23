@@ -164,8 +164,43 @@ export type MovementDriverOptions = {
 // --- Arrival handling ---
 
 /**
+ * Send queued opening DM when allowed (SeekSocialTarget uses engine `approach` → `approach_arrived`, which only
+ * sets pending in the client — this must run every tick until sent). Pathfinding `moveTo` arrival uses the same path.
+ */
+function tryFlushPendingGoTalkToAgent(
+  client: DoppelClient,
+  store: ClawStore,
+  options: MovementDriverOptions | undefined
+): void {
+  const currentState = store.getState();
+  const pending = currentState.pendingGoTalkToAgent;
+  if (!pending) return;
+  if (pending.targetSessionId === currentState.mySessionId) {
+    store.setPendingGoTalkToAgent(null);
+    return;
+  }
+  if (alreadyInConversationWith(store, pending.targetSessionId)) {
+    store.setPendingGoTalkToAgent(null);
+    return;
+  }
+  if (!canSendDmTo(store, pending.targetSessionId)) return;
+  const voiceId = options?.voiceId;
+  client.sendChat?.(
+    pending.openingMessage,
+    buildChatSendOptions({ targetSessionId: pending.targetSessionId, voiceId }) ?? undefined
+  );
+  if (voiceId && options?.onVoiceSent) {
+    options.onVoiceSent(pending.openingMessage.length);
+  }
+  store.setLastAgentChatMessage(pending.openingMessage);
+  onWeSentDm(store, pending.targetSessionId);
+  store.setPendingGoTalkToAgent(null);
+  store.setAutonomousSeekCooldownUntil(Date.now() + 5000);
+}
+
+/**
  * On arrival at movement target: send zero input, clear target, optionally send pendingGoTalkToAgent DM and clear lastBuildTarget.
- * When this move was a social approach (autonomous goal "approach"), transition to "converse" and queue a greeting so the next drain sends it.
+ * When this move was a social approach (autonomous goal "approach"), transition to "converse" and queue a greeting.
  */
 function applyArrival(
   client: DoppelClient,
@@ -176,21 +211,25 @@ function applyArrival(
   options: MovementDriverOptions | undefined,
   logLabel: string
 ): void {
-  // Autonomous social flow: we just reached conversation range → set goal to converse and send opening greeting.
-  if (state.autonomousGoal === "approach" && state.autonomousTargetSessionId) {
-    store.setAutonomousGoal("converse");
-    store.setPendingGoTalkToAgent({
-      targetSessionId: state.autonomousTargetSessionId,
-      openingMessage: "Hi!",
-    });
-  }
-  const approachPeer =
+  const approachPeerSessionId =
     state.autonomousGoal === "approach" && state.autonomousTargetSessionId
       ? state.autonomousTargetSessionId
       : null;
+  if (approachPeerSessionId) {
+    store.setAutonomousGoal("converse");
+    store.setPendingGoTalkToAgent({
+      targetSessionId: approachPeerSessionId,
+      openingMessage: "Hi!",
+    });
+  }
   let rotY =
-    approachPeer != null
-      ? getFacingTowardSessionId(state.occupants, state.mySessionId, state.myPosition, approachPeer)
+    approachPeerSessionId != null
+      ? getFacingTowardSessionId(
+          state.occupants,
+          state.mySessionId,
+          state.myPosition,
+          approachPeerSessionId
+        )
       : undefined;
   if (rotY == null) {
     rotY = getFacingTowardNearestOccupant(state.occupants, state.mySessionId, state.myPosition);
@@ -199,28 +238,7 @@ function applyArrival(
   store.setMovementTarget(null);
   store.setNextAutonomousMoveAt(Date.now() + randomCooldownMs());
   clawLog("arrived at target", logLabel);
-  const currentState = store.getState();
-  const pending = currentState.pendingGoTalkToAgent;
-  if (pending) {
-    if (pending.targetSessionId === currentState.mySessionId) {
-      store.setPendingGoTalkToAgent(null);
-    } else if (alreadyInConversationWith(store, pending.targetSessionId)) {
-      store.setPendingGoTalkToAgent(null);
-    } else if (canSendDmTo(store, pending.targetSessionId)) {
-      const voiceId = options?.voiceId;
-      client.sendChat?.(
-        pending.openingMessage,
-        buildChatSendOptions({ targetSessionId: pending.targetSessionId, voiceId }) ?? undefined
-      );
-      if (voiceId && options?.onVoiceSent) {
-        options.onVoiceSent(pending.openingMessage.length);
-      }
-      store.setLastAgentChatMessage(pending.openingMessage);
-      onWeSentDm(store, pending.targetSessionId);
-      store.setPendingGoTalkToAgent(null);
-      store.setAutonomousSeekCooldownUntil(Date.now() + 5000);
-    }
-  }
+  tryFlushPendingGoTalkToAgent(client, store, options);
   if (
     state.lastBuildTarget &&
     Math.hypot(state.lastBuildTarget.x - my.x, state.lastBuildTarget.z - my.z) < stopDist
@@ -244,7 +262,7 @@ export function movementDriverTick(
   options?: MovementDriverOptions
 ): boolean {
   let state = store.getState();
-  const target = state.movementTarget;
+  let target = state.movementTarget;
 
   // When owner is nearby and we're not in a conversation, don't move (stand still so we don't run away from owner).
   const ownerUserId = options?.ownerUserId ?? null;
@@ -265,6 +283,10 @@ export function movementDriverTick(
     client.sendInput?.({ moveX: 0, moveZ: 0, sprint: false, jump: false });
     return true;
   }
+
+  tryFlushPendingGoTalkToAgent(client, store, options);
+  state = store.getState();
+  target = state.movementTarget;
 
   if (
     target == null &&

@@ -136,6 +136,8 @@ export type ClawState = {
   autonomousTargetSessionId: string | null;
   /** Next time (ms) we may look for a new social target; cooldown after SeekSocialTarget or after conversation end. */
   socialSeekCooldownUntil: number;
+  /** Last session id chosen by SeekSocialTarget; used to deprioritize repeat picks when other targets exist. */
+  lastSocialSeekTargetSessionId: string | null;
 };
 
 /**
@@ -198,6 +200,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     autonomousGoal: "wander",
     autonomousTargetSessionId: null,
     socialSeekCooldownUntil: 0,
+    lastSocialSeekTargetSessionId: null,
   };
 }
 

@@ -65,6 +65,66 @@ export function findNearestOccupant(
   return nearest;
 }
 
+function distanceSqTo(o: Occupant, my: { x: number; z: number }): number | null {
+  if (!o.position) return null;
+  const dx = o.position.x - my.x;
+  const dz = o.position.z - my.z;
+  return dx * dx + dz * dz;
+}
+
+/** Prefer occupants farther than MIN_DISTANCE_SQ; if none, use whole tier (same idea as nearestInGroup fallback). */
+function poolInTierForSocialSeek(
+  inTier: Occupant[],
+  myPosition: { x: number; z: number }
+): Occupant[] {
+  if (inTier.length === 0) return [];
+  const far = inTier.filter((o) => {
+    const d2 = distanceSqTo(o, myPosition);
+    return d2 != null && d2 > MIN_DISTANCE_SQ;
+  });
+  return far.length > 0 ? far : inTier;
+}
+
+function pickRandomOccupant(pool: Occupant[]): Occupant {
+  return pool[Math.floor(Math.random() * pool.length)]!;
+}
+
+/**
+ * Pick someone to approach for autonomous social seek: same priority tiers as
+ * {@link findNearestOccupantByPriority}, but chooses **uniformly at random** among valid candidates in
+ * the first non-empty tier (wander already does random; this avoids always re-picking the single nearest agent).
+ * When `excludeSessionId` is set and other options exist in that tier, it is omitted so agents rotate partners.
+ */
+export function pickSocialSeekTargetOccupant(
+  occupants: Occupant[],
+  mySessionId: string | null,
+  myPosition: { x: number; z: number } | null,
+  excludeSessionId?: string | null
+): Occupant | null {
+  if (!mySessionId || !myPosition) return null;
+  const others = occupants.filter((o) => o.clientId !== mySessionId && o.position != null);
+  if (others.length === 0) return null;
+
+  for (const tier of OCCUPANT_PRIORITY_ORDER) {
+    const inTier = others.filter((o) => o.type === tier);
+    let pool = poolInTierForSocialSeek(inTier, myPosition);
+    if (pool.length === 0) continue;
+    if (excludeSessionId && pool.length > 1) {
+      const filtered = pool.filter((o) => o.clientId !== excludeSessionId);
+      if (filtered.length > 0) pool = filtered;
+    }
+    return pickRandomOccupant(pool);
+  }
+
+  let pool = poolInTierForSocialSeek(others, myPosition);
+  if (pool.length === 0) return null;
+  if (excludeSessionId && pool.length > 1) {
+    const filtered = pool.filter((o) => o.clientId !== excludeSessionId);
+    if (filtered.length > 0) pool = filtered;
+  }
+  return pickRandomOccupant(pool);
+}
+
 /**
  * Find the nearest occupant by priority: agents first, then players (user), then observers/NPCs.
  * Used for TryMoveToNearestOccupant and consistent with wander destination priority.

@@ -69,6 +69,9 @@ function createClawStore(blockSlotId: string) {
     setSocialSeekCooldownUntil(ts: number) {
       setState({ socialSeekCooldownUntil: ts });
     },
+    setLastSocialSeekTargetSessionId(sessionId: string | null) {
+      setState({ lastSocialSeekTargetSessionId: sessionId });
+    },
     setCurrentAction(action: TreeAction) {
       setState({ currentAction: action });
     },

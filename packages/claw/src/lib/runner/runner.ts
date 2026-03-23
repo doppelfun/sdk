@@ -26,7 +26,7 @@ import type { ClawStore } from "../state/index.js";
 import type { ClawConfig } from "../config/index.js";
 import type { TreeAction } from "../state/index.js";
 import { clawLog } from "../../util/log.js";
-import { findNearestOccupantByPriority } from "../../util/position.js";
+import { findNearestOccupantByPriority, pickSocialSeekTargetOccupant } from "../../util/position.js";
 
 /** Interval (ms) to refresh occupants so myPosition is set and TimeForAutonomousWake can fire when owner is away. */
 const OCCUPANTS_REFRESH_MS = 10_000;
@@ -218,24 +218,30 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     clawLog("tree: TryMoveToNearestOccupant", nearest.username ?? nearest.clientId);
   };
 
-  /** Tree action: pick best social target, set approach goal, start engine-driven follow with stop at conversation range (real-time target position). */
+  /** Tree action: pick social target (random within priority tier, avoid repeating last when possible), set approach goal, engine follow. */
   const seekSocialTarget = (): void => {
     if (!client) return;
     const state = store.getState();
-    const nearest = findNearestOccupantByPriority(state.occupants, state.mySessionId, state.myPosition);
-    if (!nearest) return;
+    const target = pickSocialSeekTargetOccupant(
+      state.occupants,
+      state.mySessionId,
+      state.myPosition,
+      state.lastSocialSeekTargetSessionId
+    );
+    if (!target) return;
     const now = Date.now();
+    store.setLastSocialSeekTargetSessionId(target.clientId);
     store.setAutonomousGoal("approach");
-    store.setAutonomousTargetSessionId(nearest.clientId);
+    store.setAutonomousTargetSessionId(target.clientId);
     store.setMovementIntent(null);
     store.setMovementTarget(null);
     store.setLastMoveToFailed(null);
     store.setAutonomousEmoteStandStillUntil(0);
     store.setNextAutonomousMoveAt(now + randomCooldownMs());
     store.setSocialSeekCooldownUntil(now + SOCIAL_SEEK_COOLDOWN_MS);
-    store.setFollowTargetSessionId(nearest.clientId);
-    client.approach(nearest.clientId, { stopDistanceM: CONVERSATION_RANGE_M });
-    clawLog("tree: SeekSocialTarget (engine follow)", nearest.username ?? nearest.clientId);
+    store.setFollowTargetSessionId(target.clientId);
+    client.approach(target.clientId, { stopDistanceM: CONVERSATION_RANGE_M });
+    clawLog("tree: SeekSocialTarget (engine follow)", target.username ?? target.clientId);
   };
 
   const onInsufficientCreditsBlocked =

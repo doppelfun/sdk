@@ -55,7 +55,8 @@ const LLM_TICK_LABELS: Record<"obedient" | "autonomous" | "converse", { displayN
 
 /**
  * Run one agent tick (obedient / converse): build user message, call LLM, report usage,
- * send fallback chat if the agent didn't use the chat tool, clear owner messages.
+ * optional fallback: non-empty model text without chat tool, or obedient-only "..." when non-chat tools ran
+ * with no visible text. Converse mode never sends "..." (reply is always via chat tool or queue).
  */
 async function runAgentTickWithFallback(
   client: DoppelClient,
@@ -84,16 +85,22 @@ async function runAgentTickWithFallback(
     }
     if (result.ok && !state.lastTickSentChat) {
       const raw = typeof result.replyText === "string" ? result.replyText.trim() : "";
-      const replyText = raw || "...";
-      clawLog("runner: sending fallback chat", replyText.slice(0, 80));
-      const dmTarget = state.lastDmPeerSessionId ?? undefined;
-      const voiceId = config.voiceId ?? undefined;
-      client.sendChat?.(replyText, { targetSessionId: dmTarget, voiceId });
-      if (voiceId) {
-        reportVoiceUsageToHub(config, store, replyText.length, onUsageReportFailure);
+      const replyText =
+        label === "converse"
+          ? raw
+          : raw || (result.hadNonChatToolCall ? "..." : "");
+      if (replyText) {
+        clawLog("runner: sending fallback chat", replyText.slice(0, 80));
+        const dmTarget = state.lastDmPeerSessionId ?? undefined;
+        const voiceId = config.voiceId ?? undefined;
+        client.sendChat?.(replyText, { targetSessionId: dmTarget, voiceId });
+        if (voiceId) {
+          reportVoiceUsageToHub(config, store, replyText.length, onUsageReportFailure);
+        }
+        store.setLastAgentChatMessage(replyText);
+        store.setLastTickSentChat(true);
+        if (dmTarget) onWeSentDm(store, dmTarget);
       }
-      store.setLastAgentChatMessage(replyText);
-      store.setLastTickSentChat(true);
     }
     if (result.ok) {
       store.clearOwnerMessages();

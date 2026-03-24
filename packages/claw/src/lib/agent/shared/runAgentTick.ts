@@ -84,10 +84,11 @@ export async function runAgentTick(
     }
     const doneArgs: unknown[] = ["LLM done", label, Date.now() - t0 + "ms", "toolCalls=" + hadToolCalls, replyText ? `replyText=${replyText.slice(0, 80)}${replyText.length > 80 ? "…" : ""}` : "replyText=null"];
     if (toolNames.length > 0) doneArgs.push("tools=" + toolNames.join(","));
+    const hadNonChatToolCall = toolNames.some((n) => n !== "chat");
     clawLog(...doneArgs);
     if (replyText) clawLog("LLM response:", replyText);
     else if (toolNames.length > 0) clawLog("LLM response: (tool use only)", "tools=" + toolNames.join(", "));
-    return { ok: true, usage, hadToolCalls, replyText };
+    return { ok: true, usage, hadToolCalls, hadNonChatToolCall, replyText };
   } catch (e) {
     logClawAiSdkApiError(label, "tick", e);
     const msg = e instanceof Error ? e.message : String(e);

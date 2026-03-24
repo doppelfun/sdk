@@ -94,7 +94,14 @@ export function buildClawToolSet(
 
 /** Result of one agent tick: usage, whether tools were called, optional reply text or error. */
 export type RunTickLlmResult =
-  | { ok: true; usage: Usage | null; hadToolCalls: boolean; replyText?: string | null }
+  | {
+      ok: true;
+      usage: Usage | null;
+      hadToolCalls: boolean;
+      /** True if any invoked tool was not `chat` (used for obedient "..." fallback only). */
+      hadNonChatToolCall: boolean;
+      replyText?: string | null;
+    }
   | { ok: false; error: string };
 
 /**

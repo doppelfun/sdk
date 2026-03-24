@@ -65,7 +65,8 @@ export async function handleChat(ctx: ToolContext) {
   if (text && targetSessionId) {
     const action = evaluateSendReply(store, targetSessionId, text);
     if (action.action === "queue") {
-      store.setState({ pendingDmReply: action.pendingDmReply });
+      // Mark chat handled so the runner does not send a "..." fallback while the real line is pending in drain.
+      store.setState({ pendingDmReply: action.pendingDmReply, lastTickSentChat: true });
       return { ok: true as const, summary: "queued (reply after turn-taking delay)" };
     }
   }

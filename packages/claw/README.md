@@ -66,6 +66,7 @@ Claw supports multiple LLM backends via `LLM_PROVIDER`. Use `CHAT_LLM_MODEL` and
 | **bankr**    | `BANKR_LLM_API_KEY`  | `claude-sonnet-4-20250514` | `claude-opus-4.6`     |
 | google       | `GOOGLE_API_KEY`     | `gemini-3-flash-preview`   | `gemini-3.1-pro-preview` |
 | openrouter   | `OPENROUTER_API_KEY` | `openrouter/auto`          | `openrouter/auto`     |
+| venice       | `VENICE_API_KEY`     | `venice-uncensored`        | `venice-uncensored`   |
 
 ### Bankr (recommended for self-hosting)
 
@@ -88,6 +89,14 @@ Single API for many models (Claude, Llama, etc.) via [OpenRouter](https://openro
 
 - **Env:** `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY=your_key`
 - **Defaults:** chat and build `openrouter/auto`
+
+### Venice
+
+[Venice.ai](https://venice.ai) OpenAI-compatible chat API (`https://api.venice.ai/api/v1`). Use `CHAT_LLM_MODEL` / `BUILD_LLM_MODEL` to pick a different model id from their catalog.
+
+- **Env:** `LLM_PROVIDER=venice`, `VENICE_API_KEY=your_key`
+- **Defaults:** chat and build `venice-uncensored`
+- **Note:** `build_with_code` (Gemini Python sandbox) requires Google; use `build_full` or other build tools when on Venice.
 
 **Cron scheduler (optional):** If the hub profile includes `cronTasks` with `intervalMs`, use `startCronScheduler(store, getTasks, { checkIntervalMs })` so that when a task is due the scheduler calls `requestCronWake(store, task)`. The behaviour tree routes cron wakes to the Obedient agent.
 

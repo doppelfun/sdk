@@ -8,6 +8,7 @@ import { usageFromAiSdk } from "../../llm/usage.js";
 import type { RunTickLlmResult } from "../../llm/toolsAi.js";
 import type { ExecuteToolResult } from "../../../tools/index.js";
 import { clawLog } from "../../../util/log.js";
+import { logClawAiSdkApiError } from "../../../util/aiSdkErrorLog.js";
 import { delay } from "../../../util/delay.js";
 import { MIN_THINKING_MS } from "./constants.js";
 
@@ -88,10 +89,8 @@ export async function runAgentTick(
     else if (toolNames.length > 0) clawLog("LLM response: (tool use only)", "tools=" + toolNames.join(", "));
     return { ok: true, usage, hadToolCalls, replyText };
   } catch (e) {
+    logClawAiSdkApiError(label, "tick", e);
     const msg = e instanceof Error ? e.message : String(e);
-    const stack = e instanceof Error ? e.stack : undefined;
-    clawLog("LLM error", label, msg);
-    if (stack) clawLog("LLM error stack:", stack);
     return { ok: false, error: msg };
   } finally {
     const elapsed = Date.now() - t0;

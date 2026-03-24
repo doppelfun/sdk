@@ -5,7 +5,7 @@
 import { parseIntEnv, envFlag } from "../../util/env.js";
 import { normalizeUrl } from "../../util/url.js";
 
-export type LlmProviderId = "openrouter" | "google" | "google-vertex" | "bankr";
+export type LlmProviderId = "openrouter" | "google" | "google-vertex" | "bankr" | "venice";
 
 export type ClawConfig = {
   apiKey: string;
@@ -18,6 +18,8 @@ export type ClawConfig = {
   openRouterApiKey: string;
   /** Bankr LLM Gateway API key (X-API-Key). Required when LLM_PROVIDER=bankr. */
   bankrLlmApiKey: string | null;
+  /** Venice.ai API key (Bearer). Required when LLM_PROVIDER=venice. */
+  veniceApiKey: string | null;
   chatLlmModel: string;
   buildLlmModel: string;
   ownerUserId: string | null;
@@ -59,7 +61,7 @@ const DEFAULT_MAX_CHAT = 20;
 const DEFAULT_MAX_OWNER = 10;
 
 /**
- * Parse LLM_PROVIDER env: "openrouter" | "google" | "google-vertex" | "bankr".
+ * Parse LLM_PROVIDER env: "openrouter" | "google" | "google-vertex" | "bankr" | "venice".
  * Defaults to "google" when unset.
  */
 function parseLlmProvider(): LlmProviderId {
@@ -67,6 +69,7 @@ function parseLlmProvider(): LlmProviderId {
   if (raw === "google-vertex") return "google-vertex";
   if (raw === "google") return "google";
   if (raw === "bankr") return "bankr";
+  if (raw === "venice") return "venice";
   return "openrouter";
 }
 
@@ -99,6 +102,10 @@ export function loadConfig(): ClawConfig {
   if (llmProvider === "bankr" && !bankrLlmApiKey) {
     throw new Error("BANKR_LLM_API_KEY is required when LLM_PROVIDER is bankr");
   }
+  const veniceApiKey = process.env.VENICE_API_KEY?.trim() || null;
+  if (llmProvider === "venice" && !veniceApiKey) {
+    throw new Error("VENICE_API_KEY is required when LLM_PROVIDER is venice");
+  }
 
   const hubUrl = normalizeUrl(process.env.HUB_URL?.trim() || DEFAULT_HUB);
   const agentApiUrl = normalizeUrl(process.env.AGENT_API_URL?.trim() || hubUrl);
@@ -126,13 +133,17 @@ export function loadConfig(): ClawConfig {
       ? "openrouter/auto"
       : llmProvider === "bankr"
         ? "claude-sonnet-4-20250514"
-        : "gemini-3-flash-preview";
+        : llmProvider === "venice"
+          ? "venice-uncensored"
+          : "gemini-3-flash-preview";
   const defaultBuildModel =
     llmProvider === "openrouter"
       ? "openrouter/auto"
       : llmProvider === "bankr"
         ? "claude-opus-4.6"
-        : "gemini-3.1-pro-preview";
+        : llmProvider === "venice"
+          ? "venice-uncensored"
+          : "gemini-3.1-pro-preview";
   return {
     apiKey,
     agentId,
@@ -142,6 +153,7 @@ export function loadConfig(): ClawConfig {
     blockId,
     openRouterApiKey,
     bankrLlmApiKey,
+    veniceApiKey,
     chatLlmModel: process.env.CHAT_LLM_MODEL?.trim() || defaultChatModel,
     buildLlmModel: process.env.BUILD_LLM_MODEL?.trim() || defaultBuildModel,
     ownerUserId,

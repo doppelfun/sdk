@@ -10,6 +10,7 @@ function captureEnv(): void {
     "BANKR_LLM_API_KEY",
     "OPENROUTER_API_KEY",
     "GOOGLE_API_KEY",
+    "VENICE_API_KEY",
   ];
   for (const k of keys) {
     envSnapshot[k] = process.env[k];
@@ -60,6 +61,29 @@ describe("loadConfig", () => {
       process.env.BANKR_LLM_API_KEY = "   ";
 
       expect(() => loadConfig()).toThrow("BANKR_LLM_API_KEY is required when LLM_PROVIDER is bankr");
+    });
+  });
+
+  describe("LLM_PROVIDER=venice", () => {
+    it("returns llmProvider venice and veniceApiKey when VENICE_API_KEY is set", () => {
+      process.env.DOPPEL_AGENT_API_KEY = "test-agent-key";
+      process.env.LLM_PROVIDER = "venice";
+      process.env.VENICE_API_KEY = "vk_test";
+
+      const config = loadConfig();
+
+      expect(config.llmProvider).toBe("venice");
+      expect(config.veniceApiKey).toBe("vk_test");
+      expect(config.chatLlmModel).toBe("venice-uncensored");
+      expect(config.buildLlmModel).toBe("venice-uncensored");
+    });
+
+    it("throws when VENICE_API_KEY is missing", () => {
+      process.env.DOPPEL_AGENT_API_KEY = "test-agent-key";
+      process.env.LLM_PROVIDER = "venice";
+      delete process.env.VENICE_API_KEY;
+
+      expect(() => loadConfig()).toThrow("VENICE_API_KEY is required when LLM_PROVIDER is venice");
     });
   });
 });

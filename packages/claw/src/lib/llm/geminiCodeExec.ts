@@ -32,7 +32,7 @@ function usageFromGenai(meta: {
  * @returns GoogleGenAI instance or null if openrouter or credentials missing
  */
 export function createGeminiClient(config: ClawConfig): GoogleGenAI | null {
-  if (config.llmProvider === "openrouter") return null;
+  if (config.llmProvider === "openrouter" || config.llmProvider === "venice") return null;
   
   if (config.llmProvider === "google") {
     const apiKey =

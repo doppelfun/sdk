@@ -11,6 +11,7 @@ export function testConfig(overrides: Partial<ClawConfig> = {}): ClawConfig {
     blockId: null,
     openRouterApiKey: "",
     bankrLlmApiKey: null,
+    veniceApiKey: null,
     chatLlmModel: "test-model",
     buildLlmModel: "test-build-model",
     ownerUserId: null,

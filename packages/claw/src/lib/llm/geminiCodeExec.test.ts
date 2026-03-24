@@ -8,6 +8,11 @@ describe("createGeminiClient", () => {
     expect(createGeminiClient(config)).toBeNull();
   });
 
+  it("returns null when llmProvider is venice", () => {
+    const config = testConfig({ llmProvider: "venice", veniceApiKey: "vk_x" });
+    expect(createGeminiClient(config)).toBeNull();
+  });
+
   it("returns null when llmProvider is google but no api key", () => {
     const config = testConfig({ llmProvider: "google", googleApiKey: null });
     expect(createGeminiClient(config)).toBeNull();

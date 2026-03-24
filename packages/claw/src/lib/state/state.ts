@@ -76,9 +76,13 @@ export type ClawState = {
   lastTriggerUserId: string | null;
   myPosition: Position3 | null;
   movementTarget: { x: number; z: number } | null;
+  /** When movementTarget was set (ms); 0 if none. Used to break out if server never reports arrival. */
+  movementTargetSetAt: number;
   lastMoveToFailed: { x: number; z: number } | null;
   /** When set, agent is following this sessionId (server-driven). Cleared on cancel_follow or follow_failed. */
   followTargetSessionId: string | null;
+  /** When followTargetSessionId was set (ms); 0 if not following. */
+  followStartedAt: number;
   /** Set when server sends follow_failed (target left or no path). */
   lastFollowFailed: string | null;
   movementStopDistanceM: number;
@@ -93,6 +97,8 @@ export type ClawState = {
   lastBuildTarget: BuildTarget | null;
   /** When set, movement driver sends greeting then clears. */
   pendingGoTalkToAgent: { targetSessionId: string; openingMessage: string } | null;
+  /** When pendingGoTalkToAgent was set (ms); 0 if none. */
+  pendingGoTalkSince: number;
   /** When > 0 and now < this timestamp, movement driver sends 0,0 (e.g. after emote). */
   autonomousEmoteStandStillUntil: number;
   autonomousSeekCooldownUntil: number;
@@ -161,8 +167,10 @@ export function createInitialState(blockSlotId: string): ClawState {
     lastTriggerUserId: null,
     myPosition: null,
     movementTarget: null,
+    movementTargetSetAt: 0,
     lastMoveToFailed: null,
     followTargetSessionId: null,
+    followStartedAt: 0,
     lastFollowFailed: null,
     movementStopDistanceM: 2,
     movementSprint: false,
@@ -172,6 +180,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     nextAutonomousMoveAt: 0,
     lastBuildTarget: null,
     pendingGoTalkToAgent: null,
+    pendingGoTalkSince: 0,
     autonomousEmoteStandStillUntil: 0,
     autonomousSeekCooldownUntil: 0,
     conversationEndedSeekCooldownUntil: 0,

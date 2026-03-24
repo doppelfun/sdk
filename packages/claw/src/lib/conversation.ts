@@ -6,11 +6,15 @@
  */
 
 import { getNow } from "../util/time.js";
+import { matchesStockOpeningGreeting } from "./chat/openingGreetings.js";
 import type { ClawStoreApi } from "./state/index.js";
 
 // --- Constants ---
 
 export const RECEIVE_REPLY_DELAY_MIN_MS = 3000;
+
+/** Random extra delay (0..max) after a received DM before we may reply, so two agents rarely go first in the same tick. */
+export const RECEIVE_REPLY_STAGGER_JITTER_MS = 2500;
 
 /** Cooldown after conversation end before autonomous agent can seek again (ms). */
 export const CONVERSATION_END_SEEK_COOLDOWN_MS = 3 * 60 * 1000;
@@ -29,11 +33,15 @@ export type SendReplyAction =
 
 // --- Greeting / conversation checks ---
 
-/** True if text looks like an opening greeting (hi, hello, hey, etc.). Used to avoid saying hi again when already in conversation. */
+/**
+ * True if text looks like a short opening greeting (hi, hello, …) or matches a stock autonomous opening line.
+ * Used to avoid repeating a greeting when already in conversation with the same peer.
+ */
 export function isGreeting(text: string): boolean {
   const t = text.trim().toLowerCase().replace(/\s+/g, " ").replace(/[!.]/g, "");
   if (!t) return false;
-  return /^(hi|hello|hey|hi there|hey there|hello there|what'?s up|howdy|greetings)$/.test(t);
+  if (/^(hi|hello|hey|hi there|hey there|hello there|what'?s up|howdy|greetings)$/.test(t)) return true;
+  return matchesStockOpeningGreeting(text);
 }
 
 /** True if we're already in a conversation with this session (phase not idle and peer matches — we already said something). */
@@ -120,10 +128,12 @@ export function onWeReceivedDm(
     return;
   }
   const { audioDurationMs, messageLength = 0 } = options;
-  const delayMs =
+  const baseDelayMs =
     audioDurationMs != null
       ? RECEIVE_REPLY_DELAY_MIN_MS + audioDurationMs
       : RECEIVE_REPLY_DELAY_MIN_MS + Math.round((messageLength / TTS_CHARS_PER_SECOND) * 1000);
+  const jitterMs = Math.floor(Math.random() * (RECEIVE_REPLY_STAGGER_JITTER_MS + 1));
+  const delayMs = baseDelayMs + jitterMs;
   store.setState({
     conversationPhase: "can_reply",
     conversationPeerSessionId: fromSessionId,

@@ -39,11 +39,12 @@ export function handleChatMessage(
 ): void {
   const state = store.getState();
 
-  // Skip: from self, echo of our own sent message, or duplicate (same id already in chat).
+  // Skip: from self, or duplicate (same id already in chat).
   if (state.mySessionId && payload.sessionId === state.mySessionId) return;
   const message =
     typeof payload.message === "string" ? payload.message : typeof payload.text === "string" ? payload.text : "";
-  if (state.lastAgentChatMessage && message.trim() === state.lastAgentChatMessage) return;
+  // Do not compare message text to lastAgentChatMessage: two agents often send the same opening (e.g. "Hi!") in the
+  // same tick; treating that as an echo would skip onWeReceivedDm and leave both stuck in waiting_for_reply.
 
   const username = typeof payload.username === "string" ? payload.username : "?";
   const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : undefined;

@@ -82,15 +82,17 @@ async function runAgentTickWithFallback(
     if (result.ok && result.usage) {
       reportUsageToHub(config, store, result.usage, config.chatLlmModel, onUsageReportFailure);
     }
-    if (result.ok && result.replyText && !state.lastTickSentChat) {
-      clawLog("runner: sending fallback chat", result.replyText.slice(0, 80));
+    if (result.ok && !state.lastTickSentChat) {
+      const raw = typeof result.replyText === "string" ? result.replyText.trim() : "";
+      const replyText = raw || "...";
+      clawLog("runner: sending fallback chat", replyText.slice(0, 80));
       const dmTarget = state.lastDmPeerSessionId ?? undefined;
       const voiceId = config.voiceId ?? undefined;
-      client.sendChat?.(result.replyText, { targetSessionId: dmTarget, voiceId });
+      client.sendChat?.(replyText, { targetSessionId: dmTarget, voiceId });
       if (voiceId) {
-        reportVoiceUsageToHub(config, store, result.replyText.length, onUsageReportFailure);
+        reportVoiceUsageToHub(config, store, replyText.length, onUsageReportFailure);
       }
-      store.setLastAgentChatMessage(result.replyText);
+      store.setLastAgentChatMessage(replyText);
       store.setLastTickSentChat(true);
     }
     if (result.ok) {
@@ -203,6 +205,10 @@ export function createRunner(options: RunnerOptions): AgentLoop {
       if (voiceId) {
         reportVoiceUsageToHub(config, store, pending.text.length, onUsageReportFailure);
       }
+      // Must match chat tool path: otherwise we stay in can_reply and RunConverseAgent can send again (double talk).
+      store.setLastAgentChatMessage(pending.text);
+      store.setLastTickSentChat(true);
+      onWeSentDm(store, pending.targetSessionId);
     }
   };
 

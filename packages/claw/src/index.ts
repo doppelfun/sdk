@@ -27,6 +27,11 @@ export {
 } from "./lib/state/index.js";
 export { createRunner, type RunnerOptions } from "./lib/runner/index.js";
 export { handleChatMessage, type ChatPayload } from "./lib/chat/chatHandler.js";
+export {
+  pickAutonomousOpeningGreeting,
+  AUTONOMOUS_OPENING_GREETINGS,
+  matchesStockOpeningGreeting,
+} from "./lib/chat/openingGreetings.js";
 export { buildSystemContent, buildUserMessage } from "./lib/prompts/index.js";
 export { runObedientAgentTick } from "./lib/agent/obedientAgent.js";
 export { runAutonomousAgentTick } from "./lib/agent/autonomousAgent.js";
@@ -63,3 +68,8 @@ export {
   type CronTaskDef,
   type CronSchedulerOptions,
 } from "./lib/cron/index.js";
+export {
+  applyStuckStateFallbacks,
+  STUCK_STATE_FALLBACK_MS,
+  type ApplyStuckFallbacksOptions,
+} from "./lib/stuckFallbacks.js";

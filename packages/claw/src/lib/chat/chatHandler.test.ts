@@ -95,6 +95,29 @@ describe("handleChatMessage", () => {
     expect(store.getState().chat).toHaveLength(2);
   });
 
+  it("processes peer DM when text matches our last greeting (both agents say Hi)", () => {
+    const store = createClawStore("0_0");
+    store.setMySessionId("agent-a-session");
+    store.clearWake();
+    store.setState({
+      lastAgentChatMessage: "Hi!",
+      conversationPhase: "waiting_for_reply",
+      conversationPeerSessionId: "agent-b-session",
+    });
+    const config = testConfig();
+    handleChatMessage(store, config, {
+      userId: "agent-b-user",
+      sessionId: "agent-b-session",
+      message: "Hi!",
+      username: "AgentB",
+      channelId: "dm:agent-a-session:agent-b-session",
+      targetSessionId: "agent-a-session",
+      createdAt: 1_700_000_001,
+    });
+    expect(store.getState().conversationPhase).toBe("can_reply");
+    expect(store.getState().wakePending).toBe(true);
+  });
+
   it("does not wake bystander when agent-agent DM is broadcast (only recipient wakes)", () => {
     // Server broadcasts agent A -> agent B DM to whole room; channelId is dm:A:B, targetSessionId is B.
     // Agent C (bystander) must not treat as "DM for me" and must not wake.

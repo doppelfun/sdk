@@ -15,6 +15,7 @@ import {
   handleChatMessage,
   startCronScheduler,
 } from "./index.js";
+import { pickAutonomousOpeningGreeting } from "./lib/chat/openingGreetings.js";
 
 // Load .env from cwd, package dir, and parent dir (monorepo root when running from packages/claw)
 const cwd = process.cwd();
@@ -68,7 +69,10 @@ async function main(): Promise<void> {
     const targetSessionId = typeof p?.targetSessionId === "string" ? p.targetSessionId : null;
     if (targetSessionId) {
       store.setAutonomousGoal("converse");
-      store.setPendingGoTalkToAgent({ targetSessionId, openingMessage: "Hi!" });
+      store.setPendingGoTalkToAgent({
+        targetSessionId,
+        openingMessage: pickAutonomousOpeningGreeting(),
+      });
     }
     store.setFollowTargetSessionId(null);
   });

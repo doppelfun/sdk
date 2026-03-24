@@ -113,7 +113,10 @@ function createClawStore(blockSlotId: string) {
 
     // --- Movement ---
     setMovementTarget(target: { x: number; z: number } | null) {
-      setState({ movementTarget: target });
+      setState({
+        movementTarget: target,
+        movementTargetSetAt: target != null ? Date.now() : 0,
+      });
     },
     setLastMoveToFailed(p: { x: number; z: number } | null) {
       setState({ lastMoveToFailed: p });
@@ -121,11 +124,16 @@ function createClawStore(blockSlotId: string) {
     setFollowTargetSessionId(sessionId: string | null) {
       setState((s) => ({
         followTargetSessionId: sessionId,
+        followStartedAt: sessionId != null && sessionId !== "" ? Date.now() : 0,
         ...(sessionId != null && sessionId !== "" ? { lastFollowFailed: null } : {}),
       }));
     },
     setLastFollowFailed(targetSessionId: string | null) {
-      setState({ lastFollowFailed: targetSessionId, followTargetSessionId: null });
+      setState({
+        lastFollowFailed: targetSessionId,
+        followTargetSessionId: null,
+        followStartedAt: 0,
+      });
     },
     setMovementIntent(intent: { moveX: number; moveZ: number; sprint: boolean } | null) {
       setState({ movementIntent: intent });
@@ -152,7 +160,10 @@ function createClawStore(blockSlotId: string) {
       setState({ autonomousEmoteStandStillUntil: ts });
     },
     setPendingGoTalkToAgent(p: { targetSessionId: string; openingMessage: string } | null) {
-      setState({ pendingGoTalkToAgent: p });
+      setState({
+        pendingGoTalkToAgent: p,
+        pendingGoTalkSince: p != null ? Date.now() : 0,
+      });
     },
     setAutonomousSeekCooldownUntil(ts: number) {
       setState({ autonomousSeekCooldownUntil: ts });

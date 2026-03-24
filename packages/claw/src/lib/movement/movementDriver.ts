@@ -16,6 +16,8 @@ import type { WanderState } from "../state/index.js";
 import { BLOCK_SIZE_M } from "../../util/blockBounds.js";
 import { clawLog } from "../../util/log.js";
 import { pickWanderMoveTargetOccupant } from "../../util/position.js";
+import { applyStuckStateFallbacks } from "../stuckFallbacks.js";
+import { pickAutonomousOpeningGreeting } from "../chat/openingGreetings.js";
 
 export const MOVEMENT_INPUT_INTERVAL_MS = 50;
 const BOUNDS_MARGIN = 2;
@@ -213,7 +215,7 @@ function applyArrival(
     store.setAutonomousGoal("converse");
     store.setPendingGoTalkToAgent({
       targetSessionId: approachPeerSessionId,
-      openingMessage: "Hi!",
+      openingMessage: pickAutonomousOpeningGreeting(),
     });
   }
   let rotY =
@@ -255,6 +257,7 @@ export function movementDriverTick(
   store: ClawStore,
   options?: MovementDriverOptions
 ): boolean {
+  applyStuckStateFallbacks(store, { client });
   let state = store.getState();
   let target = state.movementTarget;
 

@@ -37,11 +37,19 @@ function pickRandom<T>(items: T[]): T {
   return items[Math.floor(Math.random() * items.length)]!;
 }
 
-function randomBlurbIntervalMs(): number {
+type BlurbActivity = Exclude<HubCoarseActivity, "idle">;
+
+function randomBlurbIntervalMs(act: BlurbActivity): number {
+  if (act === "training") {
+    return 24_000 + Math.random() * 48_000;
+  }
   return 52_000 + Math.random() * 88_000;
 }
 
-function initialBlurbDelayMs(): number {
+function initialBlurbDelayMs(act: BlurbActivity): number {
+  if (act === "training") {
+    return 10_000 + Math.random() * 22_000;
+  }
   return 22_000 + Math.random() * 38_000;
 }
 
@@ -69,7 +77,7 @@ export function tickActivityGlobalBlurb(
 
   const now = Date.now();
   if (s.nextActivityGlobalBlurbAt === 0) {
-    store.setState({ nextActivityGlobalBlurbAt: now + initialBlurbDelayMs() });
+    store.setState({ nextActivityGlobalBlurbAt: now + initialBlurbDelayMs(act) });
     return;
   }
   if (now < s.nextActivityGlobalBlurbAt) return;
@@ -80,15 +88,16 @@ export function tickActivityGlobalBlurb(
   const text = pickRandom(lines);
   clawLog("activity blurb: global chat", act, text.slice(0, 50));
   const voiceId = config.voiceId?.trim() || undefined;
-  client.sendChat(
-    text,
-    buildChatSendOptions({ voiceId }) ?? (voiceId ? { voiceId } : undefined)
-  );
+  const voiceOpts = buildChatSendOptions({ voiceId }) ?? (voiceId ? { voiceId } : undefined);
+  if (act === "training") {
+    client.sendEmote?.("spellcast");
+  }
+  client.sendChat(text, voiceOpts);
   if (voiceId) {
     reportVoiceUsageToHub(config, store, text.length, onUsageReportFailure);
   }
   store.setState({
-    nextActivityGlobalBlurbAt: now + randomBlurbIntervalMs(),
+    nextActivityGlobalBlurbAt: now + randomBlurbIntervalMs(act),
     lastAgentChatMessage: text,
   });
 }

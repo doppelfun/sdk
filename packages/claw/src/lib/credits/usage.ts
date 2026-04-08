@@ -6,8 +6,8 @@
 import type { ClawConfig } from "../config/index.js";
 import type { ClawStore } from "../state/index.js";
 import type { Usage } from "../llm/usage.js";
-import { reportUsage, reportVoiceUsage, checkBalance } from "../hub/index.js";
-import { setCachedBalance } from "../hub/profile.js";
+import { reportUsage, reportVoiceUsage, fetchHubAgentState, joinBlock } from "../hub/index.js";
+import { applyHubAgentState, setCachedBalance } from "../hub/profile.js";
 
 /** Minimum balance (credits) to allow an agent run when hosted. */
 export const MIN_BALANCE_THRESHOLD = 0.1;
@@ -67,16 +67,38 @@ export function hasEnoughCredits(store: ClawStore, config: ClawConfig): boolean 
 }
 
 /**
- * Fetch balance from hub and update store. Call on connect or periodically so HasEnoughCredits is accurate.
+ * Fetch agent state from hub (credits + agent kind + companion activity) and apply to store/config.
+ * Call on connect or periodically so HasEnoughCredits and autonomous gating stay accurate.
+ * On 401 Unauthorized, re-POST /api/blocks/:id/join once then retries GET state.
  */
 export async function refreshBalance(
   store: ClawStore,
   config: ClawConfig
 ): Promise<{ ok: true; balance: number } | { ok: false; error: string }> {
-  const res = await checkBalance(config.agentApiUrl, config.apiKey);
-  if (!res.ok) return { ok: false, error: res.error };
-  setCachedBalance(store, res.balance);
-  return { ok: true, balance: res.balance };
+  const res = await fetchHubAgentState(config.agentApiUrl, config.apiKey);
+  if (res.ok) {
+    applyHubAgentState(store, config, res);
+    return { ok: true, balance: res.credits };
+  }
+
+  const isUnauthorized =
+    res.status === 401 ||
+    /unauthorized/i.test(res.error) ||
+    /invalid or expired/i.test(res.error);
+
+  if (isUnauthorized && config.blockId) {
+    const join = await joinBlock(config.agentApiUrl, config.apiKey, config.blockId);
+    if (join.ok) {
+      const retry = await fetchHubAgentState(config.agentApiUrl, config.apiKey);
+      if (retry.ok) {
+        applyHubAgentState(store, config, retry);
+        return { ok: true, balance: retry.credits };
+      }
+      return { ok: false, error: retry.error };
+    }
+  }
+
+  return { ok: false, error: res.error };
 }
 
 /**

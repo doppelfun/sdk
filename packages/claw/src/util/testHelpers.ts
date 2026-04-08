@@ -33,6 +33,7 @@ export function testConfig(overrides: Partial<ClawConfig> = {}): ClawConfig {
     dailyCreditBudget: 0,
     soul: null,
     skipCreditReport: true,
+    agentType: "builder",
     ...overrides,
   };
 }

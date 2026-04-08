@@ -31,8 +31,8 @@ import { pickSocialSeekTargetOccupant, pickWanderMoveTargetOccupant } from "../.
 /** Interval (ms) to refresh occupants so myPosition is set and TimeForAutonomousWake can fire when owner is away. */
 const OCCUPANTS_REFRESH_MS = 10_000;
 
-/** Interval (ms) to re-fetch account credits from the hub so cached balance matches top-ups and gates unblock. */
-const CREDIT_BALANCE_REFRESH_MS = 30_000;
+/** Interval (ms) to re-fetch GET /api/agents/me/state (credits + agent kind + companion activity). */
+const AGENT_STATE_REFRESH_MS = 30_000;
 
 /** Min/max cooldown (ms) before next autonomous move. Shared by move-to-nearest, seek-social, and movement driver on arrival. */
 const AUTONOMOUS_MOVE_COOLDOWN_MS = { min: 20_000, max: 45_000 };
@@ -140,6 +140,16 @@ function startMoveToOccupant(
   client.moveTo(pos.x, pos.z);
 }
 
+/** True when an engine HTTP error looks like an expired/invalid session or hub JWT. */
+function isSessionOrJwtHttpError(message: string): boolean {
+  return (
+    /\b401\b/.test(message) ||
+    /invalid or expired session/i.test(message) ||
+    /invalid or expired jwt/i.test(message) ||
+    /jwt has expired/i.test(message)
+  );
+}
+
 /** Options for creating the runner (store, config, optional client and callbacks). */
 export type RunnerOptions = {
   store: ClawStore;
@@ -150,6 +160,11 @@ export type RunnerOptions = {
   executeMovementAndDrain?: () => void;
   /** Optional: called when report-usage fails (e.g. 402 insufficient credits). */
   onUsageReportFailure?: (message: string) => void;
+  /**
+   * When GET /api/occupants still fails after SDK session retries (expired hub JWT or engine desync),
+   * refresh the hub block JWT and reconnect WS (CLI: joinBlock + reconnectNow).
+   */
+  refreshHubSession?: () => Promise<void>;
 };
 
 /**
@@ -161,7 +176,7 @@ export type RunnerOptions = {
  * @returns AgentLoop (start/stop/step) from createAgentLoop
  */
 export function createRunner(options: RunnerOptions): AgentLoop {
-  const { store, config, client, executeMovementAndDrain, onUsageReportFailure } = options;
+  const { store, config, client, executeMovementAndDrain, onUsageReportFailure, refreshHubSession } = options;
   const clawConfigPrompt = { soul: config.soul ?? undefined, skills: undefined };
   const systemContent = buildSystemContent(clawConfigPrompt);
 
@@ -301,26 +316,49 @@ export function createRunner(options: RunnerOptions): AgentLoop {
   let creditBalanceRefreshInFlight = false;
 
   const refreshOccupants = (): void => {
-    client.getOccupants().then(
+    void client.getOccupants().then(
       (occupants) => {
         const mySessionId = store.getState().mySessionId;
         store.setOccupants(occupants, mySessionId);
       },
-      (err) => {
-        clawLog("runner: occupants refresh failed", err instanceof Error ? err.message : String(err));
+      async (err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (refreshHubSession && isSessionOrJwtHttpError(msg)) {
+          try {
+            await refreshHubSession();
+            const occupants = await client.getOccupants();
+            const mySessionId = store.getState().mySessionId;
+            store.setOccupants(occupants, mySessionId);
+            clawLog("runner: occupants refresh recovered after hub re-join");
+            return;
+          } catch (recoveryErr) {
+            clawLog(
+              "runner: occupants refresh failed",
+              msg,
+              "— recovery failed:",
+              recoveryErr instanceof Error ? recoveryErr.message : String(recoveryErr)
+            );
+            return;
+          }
+        }
+        clawLog("runner: occupants refresh failed", msg);
       }
     );
   };
 
-  const refreshCreditBalanceFromHub = (): void => {
+  const refreshAgentStateFromHub = (): void => {
     if (!config.hosted || config.skipCreditReport || creditBalanceRefreshInFlight) return;
     creditBalanceRefreshInFlight = true;
     void refreshBalance(store, config)
       .then((res) => {
         if (res.ok) {
-          clawLog("runner: credit balance refreshed", res.balance.toFixed(2));
+          clawLog(
+            "runner: hub agent state refreshed",
+            "credits=" + res.balance.toFixed(2),
+            "agentType=" + config.agentType
+          );
         } else {
-          clawLog("runner: credit balance refresh failed", res.error);
+          clawLog("runner: hub agent state refresh failed", res.error);
         }
       })
       .finally(() => {
@@ -333,8 +371,8 @@ export function createRunner(options: RunnerOptions): AgentLoop {
       if (occupantsInterval != null) return;
       refreshOccupants();
       occupantsInterval = setInterval(refreshOccupants, OCCUPANTS_REFRESH_MS);
-      refreshCreditBalanceFromHub();
-      creditBalanceInterval = setInterval(refreshCreditBalanceFromHub, CREDIT_BALANCE_REFRESH_MS);
+      refreshAgentStateFromHub();
+      creditBalanceInterval = setInterval(refreshAgentStateFromHub, AGENT_STATE_REFRESH_MS);
       loop.start();
     },
     stop() {

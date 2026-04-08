@@ -15,4 +15,6 @@ export {
   type BuildTarget,
   type BlockDocument,
   type WanderState,
+  type AutonomousGoal,
+  type HubCoarseActivity,
 } from "./state.js";

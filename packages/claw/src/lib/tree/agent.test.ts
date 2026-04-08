@@ -85,7 +85,7 @@ describe("createTreeAgent", () => {
 
   describe("RequestAutonomousWake", () => {
     it("sets wakePending and lastTriggerUserId=null so next tick runs autonomous branch", async () => {
-      const { store, config } = createTestContext({ ownerUserId: "owner-1" });
+      const { store, config } = createTestContext({ ownerUserId: "owner-1", agentType: "companion" });
       store.setLastTriggerUserId("owner-1");
       const agent = createTreeAgent({ store, config });
       const { State } = await import("mistreevous");
@@ -168,7 +168,7 @@ describe("createTreeAgent", () => {
     });
 
     it("RequestAutonomousWake sets currentAction to requesting_autonomous_wake", () => {
-      const { store, config } = createTestContext({ ownerUserId: "owner-1" });
+      const { store, config } = createTestContext({ ownerUserId: "owner-1", agentType: "companion" });
       const agent = createTreeAgent({ store, config });
       agent.RequestAutonomousWake();
       expect(store.getState().currentAction).toBe("requesting_autonomous_wake");
@@ -179,6 +179,24 @@ describe("createTreeAgent", () => {
       const agent = createTreeAgent({ store, config });
       agent.TryMoveToNearestOccupant();
       expect(store.getState().currentAction).toBe("autonomous_move");
+    });
+  });
+
+  describe("HasAutonomousWake", () => {
+    it("is false for builder even when wake is non-owner", () => {
+      const { store, config } = createTestContext({ ownerUserId: "owner-1", agentType: "builder" });
+      store.setWakePending(true);
+      store.setLastTriggerUserId(null);
+      const agent = createTreeAgent({ store, config });
+      expect(agent.HasAutonomousWake()).toBe(false);
+    });
+
+    it("is true for companion when wake is non-owner", () => {
+      const { store, config } = createTestContext({ ownerUserId: "owner-1", agentType: "companion" });
+      store.setWakePending(true);
+      store.setLastTriggerUserId(null);
+      const agent = createTreeAgent({ store, config });
+      expect(agent.HasAutonomousWake()).toBe(true);
     });
   });
 

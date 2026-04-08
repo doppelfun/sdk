@@ -7,6 +7,9 @@ import { normalizeUrl } from "../../util/url.js";
 
 export type LlmProviderId = "openrouter" | "google" | "google-vertex" | "bankr" | "venice";
 
+/** From hub GET /api/agents/me/state; drives autonomous vs obedient-only behavior. */
+export type HubAgentType = "builder" | "companion";
+
 export type ClawConfig = {
   apiKey: string;
   /** Agent UUID from hub profile (for attestation). */
@@ -53,6 +56,11 @@ export type ClawConfig = {
   soul: string | null;
   /** When true, skip balance check and report-usage (local dev). */
   skipCreditReport: boolean;
+  /**
+   * Hub agent kind: builders are obedient-only (no autonomous tree); companions follow hub activity for autonomous work.
+   * Updated when hosted state is refreshed from GET /api/agents/me/state.
+   */
+  agentType: HubAgentType;
 };
 
 const DEFAULT_HUB = "https://doppel.fun";
@@ -175,5 +183,6 @@ export function loadConfig(): ClawConfig {
     dailyCreditBudget: 0,
     soul: null,
     skipCreditReport: envFlag("DISABLE_CREDITS"),
+    agentType: "builder",
   };
 }

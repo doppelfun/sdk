@@ -211,6 +211,8 @@ export class DoppelClient {
           authenticatedDone = true;
           removeErrorListener();
           this.reconnectAttempt = 0;
+          // WS (re)auth mints a fresh engine session; drop cached Bearer so HTTP calls re-POST /api/session.
+          this.sessionToken = null;
           resolve();
           this.emitMessage("authenticated", msg);
           return;
@@ -456,83 +458,126 @@ export class DoppelClient {
   }
 
   /**
+   * True when fetchJson failed with HTTP 401 or engine session error body (message shape can vary by route).
+   */
+  private isLikelyExpiredSessionError(err: unknown): boolean {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/\b401\b/.test(msg)) return true;
+    return /invalid or expired session/i.test(msg);
+  }
+
+  /**
+   * Run an operation that uses ensureSession + Bearer. On session errors, clear cached token and retry
+   * (up to 3 attempts) so POST /api/session can mint a fresh engine session.
+   */
+  private async withSessionRetry<T>(operation: () => Promise<T>): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await operation();
+      } catch (e) {
+        lastError = e;
+        if (!this.isLikelyExpiredSessionError(e)) throw e;
+        if (attempt === 2) throw e;
+        this.sessionToken = null;
+      }
+    }
+    throw lastError;
+  }
+
+  /** Clear cached engine session token; next HTTP call re-POSTs /api/session with the current hub JWT. */
+  clearCachedSessionToken(): void {
+    this.sessionToken = null;
+  }
+
+  /**
    * Create an agent-owned document. Returns the document id (server-generated if not provided).
    */
   async createDocument(content: string, documentId?: string): Promise<{ documentId: string }> {
-    const token = await this.ensureSession();
-    const body: { action: "create"; content: string; documentId?: string } = { action: "create", content };
-    if (documentId != null && documentId !== "") body.documentId = documentId;
-    const data = await fetchJson<{ success: boolean; documentId: string }>(
-      `${this.base}/api/document`,
-      {
-        method: "POST",
-        headers: bearerHeaders(token, this.apiKey),
-        body: JSON.stringify(body),
-      },
-      "POST /api/document create"
-    );
-    return { documentId: data.documentId };
+    return this.withSessionRetry(async () => {
+      const token = await this.ensureSession();
+      const body: { action: "create"; content: string; documentId?: string } = { action: "create", content };
+      if (documentId != null && documentId !== "") body.documentId = documentId;
+      const data = await fetchJson<{ success: boolean; documentId: string }>(
+        `${this.base}/api/document`,
+        {
+          method: "POST",
+          headers: bearerHeaders(token, this.apiKey),
+          body: JSON.stringify(body),
+        },
+        "POST /api/document create"
+      );
+      return { documentId: data.documentId };
+    });
   }
 
   /**
    * Update an agent-owned document. You must be the owner.
    */
   async updateDocument(documentId: string, content: string): Promise<void> {
-    const token = await this.ensureSession();
-    await fetchJson<{ success: boolean }>(
-      `${this.base}/api/document`,
-      {
-        method: "POST",
-        headers: bearerHeaders(token, this.apiKey),
-        body: JSON.stringify({ action: "update", documentId, content }),
-      },
-      "POST /api/document update"
-    );
+    return this.withSessionRetry(async () => {
+      const token = await this.ensureSession();
+      await fetchJson<{ success: boolean }>(
+        `${this.base}/api/document`,
+        {
+          method: "POST",
+          headers: bearerHeaders(token, this.apiKey),
+          body: JSON.stringify({ action: "update", documentId, content }),
+        },
+        "POST /api/document update"
+      );
+    });
   }
 
   /**
    * Append MML content to an agent-owned document. You must be the owner. Server concatenates existing stored MML with a newline and your content, then applies the result (same limits as update (triangle count, content size)).
    */
   async appendDocument(documentId: string, content: string): Promise<void> {
-    const token = await this.ensureSession();
-    await fetchJson<{ success: boolean }>(
-      `${this.base}/api/document`,
-      {
-        method: "POST",
-        headers: bearerHeaders(token, this.apiKey),
-        body: JSON.stringify({ action: "append", documentId, content }),
-      },
-      "POST /api/document append"
-    );
+    return this.withSessionRetry(async () => {
+      const token = await this.ensureSession();
+      await fetchJson<{ success: boolean }>(
+        `${this.base}/api/document`,
+        {
+          method: "POST",
+          headers: bearerHeaders(token, this.apiKey),
+          body: JSON.stringify({ action: "append", documentId, content }),
+        },
+        "POST /api/document append"
+      );
+    });
   }
 
   /**
    * Delete an agent-owned document. You must be the owner.
    */
   async deleteDocument(documentId: string): Promise<void> {
-    const token = await this.ensureSession();
-    await fetchJson<{ success: boolean }>(
-      `${this.base}/api/document`,
-      {
-        method: "POST",
-        headers: bearerHeaders(token, this.apiKey),
-        body: JSON.stringify({ action: "delete", documentId }),
-      },
-      "POST /api/document delete"
-    );
+    return this.withSessionRetry(async () => {
+      const token = await this.ensureSession();
+      await fetchJson<{ success: boolean }>(
+        `${this.base}/api/document`,
+        {
+          method: "POST",
+          headers: bearerHeaders(token, this.apiKey),
+          body: JSON.stringify({ action: "delete", documentId }),
+        },
+        "POST /api/document delete"
+      );
+    });
   }
 
   /**
    * List document ids owned by this agent (GET /api/document).
    */
   async listDocuments(): Promise<string[]> {
-    const token = await this.ensureSession();
-    const data = await fetchJson<{ content: string; documentIds?: string[] }>(
-      `${this.base}/api/document`,
-      { headers: bearerHeaders(token, this.apiKey) },
-      "GET /api/document"
-    );
-    return data.documentIds ?? [];
+    return this.withSessionRetry(async () => {
+      const token = await this.ensureSession();
+      const data = await fetchJson<{ content: string; documentIds?: string[] }>(
+        `${this.base}/api/document`,
+        { headers: bearerHeaders(token, this.apiKey) },
+        "GET /api/document"
+      );
+      return data.documentIds ?? [];
+    });
   }
 
   /**
@@ -545,57 +590,63 @@ export class DoppelClient {
     truncated: boolean;
     totalChars?: number;
   }> {
-    const token = await this.ensureSession();
-    const params = new URLSearchParams({ documentId });
-    return fetchJson<{
-      documentId: string;
-      content: string;
-      truncated: boolean;
-      totalChars?: number;
-    }>(
-      `${this.base}/api/document/content?${params}`,
-      { headers: bearerHeaders(token, this.apiKey) },
-      "GET /api/document/content"
-    );
+    return this.withSessionRetry(async () => {
+      const token = await this.ensureSession();
+      const params = new URLSearchParams({ documentId });
+      return fetchJson<{
+        documentId: string;
+        content: string;
+        truncated: boolean;
+        totalChars?: number;
+      }>(
+        `${this.base}/api/document/content?${params}`,
+        { headers: bearerHeaders(token, this.apiKey) },
+        "GET /api/document/content"
+      );
+    });
   }
 
   /**
    * List connected occupants (GET /api/occupants). Any session. Each occupant has type: "observer" | "user" | "agent" | "npc".
    */
   async getOccupants(): Promise<Occupant[]> {
-    const token = await this.ensureSession();
-    const data = await fetchJson<{ occupants: Occupant[] }>(
-      `${this.base}/api/occupants`,
-      { headers: bearerHeaders(token, this.apiKey) },
-      "GET /api/occupants"
-    );
-    return data.occupants ?? [];
+    return this.withSessionRetry(async () => {
+      const token = await this.ensureSession();
+      const data = await fetchJson<{ occupants: Occupant[] }>(
+        `${this.base}/api/occupants`,
+        { headers: bearerHeaders(token, this.apiKey) },
+        "GET /api/occupants"
+      );
+      return data.occupants ?? [];
+    });
   }
 
   /**
    * Fetch chat history (GET /api/chat). Uses session token.
    */
   async getChatHistory(options: GetChatHistoryOptions = {}): Promise<GetChatHistoryResult> {
-    const token = await this.ensureSession();
-    const limit = Math.min(
-      CHAT_LIMIT_MAX,
-      Math.max(CHAT_LIMIT_MIN, options.limit ?? CHAT_LIMIT_DEFAULT)
-    );
-    const params = new URLSearchParams({ limit: String(limit) });
-    if (options.before != null && Number.isFinite(options.before)) {
-      params.set("before", String(options.before));
-    }
-    if (options.regionId != null && options.regionId !== "") {
-      params.set("blockSlotId", options.regionId);
-    }
-    if (options.channelId != null && options.channelId !== "") {
-      params.set("channelId", options.channelId);
-    }
-    const data = await fetchJson<{ messages: ChatHistoryMessage[]; hasMore?: boolean }>(
-      `${this.base}/api/chat?${params}`,
-      { headers: bearerHeaders(token, this.apiKey) },
-      "GET /api/chat"
-    );
-    return { messages: data.messages, hasMore: data.hasMore ?? false };
+    return this.withSessionRetry(async () => {
+      const token = await this.ensureSession();
+      const limit = Math.min(
+        CHAT_LIMIT_MAX,
+        Math.max(CHAT_LIMIT_MIN, options.limit ?? CHAT_LIMIT_DEFAULT)
+      );
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (options.before != null && Number.isFinite(options.before)) {
+        params.set("before", String(options.before));
+      }
+      if (options.regionId != null && options.regionId !== "") {
+        params.set("blockSlotId", options.regionId);
+      }
+      if (options.channelId != null && options.channelId !== "") {
+        params.set("channelId", options.channelId);
+      }
+      const data = await fetchJson<{ messages: ChatHistoryMessage[]; hasMore?: boolean }>(
+        `${this.base}/api/chat?${params}`,
+        { headers: bearerHeaders(token, this.apiKey) },
+        "GET /api/chat"
+      );
+      return { messages: data.messages, hasMore: data.hasMore ?? false };
+    });
   }
 }

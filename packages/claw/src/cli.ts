@@ -16,6 +16,8 @@ import {
   startCronScheduler,
 } from "./index.js";
 import { pickAutonomousOpeningGreeting } from "./lib/chat/openingGreetings.js";
+import { joinBlock } from "./lib/hub/index.js";
+import { normalizeUrl } from "./util/url.js";
 
 // Load .env from cwd, package dir, and parent dir (monorepo root when running from packages/claw)
 const cwd = process.cwd();
@@ -33,10 +35,10 @@ async function main(): Promise<void> {
   }
   const { store, jwt, engineUrl, blockSlotId } = session;
 
-  const getJwt = () => jwt;
+  const jwtRef = { current: jwt };
   const client = createClient({
     engineUrl,
-    getJwt,
+    getJwt: () => jwtRef.current,
     WebSocket: WebSocket as unknown as typeof globalThis.WebSocket,
     agentWsPath: "/connect",
   });
@@ -91,6 +93,24 @@ async function main(): Promise<void> {
     config,
     client,
     onUsageReportFailure: (msg) => console.warn("[credits]", msg),
+    refreshHubSession: async () => {
+      const bid = config.blockId;
+      if (!bid) {
+        console.warn("[claw] Cannot refresh hub JWT: no blockId on config");
+        return;
+      }
+      const r = await joinBlock(config.agentApiUrl, config.apiKey, bid);
+      if (!r.ok) {
+        console.warn("[claw] Hub re-join failed:", r.error);
+        return;
+      }
+      jwtRef.current = r.jwt;
+      config.blockId = r.blockId;
+      if (r.serverUrl.trim() !== "") {
+        config.engineUrl = normalizeUrl(r.serverUrl.trim());
+      }
+      await client.reconnectNow();
+    },
   });
 
   // Connect WebSocket first so the agent has a single connection. If we start the loop

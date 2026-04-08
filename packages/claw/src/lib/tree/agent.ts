@@ -49,6 +49,14 @@ function isOwnerTrigger(s: ClawState, config: ClawConfig): boolean {
   return isOwner || hasScheduledTask;
 }
 
+/** Companion: hub says a skill-run activity is in progress and not past its end time. */
+function hubCompanionActivityActive(store: ClawStore): boolean {
+  const s = store.getState();
+  if (s.hubCoarseActivity === "idle") return false;
+  if (s.hubActivityEndAtMs > 0 && Date.now() >= s.hubActivityEndAtMs) return false;
+  return true;
+}
+
 /**
  * Build the Mistreevous agent object for BehaviourTree(definition, agent).
  * Keys match tree node names (ExecuteMovementAndDrain, HasOwnerWake, RunObedientAgent, etc.).
@@ -139,6 +147,7 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
 
     // --- Autonomous wake gate ---
     HasAutonomousWake(): boolean {
+      if (config.agentType === "builder") return false;
       const s = store.getState();
       if (!s.wakePending || s.pendingScheduledTask != null) return false;
       return s.lastTriggerUserId !== config.ownerUserId;
@@ -197,6 +206,9 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
     /** True when we may look for a new social target (wander/idle, not in conversation, cooldown elapsed, not already moving). */
     ShouldSeekSocialTarget(): boolean {
       const s = store.getState();
+      if (config.agentType === "companion") {
+        if (s.hubCoarseActivity === "explore" || s.hubCoarseActivity === "training") return false;
+      }
       if (s.autonomousGoal === "approach" || s.autonomousGoal === "converse") return false;
       if (s.conversationPhase !== "idle") return false;
       if (Date.now() < s.socialSeekCooldownUntil) return false;
@@ -275,6 +287,10 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
     TimeForAutonomousWake(): boolean {
       const s = store.getState();
       if (s.wakePending) return false;
+      if (config.agentType === "builder") return false;
+      if (config.agentType === "companion") {
+        if (!hubCompanionActivityActive(store)) return false;
+      }
       if (!config.ownerUserId || config.autonomousSoulTickMs <= 0) return false;
       const ownerAway = s.myPosition != null && !isOwnerNearby(s.occupants, s.myPosition, config.ownerUserId, config.ownerNearbyRadiusM);
       if (!ownerAway) return false;

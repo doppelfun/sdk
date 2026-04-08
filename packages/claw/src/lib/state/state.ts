@@ -58,6 +58,9 @@ export type TreeAction =
 /** Decision-layer goal for autonomous agent (navigation + social). Obedient agent ignores this. */
 export type AutonomousGoal = "idle" | "wander" | "approach" | "converse";
 
+/** Last-known coarse activity from GET /api/agents/me/state (companion skill run). */
+export type HubCoarseActivity = "idle" | "explore" | "conversation" | "training" | "build";
+
 export type ClawState = {
   blockSlotId: string;
   /** Set by behaviour tree action callbacks. Single place to read current flow. */
@@ -127,6 +130,10 @@ export type ClawState = {
   lastOccupantsSummary: string | null;
   /** Cached balance from hub (when hosted). */
   cachedBalance: number;
+  /** Coarse hub activity for companion autonomous behavior (refreshed with credits). */
+  hubCoarseActivity: HubCoarseActivity;
+  /** When > 0 and Date.now() >= this, companion hub activity is expired (ms since epoch). */
+  hubActivityEndAtMs: number;
   /** Daily spend so far (when hosted); reset by hub. */
   dailySpend: number;
   /** Document id + MML per block for build replace/append. */
@@ -202,6 +209,8 @@ export function createInitialState(blockSlotId: string): ClawState {
     lastTickToolNames: null,
     lastOccupantsSummary: null,
     cachedBalance: 0,
+    hubCoarseActivity: "idle",
+    hubActivityEndAtMs: 0,
     dailySpend: 0,
     documentsByBlockSlot: {},
     lastDocumentsList: null,

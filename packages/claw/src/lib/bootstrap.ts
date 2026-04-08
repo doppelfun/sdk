@@ -33,13 +33,13 @@ export async function bootstrapAgent(): Promise<BootstrapResult> {
     profile = res.profile;
   }
   const reportUsage = config.hosted && !config.skipCreditReport;
-  const checkBalance = config.hosted;
+  const statePoll = config.hosted;
   console.log(
-    "[claw] Credits: hosted=%s skipCreditReport=%s → report-usage %s, balance checks %s",
+    "[claw] Credits: hosted=%s skipCreditReport=%s → report-usage %s, GET /agents/me/state %s",
     config.hosted,
     config.skipCreditReport,
     reportUsage ? "on" : "off",
-    checkBalance ? "on" : "off"
+    statePoll ? "on" : "off"
   );
   return { config, profileApplied, profile };
 }

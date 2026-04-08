@@ -8,7 +8,7 @@
 
 export { createAgentLoop, createTreeAgent, TREE_DEFINITION, type AgentLoop, type TreeAgentContext, type TreeStateSnapshot } from "./lib/tree/index.js";
 export { requestWake, requestCronWake, type WakeType, type WakePayload } from "./lib/wake.js";
-export { loadConfig, type ClawConfig, type LlmProviderId } from "./lib/config/index.js";
+export { loadConfig, type ClawConfig, type LlmProviderId, type HubAgentType } from "./lib/config/index.js";
 export {
   createClawStore,
   createInitialState,
@@ -24,6 +24,7 @@ export {
   type BuildTarget,
   type BlockDocument,
   type TreeAction,
+  type HubCoarseActivity,
 } from "./lib/state/index.js";
 export { createRunner, type RunnerOptions } from "./lib/runner/index.js";
 export { handleChatMessage, type ChatPayload } from "./lib/chat/chatHandler.js";
@@ -40,10 +41,13 @@ export {
   reportUsage,
   reportVoiceUsage,
   checkBalance,
+  fetchHubAgentState,
   joinBlock,
   applyHubProfileToConfig,
+  applyHubAgentState,
   setCachedBalance,
   type HubAgentProfile,
+  type HubAgentStateResult,
   type ReportUsageResult,
   type CheckBalanceResult,
   type JoinBlockResult,

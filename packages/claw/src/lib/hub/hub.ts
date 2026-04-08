@@ -1,6 +1,6 @@
 /**
  * Hub API: agent profile, credits, report-usage.
- * Used for hosted agents (credit deduction, profile-driven config).
+ * Used for hosted agents (usage reporting, credits balance, profile-driven config).
  */
 
 import { normalizeUrl } from "../../util/url.js";
@@ -48,6 +48,33 @@ export type CheckBalanceResult =
   | { ok: true; balance: number; linked: boolean }
   | { ok: false; error: string; status?: number };
 
+/** Coarse activity from GET /api/agents/me/state (companion skill runs). */
+export type HubCoarseActivity = "idle" | "explore" | "conversation" | "training" | "build";
+
+export type HubAgentStateResult =
+  | {
+      ok: true;
+      credits: number;
+      agentType: "builder" | "companion";
+      currentActivity: HubCoarseActivity;
+      activityEndDate: string | null;
+    }
+  | { ok: false; error: string; status?: number };
+
+/** Prefer JSON `{ error }` from hub so logs show "Unauthorized" not raw `{"error":"Unauthorized"}`. */
+function parseHubErrorBody(text: string, status: number): string {
+  const t = text.trim();
+  if (!t) return `HTTP ${status}`;
+  try {
+    const j = JSON.parse(t) as { error?: unknown; message?: unknown };
+    if (typeof j.error === "string") return j.error;
+    if (typeof j.message === "string") return j.message;
+  } catch {
+    /* ignore */
+  }
+  return t.length > 500 ? `${t.slice(0, 500)}…` : t;
+}
+
 async function hubGet(
   url: string,
   apiKey: string
@@ -57,7 +84,7 @@ async function hubGet(
     headers: { Authorization: `Bearer ${apiKey}` },
   });
   const text = await res.text();
-  if (!res.ok) return { ok: false, error: text || `HTTP ${res.status}`, status: res.status };
+  if (!res.ok) return { ok: false, error: parseHubErrorBody(text, res.status), status: res.status };
   return { ok: true, text };
 }
 
@@ -75,7 +102,7 @@ async function hubPost(
     ...(body != null && { body: JSON.stringify(body) }),
   });
   const text = await res.text();
-  if (!res.ok) return { ok: false, error: text || `HTTP ${res.status}`, status: res.status };
+  if (!res.ok) return { ok: false, error: parseHubErrorBody(text, res.status), status: res.status };
   return { ok: true, text };
 }
 
@@ -131,7 +158,7 @@ export async function getAgentProfile(
 
 /**
  * POST /api/agents/me/report-usage.
- * Pass model + tokens; optionally costUsd for Google. Hub deducts from ledger.
+ * Pass model + tokens; optionally costUsd for Google. Hub records usage for analytics; wallet balance is unchanged.
  * When agentId and CLAW_ATTESTATION_PRIVATE_KEY are set, adds attestation (and blockId) for reward attribution.
  */
 export async function reportUsage(
@@ -180,7 +207,7 @@ export async function reportUsage(
 }
 
 /**
- * GET /api/agents/me/credits — current balance.
+ * GET /api/agents/me/credits — current balance (legacy; claw uses {@link fetchHubAgentState}).
  */
 export async function checkBalance(
   baseUrl: string,
@@ -205,6 +232,50 @@ export async function checkBalance(
     balance: typeof data.balance === "number" ? data.balance : 0,
     linked: true,
   };
+}
+
+const HUB_COARSE_ACTIVITIES: ReadonlySet<string> = new Set([
+  "idle",
+  "explore",
+  "conversation",
+  "training",
+  "build",
+]);
+
+function parseHubAgentStateJson(text: string): HubAgentStateResult {
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return { ok: false, error: "Invalid JSON from hub" };
+  }
+  const credits = typeof data.credits === "number" && Number.isFinite(data.credits) ? data.credits : 0;
+  const agentTypeRaw = data.agentType;
+  const agentType = agentTypeRaw === "companion" ? "companion" : "builder";
+  let currentActivity: HubCoarseActivity = "idle";
+  const act = data.currentActivity;
+  if (typeof act === "string" && HUB_COARSE_ACTIVITIES.has(act)) {
+    currentActivity = act as HubCoarseActivity;
+  }
+  const endRaw = data.activityEndDate;
+  const activityEndDate =
+    typeof endRaw === "string" && endRaw.trim() !== "" ? endRaw.trim() : null;
+  return { ok: true, credits, agentType, currentActivity, activityEndDate };
+}
+
+/**
+ * GET /api/agents/me/state — credits, agent type, companion activity window (claw polling).
+ */
+export async function fetchHubAgentState(
+  baseUrl: string,
+  apiKey: string
+): Promise<HubAgentStateResult> {
+  const base = normalizeUrl(baseUrl);
+  const res = await hubGet(`${base}/api/agents/me/state`, apiKey);
+  if (!res.ok) {
+    return { ok: false, error: res.error, status: res.status };
+  }
+  return parseHubAgentStateJson(res.text);
 }
 
 /**

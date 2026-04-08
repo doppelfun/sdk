@@ -4,7 +4,7 @@
  */
 
 import type { ClawConfig } from "../config/index.js";
-import type { HubAgentProfile } from "./hub.js";
+import type { HubAgentProfile, HubAgentStateResult } from "./hub.js";
 import type { ClawStore } from "../state/index.js";
 
 /**
@@ -27,4 +27,22 @@ export function applyHubProfileToConfig(config: ClawConfig, profile: HubAgentPro
  */
 export function setCachedBalance(store: ClawStore, balance: number): void {
   store.setCachedBalance(balance);
+}
+
+/**
+ * Apply successful GET /api/agents/me/state to store + config (credits cache, agent kind, companion activity window).
+ */
+export function applyHubAgentState(
+  store: ClawStore,
+  config: ClawConfig,
+  state: Extract<HubAgentStateResult, { ok: true }>
+): void {
+  config.agentType = state.agentType;
+  const endMs =
+    state.activityEndDate != null ? Date.parse(state.activityEndDate) : Number.NaN;
+  store.setState({
+    cachedBalance: state.credits,
+    hubCoarseActivity: state.currentActivity,
+    hubActivityEndAtMs: Number.isFinite(endMs) ? endMs : 0,
+  });
 }

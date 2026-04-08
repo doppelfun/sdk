@@ -3,10 +3,13 @@ export {
   reportUsage,
   reportVoiceUsage,
   checkBalance,
+  fetchHubAgentState,
   joinBlock,
   type HubAgentProfile,
+  type HubAgentStateResult,
+  type HubCoarseActivity,
   type ReportUsageResult,
   type CheckBalanceResult,
   type JoinBlockResult,
 } from "./hub.js";
-export { applyHubProfileToConfig, setCachedBalance } from "./profile.js";
+export { applyHubProfileToConfig, applyHubAgentState, setCachedBalance } from "./profile.js";

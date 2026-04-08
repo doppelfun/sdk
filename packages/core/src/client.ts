@@ -80,7 +80,8 @@ export function createClient(options: DoppelClientOptions): DoppelClient {
 }
 
 export class DoppelClient {
-  private readonly base: string;
+  /** Engine HTTP(S) base; updated by {@link fullReconnect} when the hub returns a new serverUrl. */
+  private base: string;
   private readonly getJwt: () => string | Promise<string>;
   private readonly apiKey: string | undefined;
   private readonly WsConstructor: typeof WebSocket | undefined;
@@ -430,6 +431,66 @@ export class DoppelClient {
     }
     // If close didn't run onClose (already closed), don't leave flag set
     if (this.skipReconnectOnClose && !socket) this.skipReconnectOnClose = false;
+    await this.doConnect();
+  }
+
+  /**
+   * GET /health on the engine (liveness: 200 and plain body `ok`). False on timeout, non-OK, or network error.
+   */
+  async checkEngineHealth(timeoutMs: number = 5000): Promise<boolean> {
+    const url = `${this.base}/health`;
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { method: "GET", signal: ac.signal });
+      if (!res.ok) return false;
+      const text = (await res.text()).trim();
+      return text === "ok";
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  /** Update engine base URL (e.g. hub joinBlock returned a new serverUrl). Next HTTP/WS use this host. */
+  setEngineUrl(url: string): void {
+    const trimmed = url.trim();
+    if (trimmed) this.base = normalizeBaseUrl(trimmed);
+  }
+
+  /**
+   * Cold start after engine deploy/restart: close any socket without scheduling backoff, optionally run
+   * hub refresh / URL update, clear cached engine session, reset reconnect backoff, then connect again.
+   */
+  async fullReconnect(options?: {
+    beforeConnect?: () => Promise<void>;
+    /** When non-empty, sets the engine base URL before connecting. */
+    engineUrl?: string;
+  }): Promise<void> {
+    if (this.reconnectTimeout !== null) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    const socket = this.ws;
+    if (socket && (socket.readyState === 0 || socket.readyState === 1)) {
+      this.skipReconnectOnClose = true;
+      try {
+        socket.close();
+      } catch {
+        /* ignore */
+      }
+      if (this.ws === socket) this.ws = null;
+    }
+    if (this.skipReconnectOnClose && !socket) this.skipReconnectOnClose = false;
+
+    await options?.beforeConnect?.();
+    const nextUrl = options?.engineUrl?.trim();
+    if (nextUrl) this.base = normalizeBaseUrl(nextUrl);
+
+    this.disconnectRequested = false;
+    this.reconnectAttempt = 0;
+    this.sessionToken = null;
     await this.doConnect();
   }
 

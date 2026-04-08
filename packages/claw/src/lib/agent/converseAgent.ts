@@ -20,7 +20,8 @@ import type { RunTickLlmResult } from "../llm/toolsAi.js";
 const CONVERSE_TOOL_NAMES = ["chat"] as const;
 
 const CONVERSE_INSTRUCTIONS = `
-[CONVERSE MODE] You are in an ongoing conversation with another person in the world. Reply once to their latest message with a single chat call — do not send multiple chat calls in one turn. Wait for them to speak again before your next reply. Use only the chat tool with the appropriate targetSessionId. Keep your reply brief and in character.`;
+[CONVERSE MODE] You are in an ongoing conversation with another person in the world. Reply once to their latest message with a single chat call — do not send multiple chat calls in one turn. Wait for them to speak again before your next reply. Use only the chat tool with the appropriate targetSessionId. Keep your reply brief and in character.
+If your companion activity is social/rapport, treat this chat as the point of the mission: be curious, stay in character, and keep the thread alive with a genuine follow-up when natural.`;
 
 /**
  * Create the Converse agent (chat-only). Used when InConversation and BT runs RunConverseAgent.

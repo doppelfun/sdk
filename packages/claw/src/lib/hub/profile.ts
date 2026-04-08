@@ -40,9 +40,12 @@ export function applyHubAgentState(
   config.agentType = state.agentType;
   const endMs =
     state.activityEndDate != null ? Date.parse(state.activityEndDate) : Number.NaN;
+  const prevActivity = store.getState().hubCoarseActivity;
+  const nextActivity = state.currentActivity;
   store.setState({
     cachedBalance: state.credits,
-    hubCoarseActivity: state.currentActivity,
+    hubCoarseActivity: nextActivity,
     hubActivityEndAtMs: Number.isFinite(endMs) ? endMs : 0,
+    ...(prevActivity !== nextActivity ? { nextActivityGlobalBlurbAt: 0 } : {}),
   });
 }

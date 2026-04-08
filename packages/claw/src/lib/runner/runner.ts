@@ -27,6 +27,7 @@ import type { ClawConfig } from "../config/index.js";
 import type { TreeAction } from "../state/index.js";
 import { clawLog } from "../../util/log.js";
 import { pickSocialSeekTargetOccupant, pickWanderMoveTargetOccupant } from "../../util/position.js";
+import { tickActivityGlobalBlurb } from "../activityGlobalBlurb.js";
 
 /** Interval (ms) to refresh occupants so myPosition is set and TimeForAutonomousWake can fire when owner is away. */
 const OCCUPANTS_REFRESH_MS = 10_000;
@@ -34,11 +35,18 @@ const OCCUPANTS_REFRESH_MS = 10_000;
 /** Interval (ms) to re-fetch GET /api/agents/me/state (credits + agent kind + companion activity). */
 const AGENT_STATE_REFRESH_MS = 30_000;
 
+/** Claw: probe engine liveness so we can stop WS backoff while deploy/restart and cold-start after recovery. */
+const ENGINE_HEALTH_POLL_MS = 15_000;
+const ENGINE_HEALTH_TIMEOUT_MS = 5_000;
+
 /** Min/max cooldown (ms) before next autonomous move. Shared by move-to-nearest, seek-social, and movement driver on arrival. */
 const AUTONOMOUS_MOVE_COOLDOWN_MS = { min: 20_000, max: 45_000 };
 
 /** Cooldown (ms) after starting a social seek before we may seek again. */
 const SOCIAL_SEEK_COOLDOWN_MS = 10_000;
+
+/** Shorter cooldown while hub activity is “conversation” so companions keep looking for someone to talk to. */
+const SOCIAL_SEEK_CONVERSATION_COOLDOWN_MS = 3_500;
 
 function randomCooldownMs(): number {
   return AUTONOMOUS_MOVE_COOLDOWN_MS.min + Math.random() * (AUTONOMOUS_MOVE_COOLDOWN_MS.max - AUTONOMOUS_MOVE_COOLDOWN_MS.min);
@@ -218,7 +226,9 @@ export function createRunner(options: RunnerOptions): AgentLoop {
           : undefined,
       ownerUserId: config.ownerUserId ?? undefined,
       ownerNearbyRadiusM: config.ownerNearbyRadiusM,
+      agentType: config.agentType,
     });
+    tickActivityGlobalBlurb(client, store, config, onUsageReportFailure);
     const pending = drainPendingReply(store);
     if (pending) {
       clawLog("runner: drain pending DM", pending.targetSessionId, pending.text.slice(0, 40));
@@ -266,7 +276,11 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     store.setLastMoveToFailed(null);
     store.setAutonomousEmoteStandStillUntil(0);
     store.setNextAutonomousMoveAt(now + randomCooldownMs());
-    store.setSocialSeekCooldownUntil(now + SOCIAL_SEEK_COOLDOWN_MS);
+    const seekCooldownMs =
+      config.agentType === "companion" && state.hubCoarseActivity === "conversation"
+        ? SOCIAL_SEEK_CONVERSATION_COOLDOWN_MS
+        : SOCIAL_SEEK_COOLDOWN_MS;
+    store.setSocialSeekCooldownUntil(now + seekCooldownMs);
     store.setFollowTargetSessionId(target.clientId);
     client.approach(target.clientId, { stopDistanceM: CONVERSATION_RANGE_M });
     clawLog("tree: SeekSocialTarget (engine follow)", target.username ?? target.clientId);
@@ -313,7 +327,11 @@ export function createRunner(options: RunnerOptions): AgentLoop {
 
   let occupantsInterval: ReturnType<typeof setInterval> | null = null;
   let creditBalanceInterval: ReturnType<typeof setInterval> | null = null;
+  let engineHealthInterval: ReturnType<typeof setInterval> | null = null;
   let creditBalanceRefreshInFlight = false;
+  /** True after GET /health fails; cleared after a successful cold reconnect. */
+  let engineWasUnreachable = false;
+  let coldReconnectInFlight = false;
 
   const refreshOccupants = (): void => {
     void client.getOccupants().then(
@@ -352,10 +370,15 @@ export function createRunner(options: RunnerOptions): AgentLoop {
     void refreshBalance(store, config)
       .then((res) => {
         if (res.ok) {
+          const s = store.getState();
+          const activityEnd =
+            s.hubActivityEndAtMs > 0 ? new Date(s.hubActivityEndAtMs).toISOString() : "—";
           clawLog(
             "runner: hub agent state refreshed",
             "credits=" + res.balance.toFixed(2),
-            "agentType=" + config.agentType
+            "agentType=" + config.agentType,
+            "activity=" + s.hubCoarseActivity,
+            "activityEnd=" + activityEnd
           );
         } else {
           clawLog("runner: hub agent state refresh failed", res.error);
@@ -366,13 +389,61 @@ export function createRunner(options: RunnerOptions): AgentLoop {
       });
   };
 
+  const runEngineHealthCheck = (): void => {
+    void (async () => {
+      if (coldReconnectInFlight) return;
+      let ok = false;
+      try {
+        ok = await client.checkEngineHealth(ENGINE_HEALTH_TIMEOUT_MS);
+      } catch {
+        ok = false;
+      }
+      if (!ok) {
+        if (!engineWasUnreachable) {
+          engineWasUnreachable = true;
+          clawLog("runner: engine /health failed — pausing WebSocket (no reconnect backoff until engine is back)");
+          client.disconnect();
+        }
+        return;
+      }
+      if (!engineWasUnreachable) return;
+
+      engineWasUnreachable = false;
+      coldReconnectInFlight = true;
+      try {
+        clawLog("runner: engine /health OK again — cold reconnect (hub re-join if configured, fresh WS + session)");
+        try {
+          if (refreshHubSession) {
+            await refreshHubSession();
+          }
+          await client.fullReconnect({ engineUrl: config.engineUrl });
+          store.applyEngineColdReset();
+          refreshOccupants();
+        } catch (e) {
+          clawLog(
+            "runner: cold reconnect after engine recovery failed —",
+            e instanceof Error ? e.message : String(e)
+          );
+          engineWasUnreachable = true;
+        }
+      } finally {
+        coldReconnectInFlight = false;
+      }
+    })();
+  };
+
   return {
     start() {
       if (occupantsInterval != null) return;
+      client.onMessage("authenticated", () => {
+        refreshOccupants();
+      });
       refreshOccupants();
       occupantsInterval = setInterval(refreshOccupants, OCCUPANTS_REFRESH_MS);
       refreshAgentStateFromHub();
       creditBalanceInterval = setInterval(refreshAgentStateFromHub, AGENT_STATE_REFRESH_MS);
+      runEngineHealthCheck();
+      engineHealthInterval = setInterval(runEngineHealthCheck, ENGINE_HEALTH_POLL_MS);
       loop.start();
     },
     stop() {
@@ -384,6 +455,10 @@ export function createRunner(options: RunnerOptions): AgentLoop {
       if (creditBalanceInterval != null) {
         clearInterval(creditBalanceInterval);
         creditBalanceInterval = null;
+      }
+      if (engineHealthInterval != null) {
+        clearInterval(engineHealthInterval);
+        engineHealthInterval = null;
       }
     },
     step: loop.step.bind(loop),

@@ -1,7 +1,7 @@
 /**
  * Movement driver: apply movementIntent or check arrival for movementTarget (server-driven move_to).
- * When idle, uses pathfinding-based wander: pick another occupant (prioritize agents) or random point every 12–28s via moveTo;
- * between pathfinding legs uses heading/speed drift.
+ * When idle, companions use pathfinding-based wander (occupant or random point every 12–28s) and drift between legs.
+ * Builders skip wander/drift and stand still unless tools set move_to / follow.
  */
 import type { DoppelClient } from "@doppelfun/sdk";
 import { buildChatSendOptions } from "../../util/chatSendOptions.js";
@@ -11,6 +11,7 @@ import {
   getFacingTowardSessionId,
   isOwnerNearby,
 } from "../../util/position.js";
+import type { HubAgentType } from "../config/config.js";
 import type { ClawStore } from "../state/index.js";
 import type { WanderState } from "../state/index.js";
 import { BLOCK_SIZE_M } from "../../util/blockBounds.js";
@@ -155,6 +156,11 @@ export type MovementDriverOptions = {
   /** When set, if owner is nearby and not in conversation we stop moving (so agent doesn't run away from owner). */
   ownerUserId?: string | null;
   ownerNearbyRadiusM?: number;
+  /**
+   * Builders skip idle wander and pathfinding drift; they stand still unless a tool sets move_to / follow.
+   * Companions (or omitted) keep autonomous movement when idle.
+   */
+  agentType?: HubAgentType;
 };
 
 // --- Arrival handling ---
@@ -321,6 +327,13 @@ export function movementDriverTick(
         jump: false,
         ...(rotY != null && { rotY }),
       });
+      return true;
+    }
+    if (options?.agentType === "builder") {
+      store.setWanderState(null);
+      store.setMovementIntent(null);
+      const rotY = getFacingTowardNearestOccupant(state.occupants, state.mySessionId, state.myPosition);
+      client.sendInput?.({ moveX: 0, moveZ: 0, sprint: false, jump: false, ...(rotY != null && { rotY }) });
       return true;
     }
     if (state.nextAutonomousMoveAt > Date.now()) {

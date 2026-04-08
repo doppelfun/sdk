@@ -134,6 +134,8 @@ export type ClawState = {
   hubCoarseActivity: HubCoarseActivity;
   /** When > 0 and Date.now() >= this, companion hub activity is expired (ms since epoch). */
   hubActivityEndAtMs: number;
+  /** Next time (ms) we may send an optional global “activity” chat line; 0 = not scheduled yet. */
+  nextActivityGlobalBlurbAt: number;
   /** Daily spend so far (when hosted); reset by hub. */
   dailySpend: number;
   /** Document id + MML per block for build replace/append. */
@@ -211,6 +213,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     cachedBalance: 0,
     hubCoarseActivity: "idle",
     hubActivityEndAtMs: 0,
+    nextActivityGlobalBlurbAt: 0,
     dailySpend: 0,
     documentsByBlockSlot: {},
     lastDocumentsList: null,

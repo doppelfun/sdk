@@ -88,7 +88,16 @@ export async function createSession(
   if (shouldRefreshBalance) {
     const balanceRes = await refreshBalance(store, config);
     if (balanceRes.ok) {
-      console.log("[claw] Credits: fetched balance", balanceRes.balance.toFixed(2));
+      const s = store.getState();
+      const activityEnd =
+        s.hubActivityEndAtMs > 0 ? new Date(s.hubActivityEndAtMs).toISOString() : "—";
+      console.log(
+        "[claw] Hub agent state:",
+        "credits=" + balanceRes.balance.toFixed(2),
+        "agentType=" + config.agentType,
+        "activity=" + s.hubCoarseActivity,
+        "activityEnd=" + activityEnd
+      );
     } else {
       console.warn("[claw] Credits: balance fetch failed —", balanceRes.error);
     }

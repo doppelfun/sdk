@@ -20,6 +20,7 @@ import { hasEnoughCredits, MIN_BALANCE_THRESHOLD } from "../credits/index.js";
 import { isOwnerNearby } from "../../util/position.js";
 import { clawLog } from "../../util/log.js";
 import { setCurrentActionForNode, setLastCompletedActionForNode } from "./mapping.js";
+import { hubCompanionActivityActive } from "../hubActivity.js";
 
 export type TreeAgentContext = {
   store: ClawStore;
@@ -47,14 +48,6 @@ function isOwnerTrigger(s: ClawState, config: ClawConfig): boolean {
   const isOwner = config.ownerUserId != null && s.lastTriggerUserId === config.ownerUserId;
   const hasScheduledTask = s.pendingScheduledTask != null;
   return isOwner || hasScheduledTask;
-}
-
-/** Companion: hub says a skill-run activity is in progress and not past its end time. */
-function hubCompanionActivityActive(store: ClawStore): boolean {
-  const s = store.getState();
-  if (s.hubCoarseActivity === "idle") return false;
-  if (s.hubActivityEndAtMs > 0 && Date.now() >= s.hubActivityEndAtMs) return false;
-  return true;
 }
 
 /**
@@ -213,7 +206,11 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       if (s.conversationPhase !== "idle") return false;
       if (Date.now() < s.socialSeekCooldownUntil) return false;
       if (s.movementTarget != null || s.followTargetSessionId != null) return false;
-      if (Date.now() < s.nextAutonomousMoveAt) return false;
+      const conversationSeek =
+        config.agentType === "companion" &&
+        s.hubCoarseActivity === "conversation" &&
+        hubCompanionActivityActive(store);
+      if (!conversationSeek && Date.now() < s.nextAutonomousMoveAt) return false;
       const others = s.occupants.filter(
         (o) => o.clientId !== s.mySessionId && o.position != null && o.type !== "observer"
       );

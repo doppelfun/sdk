@@ -7,7 +7,13 @@
  */
 
 export { createAgentLoop, createTreeAgent, TREE_DEFINITION, type AgentLoop, type TreeAgentContext, type TreeStateSnapshot } from "./lib/tree/index.js";
-export { requestWake, requestCronWake, type WakeType, type WakePayload } from "./lib/wake.js";
+export {
+  requestWake,
+  requestCronWake,
+  requestAutonomousWakeNow,
+  type WakeType,
+  type WakePayload,
+} from "./lib/wake.js";
 export { loadConfig, type ClawConfig, type LlmProviderId, type HubAgentType } from "./lib/config/index.js";
 export {
   createClawStore,

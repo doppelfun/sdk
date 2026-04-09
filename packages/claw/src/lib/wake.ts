@@ -4,6 +4,7 @@
  * @see docs/PLAN-AGENT-WAKE-DRIVEN.md
  */
 
+import type { ClawConfig } from "./config/index.js";
 import type { ClawStore } from "./state/index.js";
 import type { PendingScheduledTask } from "./state/index.js";
 
@@ -34,4 +35,23 @@ export function requestWake(
 /** Request a cron wake with a scheduled task. Tree routes cron to Obedient. */
 export function requestCronWake(store: ClawStore, task: PendingScheduledTask): void {
   requestWake(store, "cron", { task });
+}
+
+/** True when the pending wake is for the owner DM or a scheduled task (Obedient branch). */
+function isOwnerOrCronWakePending(store: ClawStore, config: ClawConfig): boolean {
+  const s = store.getState();
+  if (!s.wakePending) return false;
+  const isOwner = config.ownerUserId != null && s.lastTriggerUserId === config.ownerUserId;
+  return isOwner || s.pendingScheduledTask != null;
+}
+
+/**
+ * Enqueue an autonomous tree tick without waiting for the soul timer.
+ * Does not override a pending owner or cron wake. No-op for builder agents.
+ */
+export function requestAutonomousWakeNow(store: ClawStore, config: ClawConfig): void {
+  if (config.agentType === "builder") return;
+  if (isOwnerOrCronWakePending(store, config)) return;
+  store.setWakePending(true);
+  store.setLastTriggerUserId(null);
 }

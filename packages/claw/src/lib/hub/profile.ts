@@ -4,6 +4,8 @@
  */
 
 import type { ClawConfig } from "../config/index.js";
+import type { HubCoarseActivity } from "../state/index.js";
+import { requestAutonomousWakeNow } from "../wake.js";
 import type { HubAgentProfile, HubAgentStateResult } from "./hub.js";
 import type { ClawStore } from "../state/index.js";
 
@@ -30,6 +32,38 @@ export function setCachedBalance(store: ClawStore, balance: number): void {
 }
 
 /**
+ * When companion hub activity changes, drop movement/cooldown gates so the behaviour tree can
+ * pick a new wander target (explore/training/build) or social seek (conversation) on the next tick,
+ * and request an autonomous wake (unless owner/cron wake is already pending).
+ */
+function onCompanionHubActivityChanged(
+  store: ClawStore,
+  config: ClawConfig,
+  prevActivity: HubCoarseActivity,
+  nextActivity: HubCoarseActivity
+): void {
+  if (config.agentType !== "companion") return;
+  if (prevActivity === nextActivity) return;
+
+  const s = store.getState();
+  if (s.conversationPhase === "idle") {
+    store.setMovementTarget(null);
+    store.setFollowTargetSessionId(null);
+    store.setMovementIntent(null);
+    store.setPendingGoTalkToAgent(null);
+    store.setAutonomousGoal("wander");
+    store.setAutonomousTargetSessionId(null);
+    store.setLastSocialSeekTargetSessionId(null);
+  }
+  store.setNextAutonomousMoveAt(0);
+  store.setSocialSeekCooldownUntil(0);
+  store.setConversationEndedSeekCooldownUntil(0);
+  store.setAutonomousSeekCooldownUntil(0);
+
+  requestAutonomousWakeNow(store, config);
+}
+
+/**
  * Apply successful GET /api/agents/me/state to store + config (credits cache, agent kind, companion activity window).
  */
 export function applyHubAgentState(
@@ -50,4 +84,5 @@ export function applyHubAgentState(
       ? { nextActivityGlobalBlurbAt: 0, nextTrainingSpellcastEmoteAt: 0 }
       : {}),
   });
+  onCompanionHubActivityChanged(store, config, prevActivity, nextActivity);
 }

@@ -53,6 +53,11 @@ export type AgentWsChatMessage = {
   targetSessionId?: string;
   /** Optional TTS voice id (e.g. ElevenLabs voice_id). Set via CLAW_VOICE_ID so each agent has a unique voice. */
   voiceId?: string;
+  /**
+   * When true, global chat is broadcast to the room but not written to chat_messages (agents only; ignored for DMs).
+   * Use for transient lines (e.g. activity status blurbs) so history APIs stay clean.
+   */
+  ephemeral?: boolean;
 };
 
 export type AgentWsJoinMessage = {

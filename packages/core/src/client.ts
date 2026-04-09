@@ -305,13 +305,17 @@ export class DoppelClient {
   }
 
   /** Send a chat message over the connected WebSocket. No-op if not connected. Use targetSessionId for DM; voiceId for TTS voice (e.g. from CLAW_VOICE_ID). */
-  sendChat(text: string, options?: { targetSessionId?: string; voiceId?: string }): void {
+  sendChat(
+    text: string,
+    options?: { targetSessionId?: string; voiceId?: string; ephemeral?: boolean }
+  ): void {
     if (!this.ws || this.ws.readyState !== this.ws.OPEN) return;
     const msg: AgentWsChatMessage = {
       type: "chat",
       text,
       ...(options?.targetSessionId && { targetSessionId: options.targetSessionId }),
       ...(options?.voiceId?.trim() && { voiceId: options.voiceId.trim() }),
+      ...(options?.ephemeral === true && { ephemeral: true }),
     };
     this.ws.send(JSON.stringify(msg));
   }

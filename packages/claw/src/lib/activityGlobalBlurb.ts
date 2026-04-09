@@ -152,12 +152,12 @@ export function tickActivityGlobalBlurb(
   const useLlm = model != null && hasEnoughCredits(store, config);
 
   const voiceId = config.voiceId?.trim() || undefined;
-  const voiceOpts = buildChatSendOptions({ voiceId }) ?? (voiceId ? { voiceId } : undefined);
+  const voiceOpts = buildChatSendOptions({ voiceId, ephemeral: true });
 
   const sendBlurb = (text: string, currentAct: BlurbActivity, reportUsage: boolean, usage: ReturnType<typeof usageFromAiSdk>) => {
     if (!text) return;
     clawLog("activity blurb: global chat", currentAct, text.slice(0, 50));
-    client.sendChat(text, voiceOpts);
+    client.sendChat(text, voiceOpts ?? { ephemeral: true });
     if (voiceId) {
       reportVoiceUsageToHub(config, store, text.length, onUsageReportFailure);
     }

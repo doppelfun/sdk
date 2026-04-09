@@ -28,6 +28,7 @@ import type { TreeAction } from "../state/index.js";
 import { clawLog } from "../../util/log.js";
 import { pickSocialSeekTargetOccupant, pickWanderMoveTargetOccupant } from "../../util/position.js";
 import { tickActivityGlobalBlurb } from "../activityGlobalBlurb.js";
+import { tickTrainingSpellcastEmote } from "../trainingSpellcastEmote.js";
 
 /** Interval (ms) to refresh occupants so myPosition is set and TimeForAutonomousWake can fire when owner is away. */
 const OCCUPANTS_REFRESH_MS = 10_000;
@@ -233,6 +234,7 @@ export function createRunner(options: RunnerOptions): AgentLoop {
       agentType: config.agentType,
     });
     tickActivityGlobalBlurb(client, store, config, onUsageReportFailure);
+    tickTrainingSpellcastEmote(client, store, config);
     const pending = drainPendingReply(store);
     if (pending) {
       clawLog("runner: drain pending DM", pending.targetSessionId, pending.text.slice(0, 40));

@@ -46,6 +46,8 @@ export function applyHubAgentState(
     cachedBalance: state.credits,
     hubCoarseActivity: nextActivity,
     hubActivityEndAtMs: Number.isFinite(endMs) ? endMs : 0,
-    ...(prevActivity !== nextActivity ? { nextActivityGlobalBlurbAt: 0 } : {}),
+    ...(prevActivity !== nextActivity
+      ? { nextActivityGlobalBlurbAt: 0, nextTrainingSpellcastEmoteAt: 0 }
+      : {}),
   });
 }

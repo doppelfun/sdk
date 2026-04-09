@@ -136,6 +136,8 @@ export type ClawState = {
   hubActivityEndAtMs: number;
   /** Next time (ms) we may send an optional global “activity” chat line; 0 = not scheduled yet. */
   nextActivityGlobalBlurbAt: number;
+  /** Next time (ms) to play spellcast emote while hub activity is training; 0 = arm on next tick. */
+  nextTrainingSpellcastEmoteAt: number;
   /** Daily spend so far (when hosted); reset by hub. */
   dailySpend: number;
   /** Document id + MML per block for build replace/append. */
@@ -214,6 +216,7 @@ export function createInitialState(blockSlotId: string): ClawState {
     hubCoarseActivity: "idle",
     hubActivityEndAtMs: 0,
     nextActivityGlobalBlurbAt: 0,
+    nextTrainingSpellcastEmoteAt: 0,
     dailySpend: 0,
     documentsByBlockSlot: {},
     lastDocumentsList: null,

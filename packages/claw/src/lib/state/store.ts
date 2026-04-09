@@ -262,6 +262,7 @@ function createClawStore(blockSlotId: string) {
           hubActivityEndAtMs: s.hubActivityEndAtMs,
           dailySpend: s.dailySpend,
           nextActivityGlobalBlurbAt: s.nextActivityGlobalBlurbAt,
+          nextTrainingSpellcastEmoteAt: s.nextTrainingSpellcastEmoteAt,
         };
       });
     },

@@ -4,7 +4,9 @@
  * Root: sequence of ExecuteMovementAndDrain then a selector over wake branches.
  * Selector order (priority): owner wake (obedient) → autonomous wake → time-based wake → clear idle.
  *
- * Autonomous branch (when HasAutonomousWake && OwnerAwayOrInConversation): decision layer drives flow; allows conversation to continue when owner is nearby (observe).
+ * Autonomous branch (when HasAutonomousWake && OwnerAwayOrInConversation): decision layer drives flow.
+ * OwnerAwayOrInConversation is also true during an active companion skill run so observe-mode owners
+ * in-range do not block social seek / wander for that run.
  * - InConversation && CanReplyInConversation → RunConverseAgent (chat-only LLM; only when we received a message and can send).
  * - InConversation && WaitingForReply → ContinueWaiting (no-op; avoid spinning LLM while waiting for peer reply).
  * - WasConverseButNowIdle → ExitConversationToWander.

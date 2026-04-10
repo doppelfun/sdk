@@ -200,6 +200,50 @@ describe("createTreeAgent", () => {
     });
   });
 
+  describe("OwnerAwayOrInConversation", () => {
+    it("is false when owner is in-world nearby and no skill run is active", () => {
+      const { store, config } = createTestContext({
+        ownerUserId: "owner-1",
+        agentType: "companion",
+      });
+      store.setConversationPhase("idle");
+      store.setState({
+        hubCoarseActivity: "idle",
+        hubActivityEndAtMs: 0,
+      });
+      store.setOccupants(
+        [
+          { clientId: "me", userId: "agent-a", type: "agent", position: { x: 0, z: 0 } },
+          { clientId: "owner-sess", userId: "owner-1", type: "user", position: { x: 1, z: 0 } },
+        ],
+        "me"
+      );
+      const agent = createTreeAgent({ store, config });
+      expect(agent.OwnerAwayOrInConversation()).toBe(false);
+    });
+
+    it("is true when owner is nearby but a companion skill run window is active (observe + rapport)", () => {
+      const { store, config } = createTestContext({
+        ownerUserId: "owner-1",
+        agentType: "companion",
+      });
+      store.setConversationPhase("idle");
+      store.setState({
+        hubCoarseActivity: "conversation",
+        hubActivityEndAtMs: Date.now() + 3_600_000,
+      });
+      store.setOccupants(
+        [
+          { clientId: "me", userId: "agent-a", type: "agent", position: { x: 0, z: 0 } },
+          { clientId: "owner-sess", userId: "owner-1", type: "user", position: { x: 1, z: 0 } },
+        ],
+        "me"
+      );
+      const agent = createTreeAgent({ store, config });
+      expect(agent.OwnerAwayOrInConversation()).toBe(true);
+    });
+  });
+
   describe("getTreeState", () => {
     it("returns snapshot with state string after step", () => {
       const { store, config } = createTestContext();

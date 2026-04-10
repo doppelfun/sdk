@@ -154,10 +154,15 @@ export function createTreeAgent(ctx: TreeAgentContext): Record<string, () => Sta
       return !isOwnerNearby(s.occupants, s.myPosition, config.ownerUserId, config.ownerNearbyRadiusM);
     },
 
-    /** True when owner is away OR we're already in a conversation (so owner can observe without pulling agent back to obedient). */
+    /**
+     * True when owner is away OR we're already in a peer conversation OR a companion skill run is active.
+     * Without the skill-run case, an observing owner in-world is "nearby" every tick → the autonomous
+     * sequence fails → `ClearWakeIdle` clears the wake from hub activity, and rapport runs never seek/DM others.
+     */
     OwnerAwayOrInConversation(): boolean {
       const s = store.getState();
       if (s.conversationPhase !== "idle") return true;
+      if (config.agentType === "companion" && hubCompanionActivityActive(store)) return true;
       if (!config.ownerUserId) return true;
       if (!s.myPosition) return true;
       return !isOwnerNearby(s.occupants, s.myPosition, config.ownerUserId, config.ownerNearbyRadiusM);

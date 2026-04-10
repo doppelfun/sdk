@@ -36,14 +36,6 @@ const OCCUPANTS_REFRESH_MS = 10_000;
 /** Interval (ms) to re-fetch GET /api/agents/me/state (credits + agent kind + companion activity). */
 const AGENT_STATE_REFRESH_MS = 30_000;
 
-/** Claw: probe engine liveness so we can stop WS backoff while deploy/restart and cold-start after recovery. */
-const ENGINE_HEALTH_POLL_MS = 15_000;
-const ENGINE_HEALTH_TIMEOUT_MS = 5_000;
-/** Require this many failed polls in a row before treating the engine as down (avoids flappy /health → many cold reconnects). */
-const ENGINE_HEALTH_FAILS_BEFORE_DOWN = 3;
-/** Minimum time between cold reconnects even if the engine flaps (ms). */
-const COLD_RECONNECT_COOLDOWN_MS = 120_000;
-
 /** Min/max cooldown (ms) before next autonomous move. Shared by move-to-nearest, seek-social, and movement driver on arrival. */
 const AUTONOMOUS_MOVE_COOLDOWN_MS = { min: 20_000, max: 45_000 };
 
@@ -333,15 +325,7 @@ export function createRunner(options: RunnerOptions): AgentLoop {
 
   let occupantsInterval: ReturnType<typeof setInterval> | null = null;
   let creditBalanceInterval: ReturnType<typeof setInterval> | null = null;
-  let engineHealthInterval: ReturnType<typeof setInterval> | null = null;
   let creditBalanceRefreshInFlight = false;
-  /** True after enough consecutive GET /health failures; cleared after a successful cold reconnect. */
-  let engineWasUnreachable = false;
-  let coldReconnectInFlight = false;
-  /** Synchronous: only one health poll runs at a time (prevents overlapping awaits → duplicate fullReconnect). */
-  let engineHealthPollInFlight = false;
-  let consecutiveEngineHealthFailures = 0;
-  let lastColdReconnectAtMs = 0;
 
   const refreshOccupants = (): void => {
     void client.getOccupants().then(
@@ -399,73 +383,6 @@ export function createRunner(options: RunnerOptions): AgentLoop {
       });
   };
 
-  const runEngineHealthCheck = (): void => {
-    if (engineHealthPollInFlight) return;
-    engineHealthPollInFlight = true;
-    void (async () => {
-      try {
-        let ok = false;
-        try {
-          ok = await client.checkEngineHealth(ENGINE_HEALTH_TIMEOUT_MS);
-        } catch {
-          ok = false;
-        }
-
-        if (!ok) {
-          consecutiveEngineHealthFailures++;
-          if (consecutiveEngineHealthFailures < ENGINE_HEALTH_FAILS_BEFORE_DOWN) {
-            return;
-          }
-          if (!engineWasUnreachable) {
-            engineWasUnreachable = true;
-            clawLog(
-              "runner: engine /health failed",
-              String(consecutiveEngineHealthFailures),
-              "times in a row — pausing WebSocket until engine is back"
-            );
-            client.disconnect();
-          }
-          return;
-        }
-
-        consecutiveEngineHealthFailures = 0;
-        if (!engineWasUnreachable) return;
-
-        const now = Date.now();
-        if (now - lastColdReconnectAtMs < COLD_RECONNECT_COOLDOWN_MS && lastColdReconnectAtMs > 0) {
-          clawLog("runner: engine /health OK — cold reconnect on cooldown, retry next poll");
-          return;
-        }
-
-        if (coldReconnectInFlight) return;
-        coldReconnectInFlight = true;
-        try {
-          clawLog("runner: engine /health OK again — cold reconnect (hub re-join if configured, fresh WS + session)");
-          try {
-            if (refreshHubSession) {
-              await refreshHubSession();
-            }
-            await client.fullReconnect({ engineUrl: config.engineUrl });
-            lastColdReconnectAtMs = Date.now();
-            store.applyEngineColdReset();
-            refreshOccupants();
-            engineWasUnreachable = false;
-          } catch (e) {
-            clawLog(
-              "runner: cold reconnect after engine recovery failed —",
-              e instanceof Error ? e.message : String(e)
-            );
-            engineWasUnreachable = true;
-          }
-        } finally {
-          coldReconnectInFlight = false;
-        }
-      } finally {
-        engineHealthPollInFlight = false;
-      }
-    })();
-  };
-
   return {
     start() {
       if (occupantsInterval != null) return;
@@ -473,8 +390,6 @@ export function createRunner(options: RunnerOptions): AgentLoop {
       occupantsInterval = setInterval(refreshOccupants, OCCUPANTS_REFRESH_MS);
       refreshAgentStateFromHub();
       creditBalanceInterval = setInterval(refreshAgentStateFromHub, AGENT_STATE_REFRESH_MS);
-      runEngineHealthCheck();
-      engineHealthInterval = setInterval(runEngineHealthCheck, ENGINE_HEALTH_POLL_MS);
       loop.start();
     },
     stop() {
@@ -486,10 +401,6 @@ export function createRunner(options: RunnerOptions): AgentLoop {
       if (creditBalanceInterval != null) {
         clearInterval(creditBalanceInterval);
         creditBalanceInterval = null;
-      }
-      if (engineHealthInterval != null) {
-        clearInterval(engineHealthInterval);
-        engineHealthInterval = null;
       }
     },
     step: loop.step.bind(loop),

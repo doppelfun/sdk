@@ -244,29 +244,6 @@ function createClawStore(blockSlotId: string) {
       setState({ lastError: null });
     },
 
-    /**
-     * After engine downtime + cold WS reconnect: reset session/movement/social state so stale sessionIds
-     * and targets are not used. Preserves chat, documents, catalog cache, and hub credit/activity fields.
-     */
-    applyEngineColdReset() {
-      setState((s) => {
-        const fresh = createInitialState(s.blockSlotId);
-        return {
-          ...fresh,
-          chat: s.chat,
-          documentsByBlockSlot: s.documentsByBlockSlot,
-          lastDocumentsList: s.lastDocumentsList,
-          lastCatalogContext: s.lastCatalogContext,
-          cachedBalance: s.cachedBalance,
-          hubCoarseActivity: s.hubCoarseActivity,
-          hubActivityEndAtMs: s.hubActivityEndAtMs,
-          dailySpend: s.dailySpend,
-          nextActivityGlobalBlurbAt: s.nextActivityGlobalBlurbAt,
-          nextTrainingSpellcastEmoteAt: s.nextTrainingSpellcastEmoteAt,
-        };
-      });
-    },
-
     // --- Tool tracking ---
     setLastToolRun(name: string | null) {
       setState({ lastToolRun: name });
